@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import logo from "../assets/logo.png";
+
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -39,7 +41,7 @@ export default function LoginPage() {
           <div className="flex flex-col items-center text-center">
             {/* LOGO PLACEHOLDER */}
                   <img
-  src="/powasscologo.png"
+ src={logo}
     alt="POWASSCO Logo"
   className="h-24 w-24 rounded-3xl object-contain"
     
