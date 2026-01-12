@@ -1,4 +1,4 @@
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router-dom";
 import LoginPage from "./pages/LoginPage";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import WaterDashboard from "./pages/water/WaterDashboard";
@@ -28,56 +28,53 @@ function Protected({ roles, children }) {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <AuthProvider>
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
+    <AuthProvider>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
 
-          {/* ✅ PUBLIC PAGE (no login required) */}
-          <Route path="/inquiry" element={<MemberInquiryPage />} />
+        {/* ✅ PUBLIC PAGE */}
+        <Route path="/inquiry" element={<MemberInquiryPage />} />
 
+        <Route path="/" element={<RoleHome />} />
 
-          <Route path="/" element={<RoleHome />} />
+        <Route
+          path="/admin"
+          element={
+            <Protected roles={["admin"]}>
+              <AdminDashboard />
+            </Protected>
+          }
+        />
 
-          <Route
-            path="/admin"
-            element={
-              <Protected roles={["admin"]}>
-                <AdminDashboard />
-              </Protected>
-            }
-          />
+        <Route
+          path="/water"
+          element={
+            <Protected roles={["admin", "water_bill_officer"]}>
+              <WaterDashboard />
+            </Protected>
+          }
+        />
 
-          <Route
-            path="/water"
-            element={
-              <Protected roles={["admin", "water_bill_officer"]}>
-                <WaterDashboard />
-              </Protected>
-            }
-          />
+        <Route
+          path="/loan"
+          element={
+            <Protected roles={["admin", "loan_officer"]}>
+              <LoanDashboard />
+            </Protected>
+          }
+        />
 
-          <Route
-            path="/loan"
-            element={
-              <Protected roles={["admin", "loan_officer"]}>
-                <LoanDashboard />
-              </Protected>
-            }
-          />
+        <Route
+          path="/meter"
+          element={
+            <Protected roles={["admin", "meter_reader"]}>
+              <MeterDashboard />
+            </Protected>
+          }
+        />
 
-          <Route
-            path="/meter"
-            element={
-              <Protected roles={["admin", "meter_reader"]}>
-                <MeterDashboard />
-              </Protected>
-            }
-          />
-        
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </AuthProvider>
-    </BrowserRouter>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </AuthProvider>
   );
 }
