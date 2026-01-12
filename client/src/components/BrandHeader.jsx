@@ -1,4 +1,5 @@
 import { useAuth } from "../context/AuthContext";
+import logo from "../assets/logo.png";
 
 export default function BrandHeader({ title, subtitle }) {
   const { user, logout } = useAuth();
@@ -13,8 +14,8 @@ export default function BrandHeader({ title, subtitle }) {
       <div className="flex items-start gap-4">
         
         {/* LOGO PLACEHOLDER (replace later) */}
-        <img
-  src="/powasscologo.png"
+  <img
+  src={logo}
   alt="POWASSCO Logo"
   className="h-12 w-12 rounded-xl object-contain"
 />
