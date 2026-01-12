@@ -108,9 +108,10 @@ router.put("/:id", ...guard, async (req, res) => {
     member.meterNumber = (body.meterNumber || member.meterNumber).trim();
     member.accountStatus = body.accountStatus || member.accountStatus;
 
-    member.personal = {
+        member.personal = {
       fullName: (body.personal?.fullName || member.personal.fullName).trim(),
       gender: body.personal?.gender || member.personal.gender,
+      birthdate: String(body.personal?.birthdate || member.personal.birthdate).trim(), // ✅ add
       dateRegistered: body.personal?.dateRegistered || member.personal.dateRegistered,
     };
 
