@@ -1,5 +1,5 @@
 import { useState } from "react";
-
+import logo from "../assets/logo.png";
 const API_BASE = import.meta.env.VITE_API_BASE; // http://localhost:5000/api
 
 function money(n) {
@@ -75,9 +75,11 @@ export default function MemberInquiryPage() {
       <div className="max-w-4xl mx-auto">
         <div className="rounded-3xl bg-white border border-slate-100 shadow-sm p-6">
           <div className="flex items-center gap-3">
-            <div className="h-12 w-12 rounded-2xl bg-emerald-600 flex items-center justify-center text-white font-black">
-              P
-            </div>
+                    <img
+             src={logo}
+              alt="POWASSCO Logo"
+              className="h-12 w-12 rounded-xl object-contain"
+            />
             <div>
               <div className="text-sm font-semibold text-emerald-700">POWASSCO</div>
               <div className="text-xl font-bold text-slate-900">Member Bill Inquiry</div>
