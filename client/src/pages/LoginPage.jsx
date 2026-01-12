@@ -39,7 +39,7 @@ export default function LoginPage() {
           <div className="flex flex-col items-center text-center">
             {/* LOGO PLACEHOLDER */}
                   <img
-  src="src/assets/powasscologo.png"
+  src="/powasscologo.png"
     alt="POWASSCO Logo"
   className="h-24 w-24 rounded-3xl object-contain"
     
