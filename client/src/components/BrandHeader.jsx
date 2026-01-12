@@ -14,7 +14,7 @@ export default function BrandHeader({ title, subtitle }) {
         
         {/* LOGO PLACEHOLDER (replace later) */}
         <img
-  src="./powasscologo.png"
+  src="/public/powasscologo.png"
   alt="POWASSCO Logo"
   className="h-12 w-12 rounded-xl object-contain"
 />
