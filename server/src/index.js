@@ -19,7 +19,26 @@ dotenv.config();
 const app = express();
 app.use(express.json());
 
-// ✅ Mongo connect cache (serverless-safe)
+// ✅ CORS (frontend not deployed yet is OK)
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      const allowed = ["http://localhost:5173", process.env.CLIENT_ORIGIN].filter(Boolean);
+      if (!origin) return cb(null, true);
+      if (allowed.includes(origin)) return cb(null, true);
+      return cb(new Error("CORS blocked: " + origin));
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"]
+  })
+);
+app.options("*", cors());
+
+// ✅ Health route (should work even if Mongo env is wrong)
+app.get("/api/health", (req, res) => res.json({ ok: true }));
+
+// ✅ Mongo cache (serverless-safe)
 let cached = global.mongoose;
 if (!cached) cached = global.mongoose = { conn: null, promise: null };
 
@@ -32,8 +51,9 @@ async function connectDB() {
   return cached.conn;
 }
 
-// Ensure DB before handling routes
+// ✅ Only connect to DB for non-health routes
 app.use(async (req, res, next) => {
+  if (req.path === "/api/health") return next();
   try {
     await connectDB();
     next();
@@ -43,30 +63,10 @@ app.use(async (req, res, next) => {
   }
 });
 
-// ✅ CORS
-app.use(
-  cors({
-    origin: (origin, cb) => {
-      const allowed = ["http://localhost:5173", process.env.CLIENT_ORIGIN].filter(Boolean);
-      if (!origin) return cb(null, true);
-      if (allowed.includes(origin)) return cb(null, true);
-      return cb(new Error("CORS blocked: " + origin));
-    },
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-  })
-);
-app.options("*", cors());
-
-// health
-app.get("/api/health", (req, res) => res.json({ ok: true }));
-
-// auth/users
+// routes
 app.use("/api/auth", authRoutes);
 app.use("/api/users", usersRoutes);
 
-// water
 app.use("/api/water/members", waterMembersRoutes);
 app.use("/api/water/bills", waterBillsRoutes);
 app.use("/api/water/payments", waterPaymentsRoutes);
