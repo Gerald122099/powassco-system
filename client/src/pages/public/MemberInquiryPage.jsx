@@ -75,7 +75,7 @@ export default function MemberInquiryPage() {
       <div className="max-w-4xl mx-auto">
         <div className="rounded-3xl bg-white border border-slate-100 shadow-sm p-6">
           <div className="flex items-center gap-3">
-                    <img
+            <img
              src={logo}
               alt="POWASSCO Logo"
               className="h-12 w-12 rounded-xl object-contain"
