@@ -1,14 +1,16 @@
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:5000/api";
+const RAW_BASE = import.meta.env.VITE_API_BASE || "http://localhost:5000/api";
+const API_BASE = RAW_BASE.replace(/\/+$/, ""); // remove trailing slashes
 
 export async function apiFetch(
   path,
   { method = "GET", body, token, headers: extraHeaders } = {}
 ) {
-  const url = `${API_BASE}${path.startsWith("/") ? path : `/${path}`}`;
+  const cleanPath = String(path).startsWith("/") ? path : `/${path}`;
+  const url = `${API_BASE}${cleanPath}`;
 
   const finalToken =
     token ||
-    localStorage.getItem("pow_token") ||   // ✅ MATCH AuthContext
+    localStorage.getItem("pow_token") ||
     sessionStorage.getItem("pow_token");
 
   const res = await fetch(url, {
@@ -22,7 +24,12 @@ export async function apiFetch(
   });
 
   const text = await res.text();
-  const data = text ? JSON.parse(text) : {};
+  let data = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = { message: text };
+  }
 
   if (!res.ok) throw new Error(data?.message || `Request failed (${res.status})`);
   return data;
