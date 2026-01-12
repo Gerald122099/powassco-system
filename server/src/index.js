@@ -21,20 +21,24 @@ const app = express();
 app.use(express.json());
 
 // ✅ CORS
-app.use(
-  cors({
-    origin: (origin, cb) => {
-      const allowed = ["http://localhost:5173", process.env.CLIENT_ORIGIN].filter(Boolean);
-      if (!origin) return cb(null, true);
-      if (allowed.includes(origin)) return cb(null, true);
-      return cb(new Error("CORS blocked: " + origin));
-    },
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-  })
-);
-app.options("*", cors());
+const allowedOrigins = new Set([
+  "http://localhost:5173",
+  process.env.CLIENT_ORIGIN,
+].filter(Boolean));
+
+const corsOptions = {
+  origin: (origin, cb) => {
+    if (!origin) return cb(null, true);
+    if (allowedOrigins.has(origin)) return cb(null, true);
+    return cb(null, false);
+  },
+  credentials: true,
+  methods: ["GET","POST","PUT","PATCH","DELETE","OPTIONS"],
+  allowedHeaders: ["Content-Type","Authorization"],
+};
+
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 
 // health
 app.get("/api/health", (req, res) => res.json({ ok: true }));
