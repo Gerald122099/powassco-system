@@ -24,7 +24,7 @@ app.use(express.json());
 app.use(
   cors({
     origin: (origin, cb) => {
-      const allowed = ["http://localhost:5173", process.env.CLIENT_ORIGIN].filter(Boolean);
+      const allowed = ["https://powassco-system-production.up.railway.app/", process.env.CLIENT_ORIGIN].filter(Boolean);
       if (!origin) return cb(null, true);
       if (allowed.includes(origin)) return cb(null, true);
       return cb(new Error("CORS blocked: " + origin));
