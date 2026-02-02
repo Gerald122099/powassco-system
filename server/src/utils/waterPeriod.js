@@ -32,3 +32,8 @@ export function computeDueDate(periodKey, dueDayOfMonth = 15, graceDays = 0) {
 export function isPastDue(dueDate, now = new Date()) {
   return !!dueDate && now.getTime() > new Date(dueDate).getTime();
 }
+
+// Helper function for money formatting
+export function toMoney(n) {
+  return Number((Number(n || 0)).toFixed(2));
+}

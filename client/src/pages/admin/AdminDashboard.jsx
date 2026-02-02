@@ -6,6 +6,7 @@ import { apiFetch } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
 import WaterSettingsPanel from "./WaterSettingsPanel";
 
+
 const ROLE_OPTIONS = [
   { value: "admin", label: "Admin" },
   { value: "water_bill_officer", label: "Water Bill Officer" },
@@ -66,9 +67,18 @@ function IconButton({ children, onClick, tone = "default", title }) {
   );
 }
 
+// NEW: Admin Tabs
+const adminTabs = [
+  { key: "users", label: "User Management", icon: "👥" },
+  { key: "water", label: "Water Settings", icon: "⚙️" },
+
+];
+
 export default function AdminDashboard() {
   const { token, user } = useAuth();
 
+  const [activeTab, setActiveTab] = useState("users"); // NEW: Tab state
+  
   const [users, setUsers] = useState([]);
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(true);
@@ -101,9 +111,11 @@ export default function AdminDashboard() {
   }
 
   useEffect(() => {
-    load();
+    if (activeTab === "users") {
+      load();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [activeTab]);
 
   const filtered = useMemo(() => {
     const t = q.trim().toLowerCase();
@@ -217,7 +229,10 @@ export default function AdminDashboard() {
 
   return (
     <div className="min-h-screen bg-slate-50 p-5">
-      <BrandHeader title="Admin Dashboard" subtitle="User account management and role assignment." />
+      <BrandHeader 
+        title="Admin Dashboard" 
+        subtitle="Manage system settings, users, and water tariffs."
+      />
 
       {toast && (
         <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
@@ -225,119 +240,144 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      <div className="mt-4 grid grid-cols-1 gap-4">
-        <Card>
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <div className="text-lg font-black text-slate-900">User Accounts</div>
-              <div className="text-xs text-slate-600 mt-1">
-                Create employees, assign roles, activate/deactivate accounts, and reset passwords.
-              </div>
-            </div>
+      {/* NEW: Tab Navigation */}
+      <div className="mt-4 flex flex-wrap gap-2">
+        {adminTabs.map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            className={[
+              "flex items-center gap-2 px-4 py-2 rounded-2xl text-sm font-semibold border transition",
+              activeTab === tab.key
+                ? "bg-blue-600 text-white border-blue-600"
+                : "bg-white hover:bg-slate-50 border-slate-200 text-slate-700",
+            ].join(" ")}
+          >
+            <span>{tab.icon}</span>
+            <span>{tab.label}</span>
+          </button>
+        ))}
+      </div>
 
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <div className="relative">
-                <input
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                  placeholder="Search Employee ID / Name / Role"
-                  className="w-full sm:w-96 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300"
-                />
-                <div className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs">
-                  ⌘K
+      <div className="mt-6">
+        {/* User Management Tab */}
+        {activeTab === "users" && (
+          <Card>
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <div className="text-lg font-black text-slate-900">User Accounts</div>
+                <div className="text-xs text-slate-600 mt-1">
+                  Create employees, assign roles, activate/deactivate accounts, and reset passwords.
                 </div>
               </div>
 
-              <IconButton tone="primary" onClick={openAdd} title="Add new user">
-                + Add User
-              </IconButton>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <div className="relative">
+                  <input
+                    value={q}
+                    onChange={(e) => setQ(e.target.value)}
+                    placeholder="Search Employee ID / Name / Role"
+                    className="w-full sm:w-96 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300"
+                  />
+                  <div className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs">
+                    ⌘K
+                  </div>
+                </div>
 
-              <IconButton onClick={load} title="Refresh list">
-                ↻
-              </IconButton>
+                <IconButton tone="primary" onClick={openAdd} title="Add new user">
+                  + Add User
+                </IconButton>
+
+                <IconButton onClick={load} title="Refresh list">
+                  ↻
+                </IconButton>
+              </div>
             </div>
-          </div>
 
-          {err && (
-            <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
-              {err}
-            </div>
-          )}
+            {err && (
+              <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+                {err}
+              </div>
+            )}
 
-          <div className="mt-4 overflow-auto rounded-2xl border border-slate-100 bg-white">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-left text-slate-500">
-                <tr>
-                  <th className="py-3 px-4">Employee</th>
-                  <th className="py-3 px-4">Role</th>
-                  <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4 text-right">Actions</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {loading ? (
+            <div className="mt-4 overflow-auto rounded-2xl border border-slate-100 bg-white">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-left text-slate-500">
                   <tr>
-                    <td colSpan={4} className="py-10 text-center text-slate-600">
-                      Loading users...
-                    </td>
+                    <th className="py-3 px-4">Employee</th>
+                    <th className="py-3 px-4">Role</th>
+                    <th className="py-3 px-4">Status</th>
+                    <th className="py-3 px-4 text-right">Actions</th>
                   </tr>
-                ) : filtered.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="py-10 text-center text-slate-600">
-                      No users found.
-                    </td>
-                  </tr>
-                ) : (
-                  filtered.map((u) => (
-                    <tr key={u._id} className="border-t hover:bg-slate-50/60">
-                      <td className="py-3 px-4">
-                        <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 rounded-2xl bg-emerald-600 text-white font-black flex items-center justify-center">
-                            {String(u.fullName || u.employeeId || "U")
-                              .trim()
-                              .slice(0, 1)
-                              .toUpperCase()}
-                          </div>
-                          <div>
-                            <div className="font-bold text-slate-900">{u.fullName}</div>
-                            <div className="text-xs text-slate-600">{u.employeeId}</div>
-                          </div>
-                        </div>
-                      </td>
+                </thead>
 
-                      <td className="py-3 px-4">
-                        <RoleBadge role={u.role} />
-                      </td>
-
-                      <td className="py-3 px-4">
-                        <StatusPill status={u.status} />
-                      </td>
-
-                      <td className="py-3 px-4 text-right space-x-2">
-                        <IconButton onClick={() => openEdit(u)} title="Edit user">
-                          Edit
-                        </IconButton>
-                        <IconButton tone="danger" onClick={() => removeUser(u)} title="Delete user">
-                          Delete
-                        </IconButton>
+                <tbody>
+                  {loading ? (
+                    <tr>
+                      <td colSpan={4} className="py-10 text-center text-slate-600">
+                        Loading users...
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                  ) : filtered.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="py-10 text-center text-slate-600">
+                        No users found.
+                      </td>
+                    </tr>
+                  ) : (
+                    filtered.map((u) => (
+                      <tr key={u._id} className="border-t hover:bg-slate-50/60">
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-3">
+                            <div className="h-10 w-10 rounded-2xl bg-emerald-600 text-white font-black flex items-center justify-center">
+                              {String(u.fullName || u.employeeId || "U")
+                                .trim()
+                                .slice(0, 1)
+                                .toUpperCase()}
+                            </div>
+                            <div>
+                              <div className="font-bold text-slate-900">{u.fullName}</div>
+                              <div className="text-xs text-slate-600">{u.employeeId}</div>
+                            </div>
+                          </div>
+                        </td>
 
-          <div className="mt-3 text-xs text-slate-500">
-            Tip: You can search by role keywords like <b>admin</b> or <b>meter</b>.
-          </div>
-        </Card>
+                        <td className="py-3 px-4">
+                          <RoleBadge role={u.role} />
+                        </td>
 
-        {/* ✅ Admin-only Settings */}
-        <WaterSettingsPanel />
+                        <td className="py-3 px-4">
+                          <StatusPill status={u.status} />
+                        </td>
+
+                        <td className="py-3 px-4 text-right space-x-2">
+                          <IconButton onClick={() => openEdit(u)} title="Edit user">
+                            Edit
+                          </IconButton>
+                          <IconButton tone="danger" onClick={() => removeUser(u)} title="Delete user">
+                            Delete
+                          </IconButton>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="mt-3 text-xs text-slate-500">
+              Tip: You can search by role keywords like <b>admin</b> or <b>meter</b>.
+            </div>
+          </Card>
+        )}
+
+        {/* Water Settings Tab */}
+        {activeTab === "water" && <WaterSettingsPanel />}
+
+       
       </div>
 
+      {/* User Add/Edit Modal */}
       <Modal open={modalOpen} title={editing ? "Edit User" : "Add User"} onClose={() => setModalOpen(false)}>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <Field label="Employee ID">
