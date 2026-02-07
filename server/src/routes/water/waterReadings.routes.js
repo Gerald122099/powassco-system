@@ -1,3 +1,4 @@
+// routes/water/waterReadings.routes.js
 import express from "express";
 import WaterReading from "../../models/WaterReading.js";
 import WaterMember from "../../models/WaterMember.js";
@@ -12,13 +13,14 @@ const guard = [requireAuth, requireRole(["admin", "water_bill_officer", "meter_r
 const adminGuard = [requireAuth, requireRole(["admin"])];
 const readerGuard = [requireAuth, requireRole(["admin", "meter_reader"])];
 
-/** helpers */
+// helpers
 const normPN = (pnNo) => String(pnNo || "").toUpperCase().trim();
 const normMeter = (m) => String(m || "").toUpperCase().trim();
 const toNum = (v) => {
   const n = Number(v);
   return Number.isFinite(n) ? n : NaN;
 };
+
 function buildAddressText(addr = {}) {
   return [addr.houseLotNo, addr.streetSitioPurok, addr.barangay, addr.municipalityCity, addr.province]
     .filter(Boolean)
@@ -27,10 +29,6 @@ function buildAddressText(addr = {}) {
 
 /**
  * GET /water/readings/members?periodKey=YYYY-MM&page=1&limit=10&search=...
- * ✅ returns:
- * - hasAnyReading (partial+complete)
- * - readMeters (meters already saved for this period)
- * - missingMeters (billing meters not yet saved)
  */
 router.get("/members", ...guard, async (req, res) => {
   try {
@@ -65,100 +63,56 @@ router.get("/members", ...guard, async (req, res) => {
       .select("pnNo meterNumber presentReading previousReading")
       .lean();
 
-    // group readings by pn
     const readingsByPn = new Map();
     for (const r of readings) {
-      const pn = normPN(r.pnNo);
-      const mn = normMeter(r.meterNumber);
-      if (!readingsByPn.has(pn)) readingsByPn.set(pn, []);
-      readingsByPn.get(pn).push({ ...r, pnNo: pn, meterNumber: mn });
+      if (!readingsByPn.has(r.pnNo)) readingsByPn.set(r.pnNo, []);
+      readingsByPn.get(r.pnNo).push(r);
     }
 
-    const bills = await WaterBill.find({ periodKey, pnNo: { $in: pnNos } })
-      .select("pnNo _id status totalDue")
-      .lean();
-    const billMap = new Map(bills.map((b) => [normPN(b.pnNo), b]));
-
     const items = members.map((m) => {
-      const pn = normPN(m.pnNo);
-
       const activeBillingMeters = (m.meters || []).filter(
         (x) => x.meterStatus === "active" && x.isBillingActive === true
       );
 
-      const memberReadings = readingsByPn.get(pn) || [];
+      const memberReadings = readingsByPn.get(m.pnNo) || [];
+      const readMeterSet = new Set(memberReadings.map((r) => String(r.meterNumber || "").toUpperCase().trim()));
 
-      // ✅ meters already read for this period
-      const readMeters = memberReadings.map((r) => normMeter(r.meterNumber));
-      const readSet = new Set(readMeters);
-
-      const billingMeters = activeBillingMeters.map((x) => normMeter(x.meterNumber));
-
-      // ✅ missing meters (active billing but not yet read)
-      const missingMeters = billingMeters.filter((mn) => !readSet.has(mn));
-
-      // ✅ partial/complete flags
-      const hasAnyReading = readMeters.length > 0;
+      const hasAnyReading = activeBillingMeters.some((meter) => readMeterSet.has(String(meter.meterNumber || "").toUpperCase().trim()));
 
       const hasReading =
         activeBillingMeters.length > 0 &&
-        billingMeters.every((mn) => readSet.has(mn));
-
-      const bill = billMap.get(pn);
+        activeBillingMeters.every((meter) => readMeterSet.has(String(meter.meterNumber || "").toUpperCase().trim()));
 
       return {
-        pnNo: pn,
+        pnNo: m.pnNo,
         accountName: m.accountName,
         billing: m.billing,
         address: m.address,
         meters: m.meters,
         addressText: buildAddressText(m.address),
 
-        // ✅ new for UI
-        hasAnyReading,
-        readMeters,
-        missingMeters,
-
-        hasReading,
-        hasBill: !!bill,
-        billId: bill?._id || null,
-        billStatus: bill?.status || null,
-        billTotalDue: bill?.totalDue ?? null,
+        // ✅ both for UI
+        hasReading,      // complete (all meters read)
+        hasAnyReading,   // partial if true but hasReading is false
       };
     });
 
     const total = await WaterMember.countDocuments(searchQuery);
-
-    // ✅ counts
-    const readCount = items.filter((x) => x.hasReading).length;        // complete
-    const anyReadCount = items.filter((x) => x.hasAnyReading).length;  // partial+complete
-    const unreadCount = total - anyReadCount; // none read
+    const completeCount = items.filter((x) => x.hasReading).length;
+    const anyReadCount = items.filter((x) => x.hasAnyReading).length;
 
     res.json({
       items,
       total,
-      readCount,
+      readCount: completeCount,
       anyReadCount,
-      unreadCount,
+      unreadCount: total - anyReadCount,
       totalPages: Math.ceil(total / limitNum),
       currentPage: pageNum,
     });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Failed to fetch members" });
-  }
-});
-
-/**
- * GET /water/readings/:id
- */
-router.get("/:id", ...guard, async (req, res) => {
-  try {
-    const reading = await WaterReading.findById(req.params.id).lean();
-    if (!reading) return res.status(404).json({ error: "Reading not found" });
-    res.json(reading);
-  } catch {
-    res.status(500).json({ error: "Failed to fetch reading" });
   }
 });
 
@@ -172,6 +126,8 @@ router.get("/:id", ...guard, async (req, res) => {
  *   generateBill: true,
  *   remarks: ""
  * }
+ *
+ * ✅ NOW: generates one bill per meter (Option C)
  */
 router.post("/", ...readerGuard, async (req, res) => {
   try {
@@ -227,7 +183,7 @@ router.post("/", ...readerGuard, async (req, res) => {
 
     // create reading docs
     const docs = normalized.map((r) => {
-      const meter = (member.meters || []).find((m) => normMeter(m.meterNumber) === r.meterNumber);
+      const meter = member.meters.find((m) => normMeter(m.meterNumber) === r.meterNumber);
 
       const raw = Math.max(0, r.presentReading - r.previousReading);
       const consumed = raw * (r.consumptionMultiplier || 1);
@@ -261,7 +217,7 @@ router.post("/", ...readerGuard, async (req, res) => {
     // update member meters lastReading
     const now = new Date();
     for (const r of normalized) {
-      const idx = (member.meters || []).findIndex((m) => normMeter(m.meterNumber) === r.meterNumber);
+      const idx = member.meters.findIndex((m) => normMeter(m.meterNumber) === r.meterNumber);
       if (idx >= 0) {
         member.meters[idx].lastReading = r.presentReading;
         member.meters[idx].lastReadingDate = now;
@@ -269,167 +225,39 @@ router.post("/", ...readerGuard, async (req, res) => {
     }
     await member.save();
 
-    const totalConsumption = docs.reduce((sum, d) => sum + (Number(d.consumed) || 0), 0);
-
-    let billResult = null;
+    // ✅ BILL PER METER
+    const bills = [];
     if (generateBill) {
-      billResult = await upsertWaterBill({
-        member,
-        periodCovered: periodKey,
-        meterReadings: docs.map((d) => ({
-          meterNumber: d.meterNumber,
-          previousReading: d.previousReading,
-          presentReading: d.presentReading,
-          multiplier: d.consumptionMultiplier || 1,
-        })),
-        readerId: userId,
-        remarks: remarks || "",
-        createdBy: userId,
-      });
+      for (const d of docs) {
+        const billResult = await upsertWaterBill({
+          member,
+          periodCovered: periodKey,
+          meterReading: {
+            meterNumber: d.meterNumber,
+            previousReading: d.previousReading,
+            presentReading: d.presentReading,
+            multiplier: d.consumptionMultiplier || 1,
+          },
+          readerId: userId,
+          remarks: remarks || "",
+          createdBy: userId,
+        });
+
+        if (billResult?.bill) bills.push(billResult.bill);
+      }
     }
+
+    const totalConsumption = docs.reduce((sum, d) => sum + (Number(d.consumed) || 0), 0);
 
     return res.status(201).json({
       message: "Readings saved successfully",
       readings: saved,
-      bill: billResult?.bill || null,
+      bills, // ✅ array of bills (one per meter)
       totalConsumption,
-      breakdown: billResult?.breakdown || null,
     });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Failed to save readings" });
-  }
-});
-
-/**
- * POST /water/readings/batch
- * Body: { items: [ { periodKey, pnNo, meterReadings: [...], generateBill, remarks } ] }
- */
-router.post("/batch", ...guard, async (req, res) => {
-  try {
-    const { items = [] } = req.body;
-    const userId = req.user.id;
-
-    if (!Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ error: "No items provided" });
-    }
-
-    const results = [];
-    const errors = [];
-
-    for (const item of items) {
-      try {
-        const periodKey = String(item.periodKey || "").trim();
-        const pnNo = normPN(item.pnNo);
-        const meterReadings = Array.isArray(item.meterReadings) ? item.meterReadings : [];
-        const generateBill = item.generateBill !== false;
-        const remarks = item.remarks || "";
-
-        if (!periodKey || !pnNo || meterReadings.length === 0) {
-          throw new Error("Missing periodKey/pnNo/meterReadings");
-        }
-
-        const member = await WaterMember.findOne({ pnNo, accountStatus: "active" });
-        if (!member) throw new Error("Member not found or inactive");
-
-        const billingMeters = (member.meters || []).filter((m) => m.meterStatus === "active" && m.isBillingActive);
-        const billingSet = new Set(billingMeters.map((m) => normMeter(m.meterNumber)));
-
-        const normalized = meterReadings.map((r) => ({
-          meterNumber: normMeter(r.meterNumber),
-          previousReading: toNum(r.previousReading),
-          presentReading: toNum(r.presentReading),
-          consumptionMultiplier: Number.isFinite(toNum(r.consumptionMultiplier)) ? toNum(r.consumptionMultiplier) : 1,
-        }));
-
-        for (const r of normalized) {
-          if (!r.meterNumber) throw new Error("meterNumber is required");
-          if (!billingSet.has(r.meterNumber)) throw new Error(`Meter ${r.meterNumber} not active billing meter`);
-          if (Number.isNaN(r.previousReading) || Number.isNaN(r.presentReading)) throw new Error(`Invalid readings for ${r.meterNumber}`);
-          if (r.presentReading < r.previousReading) throw new Error(`Present < Previous for ${r.meterNumber}`);
-          if (!Number.isFinite(r.consumptionMultiplier) || r.consumptionMultiplier <= 0) throw new Error(`Invalid multiplier for ${r.meterNumber}`);
-        }
-
-        // prevent duplicates
-        const existing = await WaterReading.find({
-          periodKey,
-          pnNo: member.pnNo,
-          meterNumber: { $in: normalized.map((x) => x.meterNumber) },
-        }).select("meterNumber");
-
-        if (existing.length) {
-          throw new Error(`Already exists for meters: ${existing.map((x) => x.meterNumber).join(", ")}`);
-        }
-
-        const docs = normalized.map((r) => {
-          const raw = Math.max(0, r.presentReading - r.previousReading);
-          const consumed = raw * r.consumptionMultiplier;
-
-          return {
-            periodKey,
-            pnNo: member.pnNo,
-            meterNumber: r.meterNumber,
-            previousReading: r.previousReading,
-            presentReading: r.presentReading,
-            rawConsumed: raw,
-            consumptionMultiplier: r.consumptionMultiplier,
-            consumed,
-            readBy: userId,
-            readingType: "manual",
-            readingStatus: "verified",
-            isEstimated: false,
-            meterSnapshot: { meterNumber: r.meterNumber },
-          };
-        });
-
-        const saved = await WaterReading.insertMany(docs);
-
-        // update member last readings
-        const now = new Date();
-        for (const r of normalized) {
-          const idx = (member.meters || []).findIndex((m) => normMeter(m.meterNumber) === r.meterNumber);
-          if (idx >= 0) {
-            member.meters[idx].lastReading = r.presentReading;
-            member.meters[idx].lastReadingDate = now;
-          }
-        }
-        await member.save();
-
-        let bill = null;
-        if (generateBill) {
-          const billResult = await upsertWaterBill({
-            member,
-            periodCovered: periodKey,
-            meterReadings: docs.map((d) => ({
-              meterNumber: d.meterNumber,
-              previousReading: d.previousReading,
-              presentReading: d.presentReading,
-              multiplier: d.consumptionMultiplier || 1,
-            })),
-            readerId: userId,
-            remarks,
-            createdBy: userId,
-          });
-          bill = billResult?.bill || null;
-        }
-
-        results.push({ pnNo: member.pnNo, periodKey, saved: saved.length, billId: bill?._id || null });
-      } catch (err) {
-        errors.push({ pnNo: item?.pnNo, periodKey: item?.periodKey, error: err.message });
-      }
-    }
-
-    res.json({
-      ok: true,
-      processed: items.length,
-      success: results.length,
-      failed: errors.length,
-      results,
-      errors,
-    });
-  } catch (error) {
-    console.error("Error batch readings:", error);
-    res.status(500).json({ error: "Failed to save batch readings" });
   }
 });
 

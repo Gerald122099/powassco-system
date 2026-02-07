@@ -1,3 +1,10 @@
+// BillsPanel.jsx (UPDATED for Option C: separate bill per meter)
+// ✅ Fixes:
+// - Create Bill flow supports multiple meters properly (billing meters derived even if virtuals missing)
+// - Auto-fills previousReading from selected meter.lastReading
+// - Uses meterNumber + periodKey logic in preview/create payloads
+// - UI stays same, but meter selection is reliable
+
 import { useEffect, useMemo, useState } from "react";
 import Card from "../../../components/Card";
 import Modal from "../../../components/Modal";
@@ -11,13 +18,28 @@ function money(n) {
   return x.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+// ✅ robust: works even if backend doesn't include virtuals (billingMeters)
+function getBillingMeters(member) {
+  if (Array.isArray(member?.billingMeters) && member.billingMeters.length > 0) {
+    return [...member.billingMeters].sort((a, b) => (a.billingSequence || 0) - (b.billingSequence || 0));
+  }
+  const meters = member?.meters || [];
+  return meters
+    .filter((m) => m?.meterStatus === "active" && m?.isBillingActive === true)
+    .sort((a, b) => (a.billingSequence || 0) - (b.billingSequence || 0));
+}
+
+function normUpper(v) {
+  return String(v || "").toUpperCase().trim();
+}
+
 export default function BillsPanel() {
   const { token } = useAuth();
 
   const [q, setQ] = useState("");
   const [status, setStatus] = useState(""); // "" | "unpaid" | "overdue" | "paid"
   const [classification, setClassification] = useState(""); // "" | "residential" | "commercial"
-  const [period, setPeriod] = useState(""); // YYYY-MM format
+  const [period, setPeriod] = useState(""); // YYYY-MM
   const [page, setPage] = useState(1);
 
   const [items, setItems] = useState([]);
@@ -28,9 +50,9 @@ export default function BillsPanel() {
   const [err, setErr] = useState("");
   const [toast, setToast] = useState("");
 
-  // New bill creation modal
+  // Create New Bill Modal (Option C)
   const [createModalOpen, setCreateModalOpen] = useState(false);
-  const [createStep, setCreateStep] = useState("search"); // "search" | "preview" | "create"
+  const [createStep, setCreateStep] = useState("search"); // "search" | "meter" | "details" | "preview"
   const [createError, setCreateError] = useState("");
   const [createLoading, setCreateLoading] = useState(false);
   const [pnSearch, setPnSearch] = useState("");
@@ -41,9 +63,9 @@ export default function BillsPanel() {
     periodCovered: "",
     previousReading: "",
     presentReading: "",
-    readingDate: new Date().toISOString().split('T')[0],
+    readingDate: new Date().toISOString().split("T")[0],
     remarks: "",
-    meterNumber: ""
+    meterNumber: "",
   });
 
   // pay modal
@@ -58,38 +80,31 @@ export default function BillsPanel() {
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / PAGE_SIZE)), [total]);
 
-  // Generate current and previous months for period filter
-  const generatePeriodOptions = () => {
+  // Period options (last 12 months)
+  const periodOptions = useMemo(() => {
     const options = [];
     const now = new Date();
-    
-    // Add current and previous 12 months
     for (let i = 0; i < 12; i++) {
       const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const value = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-      const label = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+      const value = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+      const label = date.toLocaleDateString("en-US", { month: "short", year: "numeric" });
       options.push({ value, label });
     }
-    
     return options;
-  };
-
-  const periodOptions = generatePeriodOptions();
+  }, []);
 
   async function load() {
     setLoading(true);
     setErr("");
     try {
       let url = `/water/bills?q=${encodeURIComponent(q)}&status=${encodeURIComponent(status)}&page=${page}&limit=${PAGE_SIZE}`;
-      
-      if (classification) {
-        url += `&classification=${encodeURIComponent(classification)}`;
-      }
-      
+
+      if (classification) url += `&classification=${encodeURIComponent(classification)}`;
+
       if (period) {
-        url += `&month=${period.split('-')[1]}&year=${period.split('-')[0]}`;
+        url += `&month=${period.split("-")[1]}&year=${period.split("-")[0]}`;
       }
-      
+
       const data = await apiFetch(url, { token });
       setItems(data.items || []);
       setTotal(data.total || 0);
@@ -135,23 +150,31 @@ export default function BillsPanel() {
     }
   }
 
-  // New bill creation functions
+  // ---------- Create Bill (Option C) ----------
+  function getCurrentPeriod() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    return `${year}-${month}`;
+  }
+
   function openCreateModal() {
     setCreateModalOpen(true);
     setCreateStep("search");
     setCreateError("");
-    setCreateForm({
-      pnNo: "",
-      periodCovered: "",
-      previousReading: "",
-      presentReading: "",
-      readingDate: new Date().toISOString().split('T')[0],
-      remarks: "",
-      meterNumber: ""
-    });
+    setCreateLoading(false);
+    setPnSearch("");
     setMemberInfo(null);
     setBillPreview(null);
-    setPnSearch("");
+    setCreateForm({
+      pnNo: "",
+      periodCovered: getCurrentPeriod(),
+      previousReading: "",
+      presentReading: "",
+      readingDate: new Date().toISOString().split("T")[0],
+      remarks: "",
+      meterNumber: "",
+    });
   }
 
   async function searchMember() {
@@ -165,7 +188,7 @@ export default function BillsPanel() {
 
     try {
       const member = await apiFetch(`/water/members/pn/${pnSearch.trim()}`, { token });
-      
+
       if (!member) {
         setCreateError("Member not found");
         return;
@@ -176,20 +199,29 @@ export default function BillsPanel() {
         return;
       }
 
-      setMemberInfo(member);
-      setCreateForm(prev => ({
-        ...prev,
-        pnNo: member.pnNo,
-        periodCovered: getCurrentPeriod(),
-        meterNumber: member.primaryMeter?.meterNumber || member.meters?.[0]?.meterNumber || ""
-      }));
-      
-      // If member has multiple meters, show meter selection
-      if (member.meters && member.meters.length > 1) {
-        setCreateStep("meter");
-      } else {
-        setCreateStep("details");
+      const meters = getBillingMeters(member);
+      if (meters.length === 0) {
+        setCreateError("No active billing meters found for this account.");
+        return;
       }
+
+      setMemberInfo(member);
+
+      // Default to first billing meter but still allow selection
+      const first = meters[0];
+
+      setCreateForm((prev) => ({
+        ...prev,
+        pnNo: normUpper(member.pnNo),
+        periodCovered: prev.periodCovered || getCurrentPeriod(),
+        meterNumber: first?.meterNumber || "",
+        previousReading: first?.lastReading ?? 0,
+        presentReading: "",
+      }));
+
+      // If multiple billing meters, go meter step
+      if (meters.length > 1) setCreateStep("meter");
+      else setCreateStep("details");
     } catch (e) {
       setCreateError(e.message || "Failed to find member");
     } finally {
@@ -197,15 +229,30 @@ export default function BillsPanel() {
     }
   }
 
-  function getCurrentPeriod() {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    return `${year}-${month}`;
+  function chooseMeter(meterNumber) {
+    if (!memberInfo) return;
+
+    const mn = normUpper(meterNumber);
+    const meters = getBillingMeters(memberInfo);
+    const meter = meters.find((m) => normUpper(m.meterNumber) === mn);
+
+    setCreateForm((prev) => ({
+      ...prev,
+      meterNumber: meter?.meterNumber || mn,
+      previousReading: meter?.lastReading ?? 0,
+      presentReading: "",
+    }));
+
+    setCreateStep("details");
   }
 
   async function generatePreview() {
-    if (!createForm.previousReading || !createForm.presentReading) {
+    // required
+    if (!createForm.pnNo || !createForm.meterNumber) {
+      setCreateError("PN No and meter are required");
+      return;
+    }
+    if (createForm.previousReading === "" || createForm.presentReading === "") {
       setCreateError("Previous and present readings are required");
       return;
     }
@@ -213,11 +260,10 @@ export default function BillsPanel() {
     const prev = parseFloat(createForm.previousReading);
     const pres = parseFloat(createForm.presentReading);
 
-    if (isNaN(prev) || isNaN(pres)) {
+    if (!Number.isFinite(prev) || !Number.isFinite(pres)) {
       setCreateError("Please enter valid numbers for readings");
       return;
     }
-
     if (pres < prev) {
       setCreateError("Present reading cannot be less than previous reading");
       return;
@@ -234,8 +280,9 @@ export default function BillsPanel() {
           pnNo: createForm.pnNo,
           previousReading: prev,
           presentReading: pres,
-          meterNumber: createForm.meterNumber || undefined
-        }
+          meterNumber: createForm.meterNumber, // ✅ Option C
+          periodCovered: createForm.periodCovered, // optional if you want for display
+        },
       });
 
       setBillPreview(preview);
@@ -252,16 +299,20 @@ export default function BillsPanel() {
     setCreateError("");
 
     try {
-      const billData = {
-        ...createForm,
+      const payload = {
+        pnNo: createForm.pnNo,
+        periodCovered: createForm.periodCovered,
+        meterNumber: createForm.meterNumber, // ✅ Option C (identity)
         previousReading: parseFloat(createForm.previousReading),
-        presentReading: parseFloat(createForm.presentReading)
+        presentReading: parseFloat(createForm.presentReading),
+        readingDate: createForm.readingDate,
+        remarks: createForm.remarks || "",
       };
 
-      const result = await apiFetch("/water/bills", {
+      await apiFetch("/water/bills", {
         method: "POST",
         token,
-        body: billData
+        body: payload,
       });
 
       setCreateModalOpen(false);
@@ -275,23 +326,13 @@ export default function BillsPanel() {
     }
   }
 
-  // Helper to get minimum charge
-  function getMinimumCharge(classification) {
-    return classification === "residential" ? "₱74.00" : "₱442.50";
-  }
-
-  // Helper to get consumption threshold
-  function getConsumptionThreshold(classification) {
-    return classification === "residential" ? 5 : 15;
-  }
-
   return (
     <Card>
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <div className="text-lg font-black text-slate-900">Bills</div>
           <div className="text-xs text-slate-600 mt-1">
-            Search PN No / Account Name • Filter status • Pay bills with OR and method.
+            Option C: Separate bills per meter • Search PN / Name • Filter status • Pay bills with OR and method.
           </div>
         </div>
 
@@ -310,7 +351,7 @@ export default function BillsPanel() {
                 setPage(1);
                 setQ(e.target.value);
               }}
-              placeholder="Search PN No / Account Name / Period / Meter"
+              placeholder="Search PN / Account / Period / Meter"
               className="w-full sm:w-80 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300"
             />
 
@@ -350,18 +391,20 @@ export default function BillsPanel() {
               className="rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm"
             >
               <option value="">All Periods</option>
-              {periodOptions.map(opt => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              {periodOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
               ))}
             </select>
           </div>
-          
+
           {/* Summary Stats */}
-          {summary.totalBills > 0 && (
+          {summary?.totalBills > 0 && (
             <div className="flex flex-wrap gap-3 mt-2">
               <div className="text-xs text-slate-600">
-                Total: <span className="font-bold">{summary.totalBills}</span> bills | 
-                Amount: <span className="font-bold text-emerald-600">₱{money(summary.totalAmount || 0)}</span>
+                Total: <span className="font-bold">{summary.totalBills}</span> bills | Amount:{" "}
+                <span className="font-bold text-emerald-600">₱{money(summary.totalAmount || 0)}</span>
               </div>
               {summary.totalDiscount > 0 && (
                 <div className="text-xs text-slate-600">
@@ -438,15 +481,14 @@ export default function BillsPanel() {
                     ? "bg-red-50 border-red-200 text-red-700"
                     : "bg-amber-50 border-amber-200 text-amber-800";
 
-                const classificationBadge = b.classification === "residential" 
-                  ? "bg-blue-100 text-blue-800" 
-                  : "bg-purple-100 text-purple-800";
+                const classificationBadge =
+                  b.classification === "residential" ? "bg-blue-100 text-blue-800" : "bg-purple-100 text-purple-800";
 
                 const hasTariff = !!b.tariffUsed;
                 const needsReview = b.needsTariffReview || !hasTariff;
 
                 return (
-                  <tr key={b._id} className={`border-t hover:bg-slate-50/60 ${needsReview ? 'bg-amber-50/30' : ''}`}>
+                  <tr key={b._id} className={`border-t hover:bg-slate-50/60 ${needsReview ? "bg-amber-50/30" : ""}`}>
                     <td className="py-3 px-4 font-bold text-slate-900">{b.pnNo}</td>
                     <td className="py-3 px-4 max-w-[180px] truncate">{b.accountName}</td>
                     <td className="py-3 px-4">
@@ -455,29 +497,17 @@ export default function BillsPanel() {
                       </span>
                     </td>
                     <td className="py-3 px-4">{b.periodCovered}</td>
-                    <td className="py-3 px-4 font-semibold">{b.consumed} m³</td>
+                    <td className="py-3 px-4 font-semibold">{Number(b.consumed || 0)} m³</td>
+                    <td className="py-3 px-4 text-xs font-bold text-slate-900">{b.meterNumber || "—"}</td>
                     <td className="py-3 px-4 text-xs">
-                      {b.meterNumber || (
-                        <span className="text-slate-400" title="No meter specified">—</span>
-                      )}
-                    </td>
-                    <td className="py-3 px-4 text-xs">
-                      {hasTariff ? b.tariffUsed.tier : (
-                        <span className="text-amber-600" title="No tariff applied">—</span>
-                      )}
+                      {hasTariff ? b.tariffUsed.tier : <span className="text-amber-600" title="No tariff applied">—</span>}
                     </td>
                     <td className="py-3 px-4 text-slate-600">
-                      {hasTariff ? (
-                        `₱${b.tariffUsed.ratePerCubic?.toFixed(2)}`
-                      ) : (
-                        <span className="text-amber-600 text-xs" title="No tariff applied">—</span>
-                      )}
+                      {hasTariff ? `₱${Number(b.tariffUsed.ratePerCubic || 0).toFixed(2)}` : <span className="text-amber-600 text-xs">—</span>}
                     </td>
+                    <td className="py-3 px-4">₱{money(b.baseAmount || b.amount)}</td>
                     <td className="py-3 px-4">
-                      ₱{money(b.baseAmount || b.amount)}
-                    </td>
-                    <td className="py-3 px-4">
-                      {b.discount > 0 ? (
+                      {Number(b.discount || 0) > 0 ? (
                         <div className="flex flex-col">
                           <span className="text-emerald-600 font-bold">-₱{money(b.discount)}</span>
                           {b.discountReason && (
@@ -491,7 +521,7 @@ export default function BillsPanel() {
                       )}
                     </td>
                     <td className="py-3 px-4">
-                      {b.penaltyApplied > 0 ? (
+                      {Number(b.penaltyApplied || 0) > 0 ? (
                         <span className="text-red-600 font-bold">₱{money(b.penaltyApplied)}</span>
                       ) : (
                         <span className="text-slate-400">—</span>
@@ -524,9 +554,7 @@ export default function BillsPanel() {
                           Pay
                         </button>
                       ) : (
-                        <span className="text-xs text-slate-500">
-                          Paid {b.paidAt ? new Date(b.paidAt).toLocaleDateString() : ""}
-                        </span>
+                        <span className="text-xs text-slate-500">Paid {b.paidAt ? new Date(b.paidAt).toLocaleDateString() : ""}</span>
                       )}
                     </td>
                   </tr>
@@ -549,11 +577,7 @@ export default function BillsPanel() {
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold disabled:opacity-50"
-            disabled={page <= 1}
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-          >
+          <button className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold disabled:opacity-50" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
             Prev
           </button>
 
@@ -561,25 +585,19 @@ export default function BillsPanel() {
             Page {page} / {totalPages}
           </div>
 
-          <button
-            className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold disabled:opacity-50"
-            disabled={page >= totalPages}
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-          >
+          <button className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold disabled:opacity-50" disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>
             Next
           </button>
         </div>
       </div>
 
       {/* Create New Bill Modal */}
-      <Modal open={createModalOpen} title="Create New Bill" onClose={() => setCreateModalOpen(false)} size="lg">
+      <Modal open={createModalOpen} title="Create New Bill (Per Meter)" onClose={() => setCreateModalOpen(false)} size="lg">
         <div className="space-y-4">
           {createStep === "search" && (
             <>
-              <div className="text-sm text-slate-600">
-                Enter the PN Number to start creating a bill.
-              </div>
-              
+              <div className="text-sm text-slate-600">Enter the PN Number to start creating a bill.</div>
+
               <div>
                 <label className="text-sm font-semibold text-slate-700">PN Number</label>
                 <input
@@ -587,28 +605,17 @@ export default function BillsPanel() {
                   value={pnSearch}
                   onChange={(e) => setPnSearch(e.target.value.toUpperCase())}
                   placeholder="PN-001"
-                  onKeyPress={(e) => e.key === 'Enter' && searchMember()}
+                  onKeyDown={(e) => e.key === "Enter" && searchMember()}
                 />
               </div>
-              
-              {createError && (
-                <div className="rounded-xl bg-red-50 border border-red-100 text-red-700 px-3 py-2 text-sm">
-                  {createError}
-                </div>
-              )}
-              
+
+              {createError && <div className="rounded-xl bg-red-50 border border-red-100 text-red-700 px-3 py-2 text-sm">{createError}</div>}
+
               <div className="flex justify-end gap-2">
-                <button
-                  className="rounded-xl border border-slate-200 px-4 py-2.5"
-                  onClick={() => setCreateModalOpen(false)}
-                >
+                <button className="rounded-xl border border-slate-200 px-4 py-2.5" onClick={() => setCreateModalOpen(false)}>
                   Cancel
                 </button>
-                <button
-                  className="rounded-xl bg-emerald-600 text-white px-4 py-2.5 font-semibold hover:bg-emerald-700"
-                  onClick={searchMember}
-                  disabled={createLoading}
-                >
+                <button className="rounded-xl bg-emerald-600 text-white px-4 py-2.5 font-semibold hover:bg-emerald-700" onClick={searchMember} disabled={createLoading}>
                   {createLoading ? "Searching..." : "Find Member"}
                 </button>
               </div>
@@ -622,56 +629,40 @@ export default function BillsPanel() {
                 <div className="text-sm text-blue-700 mt-1">PN No: {memberInfo.pnNo}</div>
                 <div className="text-sm text-blue-700">Classification: {memberInfo.billing?.classification || "residential"}</div>
               </div>
-              
-              <div className="text-sm text-slate-600">
-                This member has multiple meters. Select which meter to bill:
-              </div>
-              
+
+              <div className="text-sm text-slate-600">Select which meter to bill:</div>
+
               <div className="space-y-2">
-                {memberInfo.meters.map((meter, index) => (
-                  <div 
-                    key={index}
-                    className={`p-3 border rounded-lg cursor-pointer ${
-                      createForm.meterNumber === meter.meterNumber 
-                        ? 'border-emerald-500 bg-emerald-50' 
-                        : 'border-slate-200 hover:bg-slate-50'
-                    }`}
-                    onClick={() => setCreateForm(prev => ({ ...prev, meterNumber: meter.meterNumber }))}
-                  >
-                    <div className="font-bold text-slate-900">{meter.meterNumber}</div>
-                    <div className="text-xs text-slate-600 mt-1">
-                      {meter.meterBrand} {meter.meterModel} • Size: {meter.meterSize}
-                    </div>
-                    <div className="text-xs text-slate-500 mt-1">
-                      Location: {meter.location?.description || "Not specified"}
-                    </div>
-                    {meter.lastReading > 0 && (
-                      <div className="text-xs text-slate-500 mt-1">
-                        Last reading: {meter.lastReading} m³
+                {getBillingMeters(memberInfo).map((meter, index) => {
+                  const active = normUpper(createForm.meterNumber) === normUpper(meter.meterNumber);
+                  return (
+                    <button
+                      key={meter.meterNumber || index}
+                      type="button"
+                      className={`w-full text-left p-3 border rounded-xl ${
+                        active ? "border-emerald-500 bg-emerald-50" : "border-slate-200 hover:bg-slate-50"
+                      }`}
+                      onClick={() => chooseMeter(meter.meterNumber)}
+                    >
+                      <div className="font-bold text-slate-900">{meter.meterNumber}</div>
+                      <div className="text-xs text-slate-600 mt-1">
+                        {meter.meterBrand} {meter.meterModel} • Size: {meter.meterSize || "—"}
                       </div>
-                    )}
-                  </div>
-                ))}
+                      <div className="text-xs text-slate-500 mt-1">
+                        Last reading: {Number(meter.lastReading || 0).toFixed(2)} • Location: {meter.location?.description || "—"}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
-              
-              {createError && (
-                <div className="rounded-xl bg-red-50 border border-red-100 text-red-700 px-3 py-2 text-sm">
-                  {createError}
-                </div>
-              )}
-              
+
+              {createError && <div className="rounded-xl bg-red-50 border border-red-100 text-red-700 px-3 py-2 text-sm">{createError}</div>}
+
               <div className="flex justify-end gap-2">
-                <button
-                  className="rounded-xl border border-slate-200 px-4 py-2.5"
-                  onClick={() => setCreateStep("search")}
-                >
+                <button className="rounded-xl border border-slate-200 px-4 py-2.5" onClick={() => setCreateStep("search")}>
                   Back
                 </button>
-                <button
-                  className="rounded-xl bg-emerald-600 text-white px-4 py-2.5 font-semibold hover:bg-emerald-700"
-                  onClick={() => setCreateStep("details")}
-                  disabled={!createForm.meterNumber}
-                >
+                <button className="rounded-xl bg-emerald-600 text-white px-4 py-2.5 font-semibold hover:bg-emerald-700" onClick={() => setCreateStep("details")} disabled={!createForm.meterNumber}>
                   Continue
                 </button>
               </div>
@@ -683,17 +674,14 @@ export default function BillsPanel() {
               <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
                 <div className="font-bold text-blue-900">{memberInfo.accountName}</div>
                 <div className="text-sm text-blue-700 mt-1">
-                  PN No: {memberInfo.pnNo} • 
-                  Classification: {memberInfo.billing?.classification || "residential"} • 
-                  Meter: {createForm.meterNumber || memberInfo.primaryMeter?.meterNumber || "Not specified"}
+                  PN No: {memberInfo.pnNo} • Classification: {memberInfo.billing?.classification || "residential"} • Meter:{" "}
+                  <span className="font-bold">{createForm.meterNumber || "—"}</span>
                 </div>
                 {memberInfo.personal?.isSeniorCitizen && (
-                  <div className="text-sm text-amber-700 mt-1">
-                    👴 Senior Citizen • Discount Rate: {memberInfo.personal?.seniorDiscountRate || 5}%
-                  </div>
+                  <div className="text-sm text-amber-700 mt-1">👴 Senior Citizen • Discount Rate: {memberInfo.personal?.seniorDiscountRate || 5}%</div>
                 )}
               </div>
-              
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <Field label="Period Covered">
                   <input
@@ -703,7 +691,7 @@ export default function BillsPanel() {
                     onChange={(e) => setCreateForm({ ...createForm, periodCovered: e.target.value })}
                   />
                 </Field>
-                
+
                 <Field label="Reading Date">
                   <input
                     type="date"
@@ -712,7 +700,7 @@ export default function BillsPanel() {
                     onChange={(e) => setCreateForm({ ...createForm, readingDate: e.target.value })}
                   />
                 </Field>
-                
+
                 <Field label="Previous Reading (m³)" required>
                   <input
                     type="number"
@@ -724,7 +712,7 @@ export default function BillsPanel() {
                     placeholder="0"
                   />
                 </Field>
-                
+
                 <Field label="Present Reading (m³)" required>
                   <input
                     type="number"
@@ -736,7 +724,7 @@ export default function BillsPanel() {
                     placeholder="0"
                   />
                 </Field>
-                
+
                 <Field label="Remarks (Optional)">
                   <input
                     type="text"
@@ -747,25 +735,14 @@ export default function BillsPanel() {
                   />
                 </Field>
               </div>
-              
-              {createError && (
-                <div className="rounded-xl bg-red-50 border border-red-100 text-red-700 px-3 py-2 text-sm">
-                  {createError}
-                </div>
-              )}
-              
+
+              {createError && <div className="rounded-xl bg-red-50 border border-red-100 text-red-700 px-3 py-2 text-sm">{createError}</div>}
+
               <div className="flex justify-end gap-2">
-                <button
-                  className="rounded-xl border border-slate-200 px-4 py-2.5"
-                  onClick={() => setCreateStep(memberInfo.meters?.length > 1 ? "meter" : "search")}
-                >
+                <button className="rounded-xl border border-slate-200 px-4 py-2.5" onClick={() => setCreateStep(getBillingMeters(memberInfo).length > 1 ? "meter" : "search")}>
                   Back
                 </button>
-                <button
-                  className="rounded-xl bg-emerald-600 text-white px-4 py-2.5 font-semibold hover:bg-emerald-700"
-                  onClick={generatePreview}
-                  disabled={createLoading || !createForm.previousReading || !createForm.presentReading}
-                >
+                <button className="rounded-xl bg-emerald-600 text-white px-4 py-2.5 font-semibold hover:bg-emerald-700" onClick={generatePreview} disabled={createLoading || !createForm.previousReading || !createForm.presentReading}>
                   {createLoading ? "Generating..." : "Preview Bill"}
                 </button>
               </div>
@@ -776,12 +753,10 @@ export default function BillsPanel() {
             <>
               <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
                 <div className="font-bold text-emerald-900">Bill Preview</div>
-                <div className="text-sm text-emerald-700 mt-1">
-                  Review the bill details before creating.
-                </div>
+                <div className="text-sm text-emerald-700 mt-1">Review the bill details before creating.</div>
               </div>
-              
-              <div className="space-y-4">
+
+              <div className="rounded-2xl border border-slate-200 p-4">
                 <div className="grid grid-cols-2 gap-3">
                   <Info label="Account Name" value={billPreview.accountName} />
                   <Info label="PN Number" value={billPreview.pnNo} />
@@ -792,121 +767,37 @@ export default function BillsPanel() {
                   <Info label="Consumption" value={`${billPreview.consumption} m³`} />
                   <Info label="Period" value={createForm.periodCovered} />
                 </div>
-                
-                <div className="rounded-2xl border border-slate-200 p-4">
-                  <div className="font-bold text-slate-900 mb-3">Bill Calculation</div>
-                  
-                  {/* Tariff Info */}
-                  {billPreview.preview?.tariffUsed && (
-                    <div className="mb-4 p-3 rounded-xl bg-slate-50">
-                      <div className="text-sm font-medium text-slate-700">Applied Tariff</div>
-                      <div className="flex justify-between items-center mt-2">
-                        <div>
-                          <div className="font-bold text-slate-900">{billPreview.preview.tariffUsed.tier} Tier</div>
-                          <div className="text-xs text-slate-500 mt-1">
-                            {billPreview.preview.tariffUsed.description || 
-                              `Consumption: ${billPreview.preview.tariffUsed.minConsumption}-${billPreview.preview.tariffUsed.maxConsumption} m³`}
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-lg font-bold text-slate-900">
-                            ₱{billPreview.preview.tariffUsed.ratePerCubic?.toFixed(2)}/m³
-                          </div>
-                        </div>
-                      </div>
+
+                <div className="mt-4 space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">Base Amount</span>
+                    <span className="font-bold">₱{money(billPreview.preview?.baseAmount || 0)}</span>
+                  </div>
+                  {Number(billPreview.preview?.discount || 0) > 0 && (
+                    <div className="flex justify-between text-emerald-700">
+                      <span>Discount ({billPreview.preview?.discountReason || "Discount"})</span>
+                      <span className="font-bold">-₱{money(billPreview.preview?.discount || 0)}</span>
                     </div>
                   )}
-                  
-                  {/* Calculation Breakdown */}
-                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <span className="text-slate-600">Minimum Charge:</span>
-                      <span className="font-bold">{getMinimumCharge(billPreview.classification)}</span>
-                    </div>
-                    
-                    {billPreview.consumption > getConsumptionThreshold(billPreview.classification) && (
-                      <>
-                        <div className="flex justify-between">
-                          <span className="text-slate-600">Excess Consumption:</span>
-                          <span className="font-bold">
-                            {billPreview.consumption - getConsumptionThreshold(billPreview.classification)} m³
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-600">Excess Rate:</span>
-                          <span className="font-bold">
-                            ₱{billPreview.preview?.tariffUsed?.ratePerCubic?.toFixed(2)}/m³
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-600">Excess Amount:</span>
-                          <span className="font-bold">
-                            ₱{money(
-                              (billPreview.consumption - getConsumptionThreshold(billPreview.classification)) * 
-                              (billPreview.preview?.tariffUsed?.ratePerCubic || 0)
-                            )}
-                          </span>
-                        </div>
-                      </>
-                    )}
-                    
-                    <div className="flex justify-between text-lg font-bold text-slate-900">
-                      <span>Base Amount:</span>
-                      <span>₱{money(billPreview.preview?.baseAmount || 0)}</span>
-                    </div>
-                    
-                    {billPreview.preview?.discount > 0 && (
-                      <div className="flex justify-between text-emerald-600">
-                        <span>Senior Citizen Discount:</span>
-                        <span className="font-bold">-₱{money(billPreview.preview?.discount || 0)}</span>
-                      </div>
-                    )}
-                    
-                    <hr className="border-slate-200 my-2" />
-                    
-                    <div className="flex justify-between text-lg font-bold text-slate-900">
-                      <span>Total Amount:</span>
-                      <span>₱{money(billPreview.preview?.amount || 0)}</span>
-                    </div>
+                  <div className="flex justify-between text-lg font-black">
+                    <span>Total</span>
+                    <span>₱{money(billPreview.preview?.amount || 0)}</span>
                   </div>
+                  {billPreview.preview?.tariffUsed && (
+                    <div className="text-xs text-slate-500">
+                      Tariff: {billPreview.preview.tariffUsed.tier} @ ₱{Number(billPreview.preview.tariffUsed.ratePerCubic || 0).toFixed(2)}/m³
+                    </div>
+                  )}
                 </div>
-                
-                {/* Senior Citizen Info */}
-                {billPreview.member?.isSeniorCitizen && (
-                  <div className="rounded-2xl border border-yellow-200 bg-yellow-50 p-4">
-                    <div className="flex items-start gap-2">
-                      <span className="text-yellow-600">👴</span>
-                      <div className="text-sm text-yellow-800">
-                        <div className="font-medium">Senior Citizen Account</div>
-                        <div className="mt-1 text-xs">
-                          Senior ID: {billPreview.member?.seniorId || "Not provided"} • 
-                          Discount Rate: {billPreview.member?.seniorDiscountRate || 5}% • 
-                          Applicable to Tiers: {billPreview.member?.discountEligibleTiers?.join(", ") || "31-40, 41+"}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
               </div>
-              
-              {createError && (
-                <div className="rounded-xl bg-red-50 border border-red-100 text-red-700 px-3 py-2 text-sm">
-                  {createError}
-                </div>
-              )}
-              
+
+              {createError && <div className="rounded-xl bg-red-50 border border-red-100 text-red-700 px-3 py-2 text-sm">{createError}</div>}
+
               <div className="flex justify-end gap-2">
-                <button
-                  className="rounded-xl border border-slate-200 px-4 py-2.5"
-                  onClick={() => setCreateStep("details")}
-                >
+                <button className="rounded-xl border border-slate-200 px-4 py-2.5" onClick={() => setCreateStep("details")}>
                   Back
                 </button>
-                <button
-                  className="rounded-xl bg-emerald-600 text-white px-4 py-2.5 font-semibold hover:bg-emerald-700"
-                  onClick={createBill}
-                  disabled={createLoading}
-                >
+                <button className="rounded-xl bg-emerald-600 text-white px-4 py-2.5 font-semibold hover:bg-emerald-700" onClick={createBill} disabled={createLoading}>
                   {createLoading ? "Creating..." : "Create Bill"}
                 </button>
               </div>
@@ -919,202 +810,13 @@ export default function BillsPanel() {
       <Modal open={detailsOpen} title="Bill Details" onClose={() => setDetailsOpen(false)} size="lg">
         {selectedBill && (
           <div className="space-y-4">
-            {/* Header */}
             <div className="rounded-2xl border border-slate-200 p-4">
-              <div className="flex justify-between items-start">
-                <div>
-                  <div className="font-bold text-slate-900 text-lg">{selectedBill.accountName}</div>
-                  <div className="text-sm text-slate-600 mt-1">
-                    {selectedBill.pnNo} • {selectedBill.classification?.toUpperCase()} • {selectedBill.periodCovered}
-                  </div>
-                </div>
-                <div className="flex flex-col items-end gap-2">
-                  <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-bold ${
-                    selectedBill.status === "paid"
-                      ? "bg-green-50 border-green-200 text-green-700"
-                      : selectedBill.status === "overdue"
-                      ? "bg-red-50 border-red-200 text-red-700"
-                      : "bg-amber-50 border-amber-200 text-amber-800"
-                  }`}>
-                    {selectedBill.status}
-                  </span>
-                  {(!selectedBill.tariffUsed || selectedBill.needsTariffReview) && (
-                    <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-bold text-amber-800">
-                      ⚠️ Needs Tariff Review
-                    </span>
-                  )}
-                </div>
+              <div className="font-bold text-slate-900 text-lg">{selectedBill.accountName}</div>
+              <div className="text-sm text-slate-600 mt-1">
+                {selectedBill.pnNo} • {selectedBill.classification?.toUpperCase()} • {selectedBill.periodCovered} • Meter{" "}
+                <span className="font-bold">{selectedBill.meterNumber}</span>
               </div>
-              
-              <div className="mt-3 text-sm text-slate-600">
-                {selectedBill.addressText || "No address"}
-                {selectedBill.meterNumber && (
-                  <span className="ml-2 text-blue-600">• Meter: {selectedBill.meterNumber}</span>
-                )}
-              </div>
-            </div>
-
-            {/* Consumption Details */}
-            <div className="rounded-2xl border border-slate-200 p-4">
-              <div className="font-bold text-slate-900 mb-3">Consumption Details</div>
-              <div className="grid grid-cols-3 gap-4">
-                <div className="text-center p-3 rounded-xl bg-slate-50">
-                  <div className="text-xs text-slate-500">Previous Reading</div>
-                  <div className="text-lg font-bold text-slate-900">{selectedBill.previousReading}</div>
-                </div>
-                <div className="text-center p-3 rounded-xl bg-slate-50">
-                  <div className="text-xs text-slate-500">Present Reading</div>
-                  <div className="text-lg font-bold text-slate-900">{selectedBill.presentReading}</div>
-                </div>
-                <div className="text-center p-3 rounded-xl bg-blue-50 border border-blue-100">
-                  <div className="text-xs text-blue-600">Consumption</div>
-                  <div className="text-lg font-bold text-blue-700">{selectedBill.consumed} m³</div>
-                </div>
-              </div>
-            </div>
-
-            {/* Tariff & Calculation */}
-            <div className="rounded-2xl border border-slate-200 p-4">
-              <div className="font-bold text-slate-900 mb-3">Bill Calculation</div>
-              
-              {/* Tariff Info */}
-              {selectedBill.tariffUsed ? (
-                <div className="mb-4 p-3 rounded-xl bg-slate-50">
-                  <div className="text-sm font-medium text-slate-700">Applied Tariff</div>
-                  <div className="flex justify-between items-center mt-2">
-                    <div>
-                      <div className="font-bold text-slate-900">{selectedBill.tariffUsed.tier} Tier</div>
-                      <div className="text-xs text-slate-500 mt-1">
-                        {selectedBill.tariffUsed.description || 
-                         `Consumption: ${selectedBill.tariffUsed.minConsumption}-${selectedBill.tariffUsed.maxConsumption} m³ • 
-                         Rate: ₱${selectedBill.tariffUsed.ratePerCubic?.toFixed(2)}/m³`}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-lg font-bold text-slate-900">
-                        ₱{selectedBill.tariffUsed.ratePerCubic?.toFixed(2)}/m³
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="mb-4 p-3 rounded-xl bg-red-50 border border-red-100">
-                  <div className="text-sm font-medium text-red-700">⚠️ No Tariff Applied</div>
-                  <div className="text-xs text-red-600 mt-1">
-                    This bill was created without a tariff. Please recreate it with current tariff settings.
-                  </div>
-                </div>
-              )}
-
-              {/* Calculation Breakdown */}
-              <div className="space-y-2">
-                {/* Minimum Charge */}
-                <div className="flex justify-between">
-                  <span className="text-slate-600">Minimum Charge:</span>
-                  <span className="font-bold">
-                    {selectedBill.classification === "residential" ? "₱74.00" : "₱442.50"}
-                  </span>
-                </div>
-                
-                {/* Excess Consumption if applicable */}
-                {selectedBill.consumed > (selectedBill.classification === "residential" ? 5 : 15) && (
-                  <>
-                    <div className="flex justify-between">
-                      <span className="text-slate-600">Excess Consumption:</span>
-                      <span className="font-bold">
-                        {selectedBill.consumed - (selectedBill.classification === "residential" ? 5 : 15)} m³
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-600">Excess Amount:</span>
-                      <span className="font-bold">
-                        ₱{money(
-                          (selectedBill.consumed - (selectedBill.classification === "residential" ? 5 : 15)) * 
-                          (selectedBill.tariffUsed?.ratePerCubic || 0)
-                        )}
-                      </span>
-                    </div>
-                  </>
-                )}
-                
-                <div className="flex justify-between text-lg font-bold text-slate-900">
-                  <span>Base Amount:</span>
-                  <span>₱{money(selectedBill.baseAmount || selectedBill.amount)}</span>
-                </div>
-                
-                {selectedBill.discount > 0 && (
-                  <div className="flex justify-between text-emerald-600">
-                    <span>
-                      Discount {selectedBill.discountReason && `(${selectedBill.discountReason})`}:
-                    </span>
-                    <span className="font-bold">-₱{money(selectedBill.discount)}</span>
-                  </div>
-                )}
-                
-                {selectedBill.penaltyApplied > 0 && (
-                  <div className="flex justify-between text-red-600">
-                    <span>Penalty:</span>
-                    <span className="font-bold">+₱{money(selectedBill.penaltyApplied)}</span>
-                  </div>
-                )}
-                
-                <hr className="border-slate-200 my-2" />
-                
-                <div className="flex justify-between text-lg font-bold text-slate-900">
-                  <span>Total Due:</span>
-                  <span>₱{money(selectedBill.totalDue)}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Senior Citizen Info */}
-            {selectedBill.memberSnapshot?.isSeniorCitizen && (
-              <div className="rounded-2xl border border-yellow-200 bg-yellow-50 p-4">
-                <div className="flex items-start gap-2">
-                  <span className="text-yellow-600">👴</span>
-                  <div className="text-sm text-yellow-800">
-                    <div className="font-medium">Senior Citizen Account</div>
-                    <div className="mt-1 text-xs">
-                      Senior ID: {selectedBill.memberSnapshot?.seniorId || "Not provided"} • 
-                      Discount Rate: {selectedBill.memberSnapshot?.seniorDiscountRate || 5}% • 
-                      Applicable Tiers: {selectedBill.memberSnapshot?.discountApplicableTiers?.join(", ") || "31-40, 41+"}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Payment Info if paid */}
-            {selectedBill.status === "paid" && selectedBill.paidAt && (
-              <div className="rounded-2xl border border-green-200 bg-green-50 p-4">
-                <div className="font-bold text-green-800 mb-2">Payment Information</div>
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <div className="text-green-600">Paid Date</div>
-                    <div className="font-medium">{new Date(selectedBill.paidAt).toLocaleDateString()}</div>
-                  </div>
-                  <div>
-                    <div className="text-green-600">OR Number</div>
-                    <div className="font-medium">{selectedBill.orNo || "—"}</div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Dates */}
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div className="rounded-xl border border-slate-200 p-3">
-                <div className="text-xs text-slate-500">Reading Date</div>
-                <div className="font-medium">
-                  {selectedBill.readingDate ? new Date(selectedBill.readingDate).toLocaleDateString() : "—"}
-                </div>
-              </div>
-              <div className="rounded-xl border border-slate-200 p-3">
-                <div className="text-xs text-slate-500">Due Date</div>
-                <div className="font-medium">
-                  {selectedBill.dueDate ? new Date(selectedBill.dueDate).toLocaleDateString() : "—"}
-                </div>
-              </div>
+              <div className="mt-2 text-sm text-slate-600">{selectedBill.addressText || "No address"}</div>
             </div>
           </div>
         )}
@@ -1127,20 +829,20 @@ export default function BillsPanel() {
             <div className="rounded-2xl border border-slate-200 p-4">
               <div className="text-sm font-bold text-slate-900">{payBill.accountName}</div>
               <div className="text-xs text-slate-600 mt-1">
-                {payBill.pnNo} • {payBill.periodCovered}
+                {payBill.pnNo} • {payBill.periodCovered} • Meter {payBill.meterNumber}
               </div>
 
               <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
                 <div className="text-slate-600">Base Amount</div>
                 <div className="text-right font-semibold">₱ {money(payBill.baseAmount || payBill.amount)}</div>
-                
+
                 {payBill.discount > 0 && (
                   <>
                     <div className="text-slate-600">Discount</div>
                     <div className="text-right font-semibold text-emerald-600">-₱ {money(payBill.discount)}</div>
                   </>
                 )}
-                
+
                 <div className="text-slate-600">Penalty</div>
                 <div className="text-right font-semibold text-red-600">₱ {money(payBill.penaltyApplied)}</div>
 
@@ -1151,19 +853,11 @@ export default function BillsPanel() {
 
             <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
               <Field label="OR No.">
-                <input
-                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5"
-                  value={payForm.orNo}
-                  onChange={(e) => setPayForm({ ...payForm, orNo: e.target.value })}
-                />
+                <input className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5" value={payForm.orNo} onChange={(e) => setPayForm({ ...payForm, orNo: e.target.value })} />
               </Field>
 
               <Field label="Payment Method">
-                <select
-                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5"
-                  value={payForm.method}
-                  onChange={(e) => setPayForm({ ...payForm, method: e.target.value })}
-                >
+                <select className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5" value={payForm.method} onChange={(e) => setPayForm({ ...payForm, method: e.target.value })}>
                   <option value="cash">Cash</option>
                   <option value="gcash">GCash</option>
                   <option value="bank">Bank</option>
@@ -1172,20 +866,13 @@ export default function BillsPanel() {
               </Field>
             </div>
 
-            {payErr && (
-              <div className="mt-3 rounded-xl bg-red-50 border border-red-100 text-red-700 px-3 py-2 text-sm">
-                {payErr}
-              </div>
-            )}
+            {payErr && <div className="mt-3 rounded-xl bg-red-50 border border-red-100 text-red-700 px-3 py-2 text-sm">{payErr}</div>}
 
             <div className="mt-4 flex justify-end gap-2">
               <button className="rounded-xl border border-slate-200 px-4 py-2.5" onClick={() => setPayOpen(false)}>
                 Cancel
               </button>
-              <button
-                className="rounded-xl bg-slate-900 text-white px-4 py-2.5 font-semibold hover:opacity-90"
-                onClick={payNow}
-              >
+              <button className="rounded-xl bg-slate-900 text-white px-4 py-2.5 font-semibold hover:opacity-90" onClick={payNow}>
                 Confirm Payment
               </button>
             </div>
@@ -1211,9 +898,7 @@ function Info({ label, value }) {
   return (
     <div className="rounded-2xl border border-slate-200 p-3">
       <div className="text-xs text-slate-500">{label}</div>
-      <div className="text-sm font-bold text-slate-900 mt-1 break-words">
-        {value ?? "—"}
-      </div>
+      <div className="text-sm font-bold text-slate-900 mt-1 break-words">{value ?? "—"}</div>
     </div>
   );
 }

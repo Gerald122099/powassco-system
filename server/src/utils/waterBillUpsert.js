@@ -25,16 +25,16 @@ function calculateDueDate(periodKey, settings) {
 }
 
 /**
- * Upsert ONE bill per account per period (multi-meter supported)
+ * Upsert ONE bill per METER per period
  *
- * @param member - WaterMember doc (already loaded)
+ * @param member - WaterMember doc
  * @param periodCovered - "YYYY-MM"
- * @param meterReadings - [{ meterNumber, previousReading, presentReading, multiplier }]
+ * @param meterReading - { meterNumber, previousReading, presentReading, multiplier }
  */
 export async function upsertWaterBill({
   member,
   periodCovered,          // "YYYY-MM"
-  meterReadings,          // required
+  meterReading,           // required (single)
   readingDate = new Date(),
   readerId = "",
   remarks = "",
@@ -42,72 +42,46 @@ export async function upsertWaterBill({
 }) {
   if (!member) throw new Error("Member is required");
   if (!periodCovered) throw new Error("periodCovered is required");
-  if (!Array.isArray(meterReadings) || meterReadings.length === 0) {
-    throw new Error("meterReadings is required");
-  }
+  if (!meterReading) throw new Error("meterReading is required");
 
   const settings = await WaterSettings.findOne();
   if (!settings) throw new Error("Water settings not found");
 
   const classification = member.billing?.classification || "residential";
 
-  // Normalize + validate readings
-  const breakdown = meterReadings.map((r) => {
-    const meterNo = String(r.meterNumber || "").toUpperCase().trim();
-    const prev = Number(r.previousReading ?? 0);
-    const pres = Number(r.presentReading ?? 0);
-    const mult = Number(r.multiplier ?? 1);
+  // Normalize + validate
+  const meterNo = String(meterReading.meterNumber || "").toUpperCase().trim();
+  const prev = Number(meterReading.previousReading ?? 0);
+  const pres = Number(meterReading.presentReading ?? 0);
+  const mult = Number(meterReading.multiplier ?? 1);
 
-    if (!meterNo) throw new Error("meterNumber is required in meterReadings[]");
-    if (Number.isNaN(prev) || Number.isNaN(pres) || Number.isNaN(mult)) {
-      throw new Error(`Invalid reading values for meter ${meterNo}`);
-    }
-    if (pres < prev) {
-      throw new Error(`Present reading must be >= previous reading for meter ${meterNo}`);
-    }
-    if (mult <= 0) {
-      throw new Error(`Multiplier must be > 0 for meter ${meterNo}`);
-    }
+  if (!meterNo) throw new Error("meterNumber is required");
+  if (Number.isNaN(prev) || Number.isNaN(pres) || Number.isNaN(mult)) {
+    throw new Error(`Invalid reading values for meter ${meterNo}`);
+  }
+  if (pres < prev) throw new Error(`Present reading must be >= previous reading for meter ${meterNo}`);
+  if (mult <= 0) throw new Error(`Multiplier must be > 0 for meter ${meterNo}`);
 
-    const rawConsumed = Math.max(0, pres - prev);
-    const consumed = rawConsumed * mult;
+  const rawConsumed = Math.max(0, pres - prev);
+  const consumed = rawConsumed * mult;
 
-    return {
-      meterNumber: meterNo,
-      previousReading: prev,
-      presentReading: pres,
-      rawConsumed,
-      multiplier: mult,
-      consumed,
-    };
-  });
-
-  const totalConsumed = breakdown.reduce((sum, x) => sum + x.consumed, 0);
-
-  // Compute tariff + discounts using your existing logic (already supports member discounts)
-  const computation = await calculateWaterBill(totalConsumed, classification, member);
+  // Compute tariff/discounts based on THIS meter consumption only
+  const computation = await calculateWaterBill(consumed, classification, member);
 
   const dueDate = calculateDueDate(periodCovered, settings);
 
-  // ✅ Match your schema unique index: { pnNo, periodKey }
-  const filter = { pnNo: member.pnNo, periodKey: periodCovered };
+  // ✅ NEW: one bill per meter
+  const filter = { pnNo: member.pnNo, periodKey: periodCovered, meterNumber: meterNo };
 
-  // If already paid, do not change it
+  // If already paid, do not change it (paid per meter now)
   const existing = await WaterBill.findOne(filter);
   if (existing && existing.status === "paid") {
-    return { bill: existing, computation, totalConsumed, breakdown };
+    return { bill: existing, computation, consumed, breakdown: existing.meterReadings || [] };
   }
 
-  // Choose a display meterNumber for UI:
-  // - if only one meter => that meter
-  // - if multiple => show first meter (or join, but keep short)
-  const displayMeterNumber =
-    breakdown.length === 1 ? breakdown[0].meterNumber : breakdown[0].meterNumber;
-
-  // Optional: meterSnapshot for single-meter (or first meter)
-  // Pull from member.meters if exists
+  // meter snapshot (optional)
   const meterDoc = (member.meters || []).find(
-    (m) => String(m.meterNumber || "").toUpperCase().trim() === displayMeterNumber
+    (m) => String(m.meterNumber || "").toUpperCase().trim() === meterNo
   );
 
   const meterSnapshot = meterDoc
@@ -121,6 +95,17 @@ export async function upsertWaterBill({
       }
     : null;
 
+  const breakdown = [
+    {
+      meterNumber: meterNo,
+      previousReading: prev,
+      presentReading: pres,
+      rawConsumed,
+      multiplier: mult,
+      consumed,
+    },
+  ];
+
   const update = {
     pnNo: member.pnNo,
     accountName: member.accountName,
@@ -129,46 +114,36 @@ export async function upsertWaterBill({
     periodCovered,
     periodKey: periodCovered,
 
-    // ✅ required numeric fields (keep simple + consistent)
-    // For multi-meter bills, these legacy fields are informational only.
-    previousReading: toMoney(breakdown.reduce((s, x) => s + x.previousReading, 0)),
-    presentReading: toMoney(breakdown.reduce((s, x) => s + x.presentReading, 0)),
-    consumed: toMoney(totalConsumed),
+    meterNumber: meterNo,
 
-    // ✅ multi-meter lines
+    // legacy summary fields
+    previousReading: toMoney(prev),
+    presentReading: toMoney(pres),
+    consumed: toMoney(consumed),
+
     meterReadings: breakdown,
-
-    // ✅ for UI table column
-    meterNumber: displayMeterNumber,
-
-    // ✅ meter snapshot (optional but helpful)
     meterSnapshot,
 
-    // ✅ bill computation snapshot
     amount: toMoney(computation.amount),
     baseAmount: toMoney(computation.baseAmount),
     discount: toMoney(computation.discount),
     discountReason: computation.discountReason || "",
     tariffUsed: computation.tariffUsed || null,
 
-    // ✅ settings snapshot
     penaltyTypeUsed: settings.penaltyType || "flat",
     penaltyValueUsed: settings.penaltyValue || 0,
     dueDayUsed: settings.dueDayOfMonth || 15,
     graceDaysUsed: settings.graceDays || 0,
 
-    // ✅ totals
     penaltyApplied: 0,
     totalDue: toMoney(computation.amount),
     dueDate,
 
-    // ✅ dates & meta
     readingDate: readingDate ? new Date(readingDate) : new Date(),
     readerId,
     remarks,
     createdBy,
 
-    // ✅ member snapshot (discount eligibility)
     memberSnapshot: {
       isSeniorCitizen: member.personal?.isSeniorCitizen || false,
       seniorId: member.personal?.seniorId || "",
@@ -178,7 +153,6 @@ export async function upsertWaterBill({
       discountApplicableTiers: member.billing?.discountApplicableTiers || [],
     },
 
-    // If compute didn't return a tariffUsed, mark for review
     needsTariffReview: !computation?.tariffUsed,
   };
 
@@ -188,5 +162,5 @@ export async function upsertWaterBill({
     { new: true, upsert: true }
   );
 
-  return { bill, computation, totalConsumed, breakdown };
+  return { bill, computation, consumed, breakdown };
 }

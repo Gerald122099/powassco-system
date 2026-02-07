@@ -1,3 +1,4 @@
+// MeterReadingsPanel.jsx
 import { useState, useEffect, useRef, useMemo } from "react";
 import Card from "../../../components/Card";
 import Modal from "../../../components/Modal";
@@ -22,7 +23,7 @@ export default function MeterReadingsPanel() {
   const [searchTerm, setSearchTerm] = useState("");
   const [periodKey, setPeriodKey] = useState(new Date().toISOString().slice(0, 7));
   const [members, setMembers] = useState([]);
-  const [readings, setReadings] = useState({});
+  const [readings, setReadings] = useState({}); // { PN: { METERNO: { presentReading } } }
   const [expandedMeters, setExpandedMeters] = useState({});
   const [loading, setLoading] = useState(false);
 
@@ -36,14 +37,14 @@ export default function MeterReadingsPanel() {
   const [totalPages, setTotalPages] = useState(1);
   const [stats, setStats] = useState({
     total: 0,
-    read: 0,     // complete
-    unread: 0,   // none read
-    anyRead: 0,  // partial+complete
+    read: 0, // complete
+    unread: 0, // none read at all
+    anyRead: 0, // partial+complete
   });
 
   const [waterSettings, setWaterSettings] = useState(null);
 
-  // all | unread | partial | complete
+  // status filter: all | unread | partial | complete
   const [statusFilter, setStatusFilter] = useState("all");
 
   const receiptRef = useRef();
@@ -57,49 +58,49 @@ export default function MeterReadingsPanel() {
     return meters.filter((m) => m?.meterStatus === "active" && m?.isBillingActive === true);
   };
 
-  // at least 1 meter has input presentReading (UI input, not saved yet)
+  // UI: at least 1 meter has input
   const hasAnyInputForMember = (member) => {
     const pn = member?.pnNo;
     if (!pn) return false;
-
     const active = member.activeBillingMeters || getActiveBillingMeters(member);
     if (!active.length) return false;
 
     return active.some((m) => {
-      const mn = safeUpper(m.meterNumber);
-      const val = readings[pn]?.[mn]?.presentReading;
-      // ✅ consider only input boxes (not saved status)
+      const val = readings[pn]?.[safeUpper(m.meterNumber)]?.presentReading;
       return safeStr(val) !== "";
     });
   };
 
-  // complete input (all active meters have input) - preview requires this
+  // UI: all active meters have input (for preview)
   const hasCompleteInputForMember = (member) => {
     const pn = member?.pnNo;
     if (!pn) return false;
-
     const active = member.activeBillingMeters || getActiveBillingMeters(member);
     if (!active.length) return false;
 
-    // if meter is already saved, treat it as "complete" for preview requirement?
-    // Here we require ALL meters to have either:
-    //  - already saved (readMeters), OR
-    //  - user typed input
-    const readSet = new Set((member.readMeters || []).map(safeUpper));
-
     return active.every((m) => {
-      const mn = safeUpper(m.meterNumber);
-      if (readSet.has(mn)) return true;
-      const val = readings[pn]?.[mn]?.presentReading;
+      const val = readings[pn]?.[safeUpper(m.meterNumber)]?.presentReading;
       return safeStr(val) !== "";
     });
   };
 
-  // derive member status: unread | partial | complete
+  // Backend-aware status
+  // - complete: member.hasReading (all active meters have saved readings)
+  // - partial: member.hasAnyReading (some saved this period) OR UI has some input (not yet saved)
+  // - unread: none saved and no input
   const getMemberStatus = (member) => {
     if (member?.hasReading) return "complete";
     if (member?.hasAnyReading) return "partial";
+    if (hasAnyInputForMember(member)) return "partial";
     return "unread";
+  };
+
+  // Disable input rule:
+  // If meter already saved in backend for this period => disable input for that meter.
+  // We rely on backend member.readMeters which is returned by /members endpoint.
+  const isMeterAlreadySaved = (member, meterNumber) => {
+    const set = new Set((member?.readMeters || []).map((x) => safeUpper(x)));
+    return set.has(safeUpper(meterNumber));
   };
 
   // ---------- load water settings ----------
@@ -130,7 +131,6 @@ export default function MeterReadingsPanel() {
 
       const processed = (response.items || []).map((member) => {
         const activeBillingMeters = getActiveBillingMeters(member);
-
         return {
           ...member,
           pnNo: member.pnNo,
@@ -139,10 +139,8 @@ export default function MeterReadingsPanel() {
           hasMultipleMeters: activeBillingMeters.length > 1,
           totalMeters: (member.meters || []).length,
           activeMeters: activeBillingMeters.length,
-
-          // ensure arrays exist
-          readMeters: Array.isArray(member.readMeters) ? member.readMeters.map(safeUpper) : [],
-          missingMeters: Array.isArray(member.missingMeters) ? member.missingMeters.map(safeUpper) : [],
+          readMeters: member.readMeters || [],
+          missingMeters: member.missingMeters || [],
           hasAnyReading: !!member.hasAnyReading,
         };
       });
@@ -180,18 +178,28 @@ export default function MeterReadingsPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchTerm]);
 
-  // ---------- UI filter ----------
+  // ---------- UI filter + local search ----------
   const filteredMembers = useMemo(() => {
     let list = [...members];
 
-    // status filter
+    if (searchTerm.trim()) {
+      const term = searchTerm.toLowerCase();
+      list = list.filter((m) => {
+        const pn = (m.pnNo || "").toLowerCase();
+        const name = (m.accountName || "").toLowerCase();
+        const addr = (m.addressText || "").toLowerCase();
+        const hasMeter = (m.meters || []).some((x) => (x.meterNumber || "").toLowerCase().includes(term));
+        return pn.includes(term) || name.includes(term) || addr.includes(term) || hasMeter;
+      });
+    }
+
     if (statusFilter !== "all") {
       list = list.filter((m) => getMemberStatus(m) === statusFilter);
     }
 
     return list;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [members, statusFilter]);
+  }, [members, searchTerm, statusFilter, readings]);
 
   // ---------- handlers ----------
   const handleReadingChange = (pnNo, meterNumber, value) => {
@@ -224,35 +232,18 @@ export default function MeterReadingsPanel() {
 
     const complete = hasCompleteInputForMember(member);
     if (!complete) {
-      alert("Preview requires readings for ALL active meters (saved or typed). You can still Save/Bill with partial.");
+      alert("Preview requires readings for ALL active meters. You can still Save Reading with partial readings.");
       return;
     }
 
     setLoading(true);
     try {
-      const readSet = new Set((member.readMeters || []).map(safeUpper));
-
-      const meterReadings = (member.activeBillingMeters || []).map((meter) => {
-        const mn = safeUpper(meter.meterNumber);
-
-        // If already saved, we do NOT have the exact presentReading value here (members endpoint does not return it).
-        // So preview should be done only after user enters all (or you extend API to include reading values).
-        // We still attempt preview using typed values only:
-        const typed = readings[member.pnNo]?.[mn]?.presentReading;
-
-        if (readSet.has(mn) && safeStr(typed) === "") {
-          // Not enough info to preview accurately unless API returns per-meter reading numbers.
-          // Force user to type the remaining values OR upgrade API to return saved readings per meter.
-          throw new Error("Some meters are already saved but no values are available for preview. Enter remaining meter values or extend API to return saved readings.");
-        }
-
-        return {
-          meterNumber: meter.meterNumber,
-          previousReading: meter.lastReading || 0,
-          presentReading: parseFloat(typed || 0),
-          consumptionMultiplier: meter.consumptionMultiplier || 1,
-        };
-      });
+      const meterReadings = (member.activeBillingMeters || []).map((meter) => ({
+        meterNumber: meter.meterNumber,
+        previousReading: meter.lastReading || 0,
+        presentReading: parseFloat(readings[member.pnNo]?.[safeUpper(meter.meterNumber)]?.presentReading || 0),
+        consumptionMultiplier: meter.consumptionMultiplier || 1,
+      }));
 
       const totalConsumption = meterReadings.reduce((sum, r) => {
         return sum + (r.presentReading - r.previousReading) * r.consumptionMultiplier;
@@ -282,7 +273,7 @@ export default function MeterReadingsPanel() {
       }
     } catch (err) {
       console.error("preview error", err);
-      alert(err?.message || "Preview failed.");
+      calculateLocalPreview(member, [], 0);
     } finally {
       setLoading(false);
     }
@@ -345,16 +336,17 @@ export default function MeterReadingsPanel() {
   };
 
   // ---------- save (PARTIAL allowed) ----------
-  const saveReading = async (member, generateBill = true) => {
+  // UI button name is "Save Reading" but backend will still generate/update bill.
+  const saveReading = async (member) => {
     const pn = member.pnNo;
-    const readSet = new Set((member.readMeters || []).map(safeUpper));
 
-    // Collect ONLY meters with input (partial allowed)
-    // ✅ skip meters that are already saved
+    // Collect ONLY meters with input AND NOT YET SAVED in backend
     const toSend = (member.activeBillingMeters || [])
       .map((meter) => {
         const mn = safeUpper(meter.meterNumber);
-        if (readSet.has(mn)) return null; // already saved -> skip
+
+        // if already saved this period, do not allow re-send
+        if (isMeterAlreadySaved(member, meter.meterNumber)) return null;
 
         const input = readings[pn]?.[mn]?.presentReading;
         if (safeStr(input) === "") return null;
@@ -362,12 +354,8 @@ export default function MeterReadingsPanel() {
         const prev = meter.lastReading || 0;
         const pres = parseFloat(input);
 
-        if (!Number.isFinite(pres)) {
-          return { error: `Invalid present reading for meter ${meter.meterNumber}` };
-        }
-        if (pres < prev) {
-          return { error: `Present reading must be >= previous reading for meter ${meter.meterNumber}` };
-        }
+        if (!Number.isFinite(pres)) return { error: `Invalid present reading for meter ${meter.meterNumber}` };
+        if (pres < prev) return { error: `Present reading must be >= previous reading for meter ${meter.meterNumber}` };
 
         return {
           meterNumber: meter.meterNumber,
@@ -391,34 +379,28 @@ export default function MeterReadingsPanel() {
 
     setLoading(true);
     try {
-      const response = await apiFetch("/water/readings", {
+      // ✅ Always generate bill so Bill panel updates
+      await apiFetch("/water/readings", {
         method: "POST",
         token,
         body: {
           periodKey,
           pnNo: member.pnNo,
           meterReadings: toSend,
-          generateBill,
+          generateBill: true,
         },
       });
 
-      if (response?.receipt && generateBill) {
-        setReceiptData(response.receipt);
-      } else {
-        // show result summary if you want
-        setReceiptData(response);
-      }
-
       await loadMembers();
 
-      // clear inputs for this member only
+      // clear inputs for this member only (keep UI clean)
       setReadings((prev) => {
         const copy = { ...prev };
         delete copy[pn];
         return copy;
       });
 
-      alert(generateBill ? "Saved and bill updated!" : "Saved!");
+      alert("Saved! Bill panel should update.");
     } catch (error) {
       alert("Error saving: " + error.message);
     } finally {
@@ -433,12 +415,13 @@ export default function MeterReadingsPanel() {
     members.forEach((member) => {
       const pn = member.pnNo;
       const active = member.activeBillingMeters || [];
-      const readSet = new Set((member.readMeters || []).map(safeUpper));
 
       const meterReadings = active
         .map((meter) => {
           const mn = safeUpper(meter.meterNumber);
-          if (readSet.has(mn)) return null;
+
+          // already saved => skip
+          if (isMeterAlreadySaved(member, meter.meterNumber)) return null;
 
           const input = readings[pn]?.[mn]?.presentReading;
           if (safeStr(input) === "") return null;
@@ -467,7 +450,7 @@ export default function MeterReadingsPanel() {
     });
 
     if (items.length === 0) {
-      alert("No NEW readings to save.");
+      alert("No new readings to save.");
       return;
     }
 
@@ -508,7 +491,7 @@ export default function MeterReadingsPanel() {
       a.download = `meter_readings_${periodKey}.csv`;
       a.click();
       window.URL.revokeObjectURL(url);
-    } catch {
+    } catch (e) {
       alert("CSV export not available (API missing).");
     }
   };
@@ -549,7 +532,7 @@ export default function MeterReadingsPanel() {
           <div>
             <div className="text-lg font-black text-slate-900">Meter Reading & Bill Generation</div>
             <div className="text-xs text-slate-600 mt-1">
-              Partial reading is allowed. Saved meters are locked for the same period.
+              Partial reading is allowed. Saved meters become locked for the period.
             </div>
           </div>
 
@@ -653,7 +636,7 @@ export default function MeterReadingsPanel() {
           <div className="text-2xl font-bold text-amber-700">{stats.unread}</div>
         </div>
         <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
-          <div className="text-xs text-blue-600">Any Read</div>
+          <div className="text-xs text-blue-600">Any Read (Partial+Complete)</div>
           <div className="text-2xl font-bold text-blue-700">{stats.anyRead}</div>
         </div>
       </div>
@@ -695,11 +678,11 @@ export default function MeterReadingsPanel() {
                   getMemberStatus={getMemberStatus}
                   hasAnyInputForMember={hasAnyInputForMember}
                   hasCompleteInputForMember={hasCompleteInputForMember}
+                  isMeterAlreadySaved={isMeterAlreadySaved}
                   onReadingChange={handleReadingChange}
                   onToggleMeterExpansion={toggleMeterExpansion}
                   onPreview={() => previewSingleBill(member)}
-                  onSave={() => saveReading(member, true)}
-                  onSaveReadingOnly={() => saveReading(member, false)}
+                  onSave={() => saveReading(member)} // ✅ only Save Reading
                 />
               ))
             )}
@@ -758,7 +741,50 @@ export default function MeterReadingsPanel() {
               <div className="text-sm text-slate-600 mt-1">
                 {preview.pnNo} • {preview.classification} • Period: {periodKey}
               </div>
+              <div className="text-sm text-slate-600 mt-1">
+                Active Meters: {selectedMember.activeMeters} • Total Meters: {selectedMember.totalMeters}
+              </div>
             </div>
+
+            {preview.meterReadings?.length > 0 && (
+              <div className="rounded-2xl border border-slate-200 p-4">
+                <div className="font-bold text-slate-900 mb-3">Meter Readings</div>
+                <div className="space-y-3">
+                  {preview.meterReadings.map((r, idx) => (
+                    <div key={idx} className="p-3 border border-slate-100 rounded-lg bg-slate-50">
+                      <div className="grid grid-cols-3 gap-4">
+                        <div className="text-center">
+                          <div className="text-xs text-slate-500">Meter</div>
+                          <div className="text-sm font-bold text-slate-900">{r.meterNumber}</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-xs text-slate-500">Previous</div>
+                          <div className="text-sm font-bold text-slate-900">{Number(r.previousReading).toFixed(3)}</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-xs text-slate-500">Present</div>
+                          <div className="text-sm font-bold text-slate-900">{Number(r.presentReading).toFixed(3)}</div>
+                        </div>
+                      </div>
+                      <div className="mt-2 text-center text-xs text-slate-600">
+                        Consumption: {(r.presentReading - r.previousReading).toFixed(3)} m³
+                        {r.consumptionMultiplier > 1 &&
+                          ` × ${r.consumptionMultiplier} = ${(
+                            (r.presentReading - r.previousReading) * r.consumptionMultiplier
+                          ).toFixed(3)} m³`}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-4 text-center p-3 rounded-xl bg-blue-50 border border-blue-100">
+                  <div className="text-xs text-blue-600">Total Consumption</div>
+                  <div className="text-lg font-bold text-blue-700">
+                    {preview.totalConsumption?.toFixed(3) || "0.000"} m³
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="rounded-2xl border border-slate-200 p-4">
               <div className="font-bold text-slate-900 mb-3">Bill Calculation</div>
@@ -775,6 +801,12 @@ export default function MeterReadingsPanel() {
                   </div>
                 )}
 
+                {preview.preview?.tariffUsed && (
+                  <div className="text-xs text-slate-500 mt-2">
+                    Applied Tariff: {preview.preview.tariffUsed.tier} @ ₱{preview.preview.tariffUsed.ratePerCubic}/m³
+                  </div>
+                )}
+
                 <hr className="border-slate-200 my-2" />
 
                 <div className="flex justify-between text-lg font-bold text-slate-900">
@@ -785,29 +817,19 @@ export default function MeterReadingsPanel() {
             </div>
 
             <div className="flex justify-end gap-2">
-              <button onClick={() => setPreview(null)} className="rounded-xl border border-slate-200 px-4 py-2.5" disabled={loading}>
-                Close
-              </button>
               <button
-                onClick={() => {
-                  // save using partial/complete rules (will only send new meters with input)
-                  // BUT: preview is only allowed when all meters are typed (see logic above)
-                  // so this will work as final save too.
-                  // eslint-disable-next-line no-unused-expressions
-                  selectedMember && selectedMember.pnNo && setPreview(null);
-                }}
-                className="rounded-xl bg-blue-600 text-white px-6 py-2.5 font-semibold"
-                disabled
-                title="Preview modal is informational; use Save & Bill from table."
+                onClick={() => setPreview(null)}
+                className="rounded-xl border border-slate-200 px-4 py-2.5"
+                disabled={loading}
               >
-                Use Save & Bill
+                Close
               </button>
             </div>
           </div>
         )}
       </Modal>
 
-      {/* Result Modal */}
+      {/* Result Modal (batch summary) */}
       <Modal open={!!receiptData} title="Result" onClose={() => setReceiptData(null)}>
         {receiptData && (
           <div className="space-y-4">
@@ -825,10 +847,16 @@ export default function MeterReadingsPanel() {
             </div>
 
             <div className="flex justify-end gap-2">
-              <button onClick={() => setReceiptData(null)} className="rounded-xl border border-slate-200 px-4 py-2.5">
+              <button
+                onClick={() => setReceiptData(null)}
+                className="rounded-xl border border-slate-200 px-4 py-2.5"
+              >
                 Close
               </button>
-              <button onClick={printReceipt} className="flex items-center gap-2 rounded-xl bg-blue-600 text-white px-6 py-2.5 font-semibold">
+              <button
+                onClick={printReceipt}
+                className="flex items-center gap-2 rounded-xl bg-blue-600 text-white px-6 py-2.5 font-semibold"
+              >
                 <Printer size={16} />
                 Print
               </button>
@@ -849,23 +877,26 @@ function ReadingRow({
   getMemberStatus,
   hasAnyInputForMember,
   hasCompleteInputForMember,
+  isMeterAlreadySaved,
   onReadingChange,
   onToggleMeterExpansion,
   onPreview,
   onSave,
-  onSaveReadingOnly,
 }) {
   const pnKey = String(member.pnNo || "").toUpperCase().trim();
   const isExpanded = !!expandedMeters[pnKey];
   const status = getMemberStatus(member);
 
-  // ✅ save enabled if at least 1 NEW input is present
-  const canSave = !member.hasReading && hasAnyInputForMember(member);
+  // enable actions if at least 1 NEW input exists (not already saved)
+  const hasAnyNewInput = (member.activeBillingMeters || []).some((m) => {
+    const meterKey = String(m.meterNumber || "").toUpperCase().trim();
+    const val = readings[member.pnNo]?.[meterKey]?.presentReading;
+    if (safeStr(val) === "") return false;
+    return !isMeterAlreadySaved(member, m.meterNumber);
+  });
 
-  // preview allowed only if all active meters have (saved OR typed) values
+  const canSave = !member.hasReading && hasAnyNewInput;
   const canPreview = !member.hasReading && hasCompleteInputForMember(member);
-
-  const readSet = new Set((member.readMeters || []).map((x) => String(x || "").toUpperCase().trim()));
 
   const statusBadge = (() => {
     if (status === "complete") {
@@ -913,13 +944,24 @@ function ReadingRow({
             <span className="font-semibold">{member.activeMeters || 0}</span>
             <span className="text-xs text-slate-500">active</span>
 
-            {/* ✅ click to expand ALWAYS (even 1 meter) */}
-            {(member.activeMeters || 0) > 0 && (
-              <button onClick={() => onToggleMeterExpansion(member.pnNo)} className="ml-2 text-blue-600 hover:text-blue-800">
+            {member.activeMeters > 0 && (
+              <button
+                onClick={() => onToggleMeterExpansion(member.pnNo)}
+                className="ml-2 text-blue-600 hover:text-blue-800"
+                title="Show meters"
+              >
                 {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
               </button>
             )}
           </div>
+
+          {/* Optional helper */}
+          {status === "partial" && (member.missingMeters || []).length > 0 && (
+            <div className="mt-1 text-[11px] text-slate-500">
+              Missing: {(member.missingMeters || []).slice(0, 3).join(", ")}
+              {(member.missingMeters || []).length > 3 ? "…" : ""}
+            </div>
+          )}
         </td>
 
         <td className="py-3 px-4 text-right space-x-2">
@@ -929,7 +971,7 @@ function ReadingRow({
                 onClick={onPreview}
                 disabled={!canPreview}
                 className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold hover:bg-slate-50 disabled:opacity-50"
-                title={canPreview ? "Preview (requires all meters typed or API returns saved values)" : "Preview needs all meters"}
+                title={canPreview ? "Preview (requires all meters)" : "Preview needs all meters input"}
               >
                 Preview
               </button>
@@ -939,30 +981,19 @@ function ReadingRow({
                   onClick={onSave}
                   disabled={!canSave}
                   className="rounded-lg bg-blue-600 text-white px-3 py-1.5 text-xs font-semibold hover:bg-blue-700 disabled:opacity-50"
-                  title={canSave ? "Mark (partial allowed)" : "Enter at least 1 new meter"}
+                  title={canSave ? "Mark (partial allowed)" : "Enter at least 1 NEW meter"}
                 >
                   Mark
                 </button>
               ) : (
-                <>
-                  <button
-                    onClick={onSaveReadingOnly}
-                    disabled={!canSave}
-                    className="rounded-lg border border-emerald-200 text-emerald-700 px-3 py-1.5 text-xs font-semibold hover:bg-emerald-50 disabled:opacity-50"
-                    title={canSave ? "Save new meter(s) (partial allowed)" : "Enter at least 1 new meter"}
-                  >
-                    Save Reading
-                  </button>
-
-                  <button
-                    onClick={onSave}
-                    disabled={!canSave}
-                    className="rounded-lg bg-blue-600 text-white px-3 py-1.5 text-xs font-semibold hover:bg-blue-700 disabled:opacity-50"
-                    title={canSave ? "Save & update bill (partial allowed)" : "Enter at least 1 new meter"}
-                  >
-                    Save & Bill
-                  </button>
-                </>
+                <button
+                  onClick={onSave}
+                  disabled={!canSave}
+                  className="rounded-lg bg-emerald-600 text-white px-3 py-1.5 text-xs font-semibold hover:bg-emerald-700 disabled:opacity-50"
+                  title={canSave ? "Save Reading (updates bill)" : "Enter at least 1 NEW meter"}
+                >
+                  Save Reading
+                </button>
               )}
             </>
           )}
@@ -981,11 +1012,8 @@ function ReadingRow({
                   const pn = member.pnNo;
                   const meterKey = String(meter.meterNumber || "").toUpperCase().trim();
 
-                  // ✅ lock meter if already saved for this period
-                  const meterAlreadySaved = member.hasReading || readSet.has(meterKey);
-
-                  const presentReading = readings[pn]?.[meterKey]?.presentReading || "";
                   const previousReading = meter.lastReading || 0;
+                  const presentReading = readings[pn]?.[meterKey]?.presentReading || "";
 
                   const consumption = presentReading
                     ? (parseFloat(presentReading) - parseFloat(previousReading)).toFixed(3)
@@ -994,22 +1022,23 @@ function ReadingRow({
                   const mult = meter.consumptionMultiplier || 1;
                   const effective = (Number(consumption) * mult) || 0;
 
+                  const alreadySaved = isMeterAlreadySaved(member, meter.meterNumber);
+
                   return (
                     <div key={meterKey} className="p-3 bg-white border border-slate-200 rounded-lg">
                       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                         <div>
                           <div className="text-xs text-slate-500">Meter #{index + 1}</div>
-                          <div className="flex items-center gap-2">
-                            <div className="font-bold text-slate-900">{meter.meterNumber}</div>
-                            {meterAlreadySaved && (
-                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 font-bold">
-                                SAVED
-                              </span>
-                            )}
-                          </div>
+                          <div className="font-bold text-slate-900">{meter.meterNumber}</div>
                           <div className="text-xs text-slate-600 mt-1">
                             {meter.meterBrand} {meter.meterModel} • {meter.meterSize}
                           </div>
+
+                          {alreadySaved && (
+                            <div className="mt-1 inline-flex items-center rounded-full bg-slate-100 text-slate-700 px-2 py-0.5 text-[11px] font-semibold">
+                              Saved
+                            </div>
+                          )}
                         </div>
 
                         <div>
@@ -1024,15 +1053,18 @@ function ReadingRow({
                             step="0.001"
                             min={previousReading}
                             className={`w-full mt-1 rounded-lg border px-2 py-1.5 text-sm font-mono ${
-                              meterAlreadySaved
-                                ? "border-slate-200 bg-slate-100 text-slate-500 cursor-not-allowed"
+                              alreadySaved
+                                ? "border-slate-200 bg-slate-100 cursor-not-allowed"
                                 : "border-slate-200 focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
                             }`}
-                            value={meterAlreadySaved ? "" : presentReading}
+                            value={presentReading}
                             onChange={(e) => onReadingChange(pn, meter.meterNumber, e.target.value)}
-                            placeholder={meterAlreadySaved ? "Already saved" : "0.000"}
-                            disabled={meterAlreadySaved}
+                            placeholder="0.000"
+                            disabled={alreadySaved} // ✅ lock if already saved
                           />
+                          {!alreadySaved && (member?.missingMeters || []).includes(meterKey) && (
+                            <div className="mt-1 text-[11px] text-slate-500">Not yet saved for this period</div>
+                          )}
                         </div>
 
                         <div>
@@ -1061,4 +1093,8 @@ function ReadingRow({
       )}
     </>
   );
+
+  function safeStr(v) {
+    return String(v || "").trim();
+  }
 }

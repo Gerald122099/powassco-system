@@ -28,12 +28,12 @@ const MemberSnapshotSchema = new mongoose.Schema(
 
 const MeterReadingLineSchema = new mongoose.Schema(
   {
-    meterNumber: { type: String, trim: true, uppercase: true },
+    meterNumber: { type: String, required: true },
     previousReading: { type: Number, default: 0 },
     presentReading: { type: Number, default: 0 },
-    rawConsumed: { type: Number, default: 0 }, // present - previous
+    rawConsumed: { type: Number, default: 0 },
     multiplier: { type: Number, default: 1 },
-    consumed: { type: Number, default: 0 }, // rawConsumed * multiplier
+    consumed: { type: Number, default: 0 },
   },
   { _id: false }
 );
@@ -55,79 +55,57 @@ const MeterSnapshotSchema = new mongoose.Schema(
  *  ========================= */
 const WaterBillSchema = new mongoose.Schema(
   {
-    pnNo: { type: String, required: true, trim: true, uppercase: true },
+    pnNo: { type: String, required: true, index: true },
+    periodKey: { type: String, required: true, index: true }, // "YYYY-MM"
+    periodCovered: { type: String, required: true },
+
     accountName: { type: String, default: "" },
+    classification: { type: String, default: "residential" },
     addressText: { type: String, default: "" },
-    classification: { type: String, default: "" },
 
-    // optional but useful for printing/tracking
-    billNumber: { type: String, default: "" },
+    // ✅ Option C identity
+    meterNumber: { type: String, required: true, index: true },
 
-    // periods
-    periodCovered: { type: String, required: true, trim: true }, // "YYYY-MM"
-    periodKey: { type: String, default: "", trim: true },        // "YYYY-MM" (same)
+    previousReading: { type: Number, default: 0 },
+    presentReading: { type: Number, default: 0 },
+    consumed: { type: Number, default: 0 },
 
-    // single-meter legacy fields (keep so your old UI still works)
-    previousReading: { type: Number, required: true, min: 0, default: 0 },
-    presentReading: { type: Number, required: true, min: 0, default: 0 },
-    consumed: { type: Number, required: true, min: 0, default: 0 },
-
-    // multi-meter support
     meterReadings: { type: [MeterReadingLineSchema], default: [] },
+    meterSnapshot: { type: Object, default: null },
 
-    // for quick display/filtering (BillsPanel column)
-    meterNumber: { type: String, default: "", trim: true, uppercase: true },
-
-    // snapshot of the chosen meter (optional)
-    meterSnapshot: { type: MeterSnapshotSchema, default: null },
-
-    // tariff computation
-    tariffUsed: { type: TariffUsedSchema, default: null },
+    amount: { type: Number, default: 0 },
     baseAmount: { type: Number, default: 0 },
     discount: { type: Number, default: 0 },
     discountReason: { type: String, default: "" },
-    amount: { type: Number, required: true, default: 0 }, // final after discount
+    tariffUsed: { type: Object, default: null },
 
-    // member snapshot (discount eligibility)
-    memberSnapshot: { type: MemberSnapshotSchema, default: null },
-
-    // penalties and totals
-    penaltyApplied: { type: Number, required: true, default: 0 },
-    totalDue: { type: Number, required: true, default: 0 },
-
-    // dates
-    readingDate: { type: Date, default: null },
-    dueDate: { type: Date, required: true },
-
-    // settings snapshot
+    penaltyTypeUsed: { type: String, default: "flat" },
+    penaltyValueUsed: { type: Number, default: 0 },
     dueDayUsed: { type: Number, default: 15 },
     graceDaysUsed: { type: Number, default: 0 },
-    penaltyTypeUsed: { type: String, enum: ["flat", "percent"], default: "flat" },
-    penaltyValueUsed: { type: Number, default: 0 },
-    penaltyComputedAt: { type: Date },
 
-    // payment
+    penaltyApplied: { type: Number, default: 0 },
+    totalDue: { type: Number, default: 0 },
+    dueDate: { type: Date, default: null },
+
+    // ✅ IMPORTANT: include overdue
     status: { type: String, enum: ["unpaid", "overdue", "paid"], default: "unpaid" },
-    paidAt: { type: Date },
-    orNo: { type: String, default: "" },
 
-    // audit
-    createdBy: { type: String, default: "" },
+    readingDate: { type: Date, default: null },
     readerId: { type: String, default: "" },
     remarks: { type: String, default: "" },
+    createdBy: { type: String, default: "" },
 
+    memberSnapshot: { type: Object, default: null },
     needsTariffReview: { type: Boolean, default: false },
   },
   { timestamps: true }
 );
 
-/** =========================
- *  Indexes
- *  ========================= */
-// One bill per member per period
-WaterBillSchema.index({ pnNo: 1, periodKey: 1 }, { unique: true });
+// ✅ Option C unique index
+WaterBillSchema.index({ pnNo: 1, periodKey: 1, meterNumber: 1 }, { unique: true });
 
-// fast filters
+// helpful indexes
 WaterBillSchema.index({ status: 1 });
 WaterBillSchema.index({ classification: 1 });
 WaterBillSchema.index({ meterNumber: 1 });
