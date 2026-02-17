@@ -5,7 +5,7 @@ import Modal from "../../components/Modal";
 import { apiFetch } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
 import WaterSettingsPanel from "./WaterSettingsPanel";
-
+import AnalyticsPanel from "../water/panels/AnalyticsPanel";
 
 const ROLE_OPTIONS = [
   { value: "admin", label: "Admin" },
@@ -67,17 +67,17 @@ function IconButton({ children, onClick, tone = "default", title }) {
   );
 }
 
-// NEW: Admin Tabs
+// UPDATED: Admin Tabs with Analytics
 const adminTabs = [
   { key: "users", label: "User Management", icon: "👥" },
   { key: "water", label: "Water Settings", icon: "⚙️" },
-
+  { key: "analytics", label: "Analytics", icon: "📊" }, // ADDED
 ];
 
 export default function AdminDashboard() {
   const { token, user } = useAuth();
 
-  const [activeTab, setActiveTab] = useState("users"); // NEW: Tab state
+  const [activeTab, setActiveTab] = useState("users"); // Default to users tab
   
   const [users, setUsers] = useState([]);
   const [q, setQ] = useState("");
@@ -231,7 +231,7 @@ export default function AdminDashboard() {
     <div className="min-h-screen bg-slate-50 p-5">
       <BrandHeader 
         title="Admin Dashboard" 
-        subtitle="Manage system settings, users, and water tariffs."
+        subtitle="Manage system settings, users, water tariffs, and view analytics."
       />
 
       {toast && (
@@ -240,7 +240,7 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* NEW: Tab Navigation */}
+      {/* Tab Navigation */}
       <div className="mt-4 flex flex-wrap gap-2">
         {adminTabs.map((tab) => (
           <button
@@ -374,7 +374,8 @@ export default function AdminDashboard() {
         {/* Water Settings Tab */}
         {activeTab === "water" && <WaterSettingsPanel />}
 
-       
+        {/* Analytics Tab - ADD THIS */}
+        {activeTab === "analytics" && <AnalyticsPanel />}
       </div>
 
       {/* User Add/Edit Modal */}

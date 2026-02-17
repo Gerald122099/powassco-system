@@ -169,9 +169,7 @@ export function getTariffExamples(classification) {
   return examples;
 }
 
-/**
- * Validate consumption against tariff brackets
- */
+
 export function validateConsumption(consumption, classification) {
   if (classification === "residential") {
     if (consumption < 0) return { valid: false, message: "Consumption cannot be negative" };

@@ -380,57 +380,7 @@ export default function MemberInquiryPage() {
                 </div>
               )}
 
-              {/* Water Consumption Chart - New Section */}
-              {bills.length > 0 && (
-                <div className="rounded-3xl bg-white border border-green-100 shadow-lg p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <i className="fas fa-chart-line text-2xl text-green-600"></i>
-                      <div>
-                        <div className="text-lg font-black text-gray-800">Water Consumption History</div>
-                        <div className="text-sm text-gray-600">Last 6 months consumption trend</div>
-                      </div>
-                    </div>
-                    
-                    {/* Summary Stats */}
-                    <div className="flex gap-4">
-                      <div className="text-right">
-                        <div className="text-xs text-gray-500">Average</div>
-                        <div className="font-bold text-green-700">
-                          {averageConsumption} m³
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-xs text-gray-500">Total</div>
-                        <div className="font-bold text-blue-700">
-                          {totalConsumption} m³
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Chart Component */}
-                  <WaterConsumptionChart bills={bills} />
-
-                  {/* Legend */}
-                  <div className="flex items-center justify-center gap-6 mt-4 pt-4 border-t border-gray-100">
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                      <span className="text-xs text-gray-600">Normal</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 bg-red-500 rounded-full"></div>
-                      <span className="text-xs text-gray-600">Overdue</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 bg-green-700 rounded-full"></div>
-                      <span className="text-xs text-gray-600">Paid</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Billing History */}
+              {/* Billing History - BELOW METERS */}
               <div className="rounded-3xl bg-white border border-green-100 shadow-lg p-6">
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
                   <div className="flex items-center gap-2">
@@ -575,6 +525,56 @@ export default function MemberInquiryPage() {
                   Note: This public inquiry shows limited information only. Contact the office for detailed bills.
                 </div>
               </div>
+
+              {/* Water Consumption History - BELOW BILLING HISTORY */}
+              {bills.length > 0 && (
+                <div className="rounded-3xl bg-white border border-green-100 shadow-lg p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <i className="fas fa-chart-line text-2xl text-green-600"></i>
+                      <div>
+                        <div className="text-lg font-black text-gray-800">Water Consumption History</div>
+                        <div className="text-sm text-gray-600">Last 6 months consumption trend</div>
+                      </div>
+                    </div>
+                    
+                    {/* Summary Stats */}
+                    <div className="flex gap-4">
+                      <div className="text-right">
+                        <div className="text-xs text-gray-500">Average</div>
+                        <div className="font-bold text-green-700">
+                          {averageConsumption} m³
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-xs text-gray-500">Total</div>
+                        <div className="font-bold text-blue-700">
+                          {totalConsumption} m³
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Chart Component */}
+                  <WaterConsumptionChart bills={bills} />
+
+                  {/* Legend */}
+                  <div className="flex items-center justify-center gap-6 mt-4 pt-4 border-t border-gray-100">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                      <span className="text-xs text-gray-600">Normal</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+                      <span className="text-xs text-gray-600">Overdue</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 bg-green-700 rounded-full"></div>
+                      <span className="text-xs text-gray-600">Paid</span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
