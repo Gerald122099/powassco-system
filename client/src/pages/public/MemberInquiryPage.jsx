@@ -1,7 +1,9 @@
 import logo from "../../assets/logo.png";
 import { useEffect, useMemo, useRef, useState } from "react";
+import Navbar from "../../components/Navbar";
+import WaterConsumptionChart from "../../components/WaterConsumptionChart";
 
-const API_BASE = import.meta.env.VITE_API_BASE; // http://localhost:5000/api
+const API_BASE = import.meta.env.VITE_API_BASE;
 
 function money(n) {
   return Number(n || 0).toLocaleString(undefined, {
@@ -25,38 +27,12 @@ export default function MemberInquiryPage() {
   const [err, setErr] = useState("");
   const [data, setData] = useState(null);
 
-  // UI toggles (clean/minimal)
+  // UI toggles
   const [showAccountDetails, setShowAccountDetails] = useState(false);
   const [showMeterDetails, setShowMeterDetails] = useState(false);
-  const [showHistoryInCalculator, setShowHistoryInCalculator] = useState(false);
-
-  // Tariff examples + calculator
-  const [tariffExamples, setTariffExamples] = useState(null);
-  const [calculatorForm, setCalculatorForm] = useState({
-    classification: "residential",
-    consumption: 0,
-    isSenior: false,
-  });
-  const [calculatorResult, setCalculatorResult] = useState(null);
 
   // debounce
   const calcTimerRef = useRef(null);
-
-  // Fetch tariff examples on mount
-  useEffect(() => {
-    fetchTariffExamples("residential");
-  }, []);
-
-  async function fetchTariffExamples(classification) {
-    try {
-      // ✅ FIX: use public route you provided
-      const res = await fetch(`${API_BASE}/public/water/tariff-examples/${classification}`);
-      const json = await res.json();
-      if (res.ok) setTariffExamples(json);
-    } catch (error) {
-      console.error("Failed to fetch tariff examples:", error);
-    }
-  }
 
   async function submit(e) {
     e.preventDefault();
@@ -82,81 +58,15 @@ export default function MemberInquiryPage() {
 
       setData(json);
 
-      // set calculator defaults from member
-      const cls = json.member?.billing?.classification || "residential";
-      const isSenior = !!json.member?.personal?.isSeniorCitizen;
-
-      setCalculatorForm((prev) => ({
-        ...prev,
-        classification: cls,
-        isSenior,
-        consumption: 0,
-      }));
-
-      setCalculatorResult(null);
-      fetchTariffExamples(cls);
-
-      // collapse details by default (minimal)
+      // collapse details by default
       setShowAccountDetails(false);
       setShowMeterDetails(false);
-      setShowHistoryInCalculator(false);
     } catch (e2) {
       setErr(e2.message);
     } finally {
       setLoading(false);
     }
   }
-
-  // ✅ FIXED: Calculate using your PUBLIC endpoint /calculate-estimate
-  async function calculateTariffNow(nextForm = calculatorForm) {
-    const c = Number(nextForm.consumption || 0);
-    if (!c || c <= 0) {
-      setCalculatorResult(null);
-      return;
-    }
-
-    try {
-      const res = await fetch(`${API_BASE}/public/water/calculate-estimate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          classification: nextForm.classification,
-          consumption: c,
-          isSenior: !!nextForm.isSenior,
-        }),
-      });
-
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.message || "Failed to calculate estimate");
-
-      setCalculatorResult(json);
-    } catch (error) {
-      console.error("Calculation error:", error);
-      setCalculatorResult({
-        error: true,
-        message: error.message || "Calculation failed",
-      });
-    }
-  }
-
-  // ✅ Debounced auto-calc whenever inputs change
-  useEffect(() => {
-    if (calcTimerRef.current) clearTimeout(calcTimerRef.current);
-
-    // only debounce if consumption > 0
-    if (Number(calculatorForm.consumption || 0) > 0) {
-      calcTimerRef.current = setTimeout(() => {
-        calculateTariffNow(calculatorForm);
-      }, 350);
-    } else {
-      setCalculatorResult(null);
-    }
-
-    return () => {
-      if (calcTimerRef.current) clearTimeout(calcTimerRef.current);
-    };
-    // eslint-disable-next-line
-  }, [calculatorForm.classification, calculatorForm.consumption, calculatorForm.isSenior]);
 
   // ---- Derived Data ----
   const bills = useMemo(() => (data?.bills || []), [data]);
@@ -187,585 +97,520 @@ export default function MemberInquiryPage() {
   const [activeYear, setActiveYear] = useState(defaultYear);
 
   useEffect(() => {
-    // when new data loads, ensure active tab is valid
     if (years.length > 0 && !years.includes(activeYear)) {
       setActiveYear(years[0]);
     }
-    // eslint-disable-next-line
   }, [years.join("|")]);
 
-  // Mini list for calculator (last 5 bills)
-  const recentBills = useMemo(() => {
-    return [...bills]
-      .sort((a, b) => String(b.periodCovered || "").localeCompare(String(a.periodCovered || "")))
-      .slice(0, 5);
+  // Calculate average consumption
+  const averageConsumption = useMemo(() => {
+    if (bills.length === 0) return 0;
+    const total = bills.reduce((sum, b) => sum + (b.consumed || 0), 0);
+    return Math.round(total / bills.length);
+  }, [bills]);
+
+  // Calculate total consumption
+  const totalConsumption = useMemo(() => {
+    return bills.reduce((sum, b) => sum + (b.consumed || 0), 0);
   }, [bills]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-emerald-100 p-4 md:p-5">
-      <div className="max-w-6xl mx-auto">
-        {/* Header */}
-        <div className="rounded-3xl bg-white border border-slate-100 shadow-sm p-6 mb-5">
-          <div className="flex items-center gap-3 mb-6">
-            <img src={logo} alt="POWASSCO Logo" className="h-12 w-12 rounded-xl object-contain" />
-            <div>
-              <div className="text-sm font-semibold text-emerald-700">POWASSCO</div>
-              <div className="text-xl font-bold text-slate-900">Member Bill Inquiry</div>
-              <div className="text-xs text-slate-600 mt-1">
-                Enter your PN No to view bills, payment history, and meter information.
-              </div>
-            </div>
-          </div>
-
-          <form onSubmit={submit} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="md:col-span-2">
-                <label className="text-sm font-semibold text-slate-700 block mb-2">
-                  PN No (Account Number)
-                </label>
-                <input
-                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-300"
-                  value={pnNo}
-                  onChange={(e) => setPnNo(e.target.value.toUpperCase())}
-                  placeholder="e.g. PN-000123"
+    <>
+      <Navbar />
+      
+      <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-green-100 pt-24 pb-8 px-4 md:px-5">
+        <div className="max-w-6xl mx-auto">
+          {/* Header */}
+          <div className="rounded-3xl bg-white border border-green-100 shadow-lg p-6 mb-5">
+            <div className="flex items-center gap-4 mb-6">
+              <div className="relative">
+                <div className="absolute inset-0 bg-green-500 rounded-2xl blur-sm opacity-20"></div>
+                <img 
+                  src={logo} 
+                  alt="POWASSCO Logo" 
+                  className="h-16 w-16 rounded-2xl object-contain relative z-10 border-2 border-green-200" 
                 />
               </div>
-
-              <div className="flex items-end">
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full rounded-2xl bg-emerald-600 text-white py-3 font-semibold hover:bg-emerald-700 disabled:opacity-60 transition-colors"
-                >
-                  {loading ? "Checking..." : "Check Bills"}
-                </button>
+              <div>
+                <div className="text-sm font-semibold text-green-600 flex items-center gap-2">
+                  <i className="fas fa-droplet text-green-500"></i>
+                  POWASSCO
+                </div>
+                <div className="text-2xl font-bold text-gray-800">Member Bill Inquiry</div>
+                <div className="text-sm text-gray-500 mt-1 flex items-center gap-2">
+                  <i className="fas fa-info-circle text-green-500"></i>
+                  Enter your PN No to view bills, payment history, and meter information.
+                </div>
               </div>
             </div>
 
-            <div className="text-xs text-slate-500">
-              💡 Note: Enter your PN Number exactly as it appears on your bill statement.
-            </div>
-          </form>
-
-          {err && (
-            <div className="mt-4 rounded-2xl bg-red-50 border border-red-100 text-red-700 px-4 py-3 text-sm font-semibold">
-              ⚠️ {err}
-            </div>
-          )}
-        </div>
-
-        {data && (
-          <div className="space-y-5">
-            {/* ✅ Minimal Account Summary */}
-            <div className="rounded-3xl bg-white border border-slate-100 shadow-sm p-6">
-              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-                <div>
-                  <div className="text-lg font-black text-slate-900">{data.member?.accountName}</div>
-                  <div className="text-sm text-slate-600">
-                    PN No: <span className="font-semibold">{data.member?.pnNo}</span> •{" "}
-                    <span
-                      className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-bold ${
-                        data.member?.billing?.classification === "residential"
-                          ? "bg-blue-100 text-blue-800"
-                          : "bg-purple-100 text-purple-800"
-                      }`}
-                    >
-                      {data.member?.billing?.classification || "—"}
-                    </span>{" "}
-                    •{" "}
-                    <span
-                      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-bold ${
-                        data.member?.accountStatus === "active"
-                          ? "bg-green-100 border-green-200 text-green-800"
-                          : "bg-red-100 border-red-200 text-red-800"
-                      }`}
-                    >
-                      {data.member?.accountStatus}
-                    </span>
-                  </div>
+            <form onSubmit={submit} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="md:col-span-2">
+                  <label className="text-sm font-semibold text-gray-700 block mb-2 flex items-center gap-2">
+                    <i className="fas fa-id-card text-green-600"></i>
+                    PN No (Account Number)
+                  </label>
+                  <input
+                    className="w-full rounded-2xl border border-green-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-green-400 focus:border-transparent transition-all"
+                    value={pnNo}
+                    onChange={(e) => setPnNo(e.target.value.toUpperCase())}
+                    placeholder="e.g. PN-000123"
+                  />
                 </div>
 
-                <div className="flex flex-col items-start md:items-end">
-                  {totalOutstanding > 0 ? (
-                    <div className="text-lg font-bold text-red-600">
-                      Outstanding: ₱{money(totalOutstanding)}
-                    </div>
-                  ) : (
-                    <div className="text-sm font-semibold text-emerald-700">No outstanding balance</div>
-                  )}
-
+                <div className="flex items-end">
                   <button
-                    className="mt-1 text-xs font-semibold text-slate-700 hover:text-slate-900 underline"
-                    onClick={() => setShowAccountDetails((v) => !v)}
-                    type="button"
+                    type="submit"
+                    disabled={loading}
+                    className="w-full rounded-2xl bg-gradient-to-r from-green-600 to-green-700 text-white py-3 font-semibold hover:from-green-700 hover:to-green-800 disabled:opacity-60 transition-all transform hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2"
                   >
-                    {showAccountDetails ? "Hide account details" : "Show account details"}
-                  </button>
-                </div>
-              </div>
-
-              {/* Details (hidden by default) */}
-              {showAccountDetails && (
-                <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="rounded-2xl border border-slate-200 p-4">
-                    <div className="text-xs text-slate-500">Address</div>
-                    <div className="text-sm font-semibold text-slate-900 mt-1">
-                      {[
-                        data.member?.address?.houseLotNo,
-                        data.member?.address?.streetSitioPurok,
-                        data.member?.address?.barangay,
-                        data.member?.address?.municipalityCity,
-                        data.member?.address?.province,
-                      ]
-                        .filter(Boolean)
-                        .join(", ") || "—"}
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl border border-slate-200 p-4">
-                    <div className="text-xs text-slate-500">Contact (masked)</div>
-                    <div className="text-sm font-semibold text-slate-900 mt-1">
-                      {data.member?.contact?.mobileNumber || "—"}
-                    </div>
-                    <div className="text-sm font-semibold text-slate-900">{data.member?.contact?.email || ""}</div>
-                  </div>
-
-                  <div className="rounded-2xl border border-slate-200 p-4">
-                    <div className="text-xs text-slate-500">Discount</div>
-                    {data.member?.personal?.isSeniorCitizen ? (
-                      <div className="mt-1 text-sm font-bold text-amber-700">
-                        Senior • {data.member?.personal?.seniorDiscountRate || 5}%
-                      </div>
+                    {loading ? (
+                      <>
+                        <i className="fas fa-spinner fa-spin"></i>
+                        Checking...
+                      </>
                     ) : (
-                      <div className="mt-1 text-sm font-semibold text-slate-700">None</div>
+                      <>
+                        <i className="fas fa-search"></i>
+                        Check Bills
+                      </>
                     )}
-                    <div className="text-xs text-slate-500 mt-2">
-                      (Some info is masked for privacy.)
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* ✅ Minimal Meter Section */}
-            {activeMeters.length > 0 && (
-              <div className="rounded-3xl bg-white border border-slate-100 shadow-sm p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-lg font-black text-slate-900">Meters</div>
-                    <div className="text-sm text-slate-600">{activeMeters.length} active billing meter(s)</div>
-                  </div>
-
-                  <button
-                    className="text-xs font-semibold text-slate-700 hover:text-slate-900 underline"
-                    onClick={() => setShowMeterDetails((v) => !v)}
-                    type="button"
-                  >
-                    {showMeterDetails ? "Hide meters" : "Show meters"}
                   </button>
                 </div>
+              </div>
 
-                {showMeterDetails && (
-                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {activeMeters.map((meter, index) => (
-                      <div key={meter._id || index} className="border border-slate-200 rounded-2xl p-4">
-                        <div className="flex justify-between items-start">
-                          <div className="font-black text-slate-900">{meter.meterNumber}</div>
-                          <span className="inline-flex items-center rounded-full bg-blue-100 text-blue-800 px-2 py-1 text-xs font-bold">
-                            Active
-                          </span>
-                        </div>
+              <div className="text-xs text-gray-500 bg-blue-50 p-3 rounded-xl flex items-center gap-2">
+                <i className="fas fa-lightbulb text-yellow-500"></i>
+                Note: Enter your PN Number exactly as it appears on your bill statement.
+              </div>
+            </form>
 
-                        <div className="mt-2 text-sm text-slate-600">
-                          {meter.meterBrand || ""} {meter.meterModel || ""}{" "}
-                          {meter.meterSize ? `• Size: ${meter.meterSize}` : ""}
-                        </div>
-
-                        {meter.location?.description && (
-                          <div className="mt-1 text-xs text-slate-500 truncate" title={meter.location.description}>
-                            📍 {meter.location.description}
-                          </div>
-                        )}
-
-                        <div className="mt-2 text-xs text-slate-500">
-                          Condition:{" "}
-                          <span className={`font-bold ${meter.meterCondition === "good" ? "text-emerald-700" : "text-amber-700"}`}>
-                            {meter.meterCondition}
-                          </span>
-                        </div>
-
-                        <div className="mt-1 text-xs text-slate-500">
-                          Last Reading: <span className="font-bold text-slate-800">{meter.lastReading || 0}</span> m³
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+            {err && (
+              <div className="mt-4 rounded-2xl bg-red-50 border border-red-200 text-red-700 px-4 py-3 text-sm font-semibold flex items-center gap-2">
+                <i className="fas fa-exclamation-circle"></i>
+                {err}
               </div>
             )}
+          </div>
 
-            {/* Billing History */}
-            <div className="rounded-3xl bg-white border border-slate-100 shadow-sm p-6">
-              <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
-                <div>
-                  <div className="text-lg font-black text-slate-900">Billing History</div>
-                  <div className="text-sm text-slate-600 mt-1">
-                    Last 12 months • {bills.length} record(s)
-                  </div>
-                </div>
-
-                {years.length > 1 && (
-                  <div className="mt-2 md:mt-0">
-                    <div className="flex space-x-1">
-                      {years.map((year) => (
-                        <button
-                          key={year}
-                          onClick={() => setActiveYear(year)}
-                          type="button"
-                          className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                            activeYear === year
-                              ? "bg-emerald-600 text-white"
-                              : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                          }`}
-                        >
-                          {year}
-                        </button>
-                      ))}
+          {data && (
+            <div className="space-y-5">
+              {/* Account Summary */}
+              <div className="rounded-3xl bg-white border border-green-100 shadow-lg p-6">
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <i className="fas fa-user-circle text-2xl text-green-600"></i>
+                      <div className="text-xl font-black text-gray-800">{data.member?.accountName}</div>
                     </div>
-                  </div>
-                )}
-              </div>
-
-              {bills.length === 0 ? (
-                <div className="text-center py-8 text-slate-500">No bills found.</div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-slate-50 text-left text-slate-500">
-                      <tr>
-                        <th className="py-3 px-4 rounded-l-xl">Period</th>
-                        <th className="py-3 px-4">Meter</th>
-                        <th className="py-3 px-4">Consumption</th>
-                        <th className="py-3 px-4">Total</th>
-                        <th className="py-3 px-4">Due Date</th>
-                        <th className="py-3 px-4">Status</th>
-                        <th className="py-3 px-4 rounded-r-xl">Payments</th>
-                      </tr>
-                    </thead>
-
-                    <tbody>
-                      {bills
-                        .filter((bill) => bill.periodCovered?.startsWith(activeYear))
-                        .map((b) => {
-                          const rowTone =
-                            b.status === "overdue"
-                              ? "bg-red-50/40"
-                              : b.status !== "paid"
-                              ? "bg-amber-50/30"
-                              : "";
-
-                          return (
-                            <tr key={b._id} className={`border-t hover:bg-slate-50/60 ${rowTone}`}>
-                              <td className="py-3 px-4">
-                                <div className="font-bold text-slate-900">{b.periodCovered}</div>
-                                {b.readingDate && (
-                                  <div className="text-xs text-slate-500">
-                                    Read: {formatDate(b.readingDate)}
-                                  </div>
-                                )}
-                              </td>
-
-                              <td className="py-3 px-4">{b.meterNumber || "—"}</td>
-
-                              <td className="py-3 px-4">
-                                <div className="font-semibold">{b.consumed} m³</div>
-                                {b.tariffUsed && (
-                                  <div className="text-xs text-slate-500">{b.tariffUsed.tier} Tier</div>
-                                )}
-                              </td>
-
-                              <td className="py-3 px-4">
-                                <div className="font-bold">₱{money(b.totalDue)}</div>
-                                {b.discount > 0 && (
-                                  <div className="text-xs text-emerald-600">-₱{money(b.discount)} discount</div>
-                                )}
-                              </td>
-
-                              <td className="py-3 px-4">{b.dueDate ? formatDate(b.dueDate) : "—"}</td>
-
-                              <td className="py-3 px-4">
-                                <span
-                                  className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-bold ${
-                                    b.status === "paid"
-                                      ? "bg-green-50 border-green-200 text-green-700"
-                                      : b.status === "overdue"
-                                      ? "bg-red-50 border-red-200 text-red-700"
-                                      : "bg-amber-50 border-amber-200 text-amber-800"
-                                  }`}
-                                >
-                                  {b.status}
-                                </span>
-                              </td>
-
-                              <td className="py-3 px-4">
-                                {!b.payments || b.payments.length === 0 ? (
-                                  <span className="text-slate-400 text-sm">No payments</span>
-                                ) : (
-                                  <div className="space-y-1">
-                                    {b.payments.map((p) => (
-                                      <div key={p._id || p.orNo} className="border border-slate-200 rounded-lg p-2">
-                                        <div className="text-xs text-slate-600">
-                                          OR: {p.orNo} • {p.method} • {formatDate(p.paidAt)}
-                                        </div>
-                                        <div className="text-sm font-bold text-slate-900">
-                                          ₱{money(p.amountPaid)}
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-
-              <div className="mt-4 text-xs text-slate-500">
-                💡 Note: This public inquiry shows limited information only. Contact the office for detailed bills.
-              </div>
-            </div>
-
-            {/* ✅ Clean Tariff Calculator */}
-            <div className="rounded-3xl bg-white border border-slate-100 shadow-sm p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="text-lg font-black text-slate-900">Tariff Calculator</div>
-
-                {bills.length > 0 && (
-                  <button
-                    type="button"
-                    className="text-xs font-semibold text-slate-700 hover:text-slate-900 underline"
-                    onClick={() => setShowHistoryInCalculator((v) => !v)}
-                  >
-                    {showHistoryInCalculator ? "Hide billing history" : "Show billing history"}
-                  </button>
-                )}
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Calculator */}
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 gap-3">
-                    <div>
-                      <label className="text-sm font-medium text-slate-700 block mb-1">
-                        Classification
-                      </label>
-                      <select
-                        className="w-full rounded-xl border border-slate-200 px-3 py-2.5"
-                        value={calculatorForm.classification}
-                        onChange={(e) => {
-                          const cls = e.target.value;
-                          setCalculatorForm((prev) => ({ ...prev, classification: cls }));
-                          fetchTariffExamples(cls);
-                          setCalculatorResult(null);
-                        }}
+                    <div className="text-sm text-gray-600 flex flex-wrap items-center gap-2">
+                      <span className="flex items-center gap-1">
+                        <i className="fas fa-hashtag text-green-500"></i>
+                        PN No: <span className="font-semibold">{data.member?.pnNo}</span>
+                      </span>
+                      <span className="text-gray-300">•</span>
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold ${
+                          data.member?.billing?.classification === "residential"
+                            ? "bg-blue-100 text-blue-800"
+                            : "bg-purple-100 text-purple-800"
+                        }`}
                       >
-                        <option value="residential">Residential</option>
-                        <option value="commercial">Commercial</option>
-                      </select>
+                        <i className={`fas fa-${data.member?.billing?.classification === "residential" ? "home" : "building"}`}></i>
+                        {data.member?.billing?.classification || "—"}
+                      </span>
+                      <span className="text-gray-300">•</span>
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-bold ${
+                          data.member?.accountStatus === "active"
+                            ? "bg-green-100 border-green-200 text-green-800"
+                            : "bg-red-100 border-red-200 text-red-800"
+                        }`}
+                      >
+                        <i className={`fas fa-${data.member?.accountStatus === "active" ? "check-circle" : "exclamation-circle"}`}></i>
+                        {data.member?.accountStatus}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col items-start md:items-end">
+                    {totalOutstanding > 0 ? (
+                      <div className="text-lg font-bold text-red-600 flex items-center gap-2">
+                        <i className="fas fa-exclamation-triangle"></i>
+                        Outstanding: ₱{money(totalOutstanding)}
+                      </div>
+                    ) : (
+                      <div className="text-sm font-semibold text-green-700 flex items-center gap-2">
+                        <i className="fas fa-check-circle"></i>
+                        No outstanding balance
+                      </div>
+                    )}
+
+                    <button
+                      className="mt-2 text-xs font-semibold text-green-600 hover:text-green-800 flex items-center gap-1 transition-colors"
+                      onClick={() => setShowAccountDetails((v) => !v)}
+                      type="button"
+                    >
+                      <i className={`fas fa-chevron-${showAccountDetails ? 'up' : 'down'}`}></i>
+                      {showAccountDetails ? "Hide account details" : "Show account details"}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Account Details */}
+                {showAccountDetails && (
+                  <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="rounded-2xl border border-green-100 p-4 bg-gradient-to-br from-green-50 to-white">
+                      <div className="text-xs text-gray-500 flex items-center gap-1 mb-2">
+                        <i className="fas fa-map-marker-alt text-green-600"></i>
+                        Address
+                      </div>
+                      <div className="text-sm font-semibold text-gray-800">
+                        {[
+                          data.member?.address?.houseLotNo,
+                          data.member?.address?.streetSitioPurok,
+                          data.member?.address?.barangay,
+                          data.member?.address?.municipalityCity,
+                          data.member?.address?.province,
+                        ]
+                          .filter(Boolean)
+                          .join(", ") || "—"}
+                      </div>
                     </div>
 
-                    <div>
-                      <label className="text-sm font-medium text-slate-700 block mb-1">
-                        Monthly Consumption (m³)
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.1"
-                        className="w-full rounded-xl border border-slate-200 px-3 py-2.5"
-                        value={calculatorForm.consumption}
-                        onChange={(e) => {
-                          const value = parseFloat(e.target.value) || 0;
-                          setCalculatorForm((prev) => ({ ...prev, consumption: value }));
-                        }}
-                        placeholder="Enter consumption in cubic meters"
-                      />
+                    <div className="rounded-2xl border border-green-100 p-4 bg-gradient-to-br from-green-50 to-white">
+                      <div className="text-xs text-gray-500 flex items-center gap-1 mb-2">
+                        <i className="fas fa-phone-alt text-green-600"></i>
+                        Contact
+                      </div>
+                      <div className="text-sm font-semibold text-gray-800">
+                        {data.member?.contact?.mobileNumber || "—"}
+                      </div>
+                      <div className="text-sm font-semibold text-gray-800">{data.member?.contact?.email || ""}</div>
                     </div>
 
+                    <div className="rounded-2xl border border-green-100 p-4 bg-gradient-to-br from-green-50 to-white">
+                      <div className="text-xs text-gray-500 flex items-center gap-1 mb-2">
+                        <i className="fas fa-tag text-green-600"></i>
+                        Discount
+                      </div>
+                      {data.member?.personal?.isSeniorCitizen ? (
+                        <div className="mt-1 text-sm font-bold text-amber-700 flex items-center gap-1">
+                          <i className="fas fa-user-shield"></i>
+                          Senior • {data.member?.personal?.seniorDiscountRate || 5}%
+                        </div>
+                      ) : (
+                        <div className="mt-1 text-sm font-semibold text-gray-700">None</div>
+                      )}
+                      <div className="text-xs text-gray-500 mt-2 flex items-center gap-1">
+                        <i className="fas fa-lock"></i>
+                        Some info is masked for privacy.
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Meter Section */}
+              {activeMeters.length > 0 && (
+                <div className="rounded-3xl bg-white border border-green-100 shadow-lg p-6">
+                  <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        id="isSenior"
-                        checked={calculatorForm.isSenior}
-                        onChange={(e) =>
-                          setCalculatorForm((prev) => ({ ...prev, isSenior: e.target.checked }))
-                        }
-                        className="rounded border-slate-300"
-                      />
-                      <label htmlFor="isSenior" className="text-sm text-slate-700">
-                        Apply Senior Citizen Discount (5%)
-                      </label>
+                      <i className="fas fa-tachometer-alt text-2xl text-green-600"></i>
+                      <div>
+                        <div className="text-lg font-black text-gray-800">Meters</div>
+                        <div className="text-sm text-gray-600">{activeMeters.length} active billing meter(s)</div>
+                      </div>
                     </div>
 
                     <button
-                      onClick={() => calculateTariffNow(calculatorForm)}
-                      disabled={Number(calculatorForm.consumption || 0) <= 0}
-                      className="w-full rounded-xl bg-slate-900 text-white py-2.5 font-semibold hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="text-xs font-semibold text-green-600 hover:text-green-800 flex items-center gap-1 transition-colors"
+                      onClick={() => setShowMeterDetails((v) => !v)}
                       type="button"
                     >
-                      Calculate Bill
+                      <i className={`fas fa-chevron-${showMeterDetails ? 'up' : 'down'}`}></i>
+                      {showMeterDetails ? "Hide meters" : "Show meters"}
                     </button>
                   </div>
 
-                  {/* Result */}
-                  {calculatorResult && (
-                    <div className="border border-slate-200 rounded-2xl p-4 bg-slate-50">
-                      {calculatorResult.error ? (
-                        <div className="text-sm font-semibold text-red-700">
-                          ⚠️ {calculatorResult.message || "Calculation failed"}
+                  {showMeterDetails && (
+                    <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {activeMeters.map((meter, index) => (
+                        <div key={meter._id || index} className="border border-green-100 rounded-2xl p-4 hover:shadow-md transition-shadow bg-gradient-to-br from-white to-green-50">
+                          <div className="flex justify-between items-start">
+                            <div className="font-black text-gray-800 flex items-center gap-2">
+                              <i className="fas fa-qrcode text-green-600"></i>
+                              {meter.meterNumber}
+                            </div>
+                            <span className="inline-flex items-center gap-1 rounded-full bg-green-100 text-green-800 px-2 py-1 text-xs font-bold">
+                              <i className="fas fa-circle text-xs"></i>
+                              Active
+                            </span>
+                          </div>
+
+                          <div className="mt-2 text-sm text-gray-600">
+                            {meter.meterBrand || ""} {meter.meterModel || ""}{" "}
+                            {meter.meterSize ? `• Size: ${meter.meterSize}` : ""}
+                          </div>
+
+                          {meter.location?.description && (
+                            <div className="mt-1 text-xs text-gray-500 truncate flex items-center gap-1" title={meter.location.description}>
+                              <i className="fas fa-map-pin text-green-500"></i>
+                              {meter.location.description}
+                            </div>
+                          )}
+
+                          <div className="mt-2 text-xs text-gray-500 flex items-center gap-1">
+                            <i className="fas fa-wrench"></i>
+                            Condition:{" "}
+                            <span className={`font-bold ${meter.meterCondition === "good" ? "text-green-700" : "text-amber-700"}`}>
+                              {meter.meterCondition}
+                            </span>
+                          </div>
+
+                          <div className="mt-1 text-xs text-gray-500 flex items-center gap-1">
+                            <i className="fas fa-chart-line"></i>
+                            Last Reading: <span className="font-bold text-gray-800">{meter.lastReading || 0}</span> m³
+                          </div>
                         </div>
-                      ) : (
-                        <>
-                          <div className="flex items-center justify-between">
-                            <div className="text-sm font-semibold text-slate-700">Estimated Total</div>
-                            <div className="text-lg font-black text-slate-900">
-                              ₱{money(calculatorResult.totalAmount)}
-                            </div>
-                          </div>
-
-                          <div className="mt-3 space-y-1 text-sm">
-                            <div className="flex justify-between">
-                              <span className="text-slate-600">Tier</span>
-                              <span className="font-semibold">{calculatorResult.tier}</span>
-                            </div>
-
-                            <div className="flex justify-between">
-                              <span className="text-slate-600">Base Amount</span>
-                              <span className="font-bold">₱{money(calculatorResult.breakdown?.baseAmount)}</span>
-                            </div>
-
-                            {calculatorResult.seniorDiscount?.applied && (
-                              <div className="flex justify-between">
-                                <span className="text-slate-600">
-                                  Senior Discount ({calculatorResult.seniorDiscount.rate}%)
-                                </span>
-                                <span className="font-bold text-emerald-700">
-                                  -₱{money(calculatorResult.seniorDiscount.amount)}
-                                </span>
-                              </div>
-                            )}
-
-                            <div className="pt-2 mt-2 border-t flex justify-between font-black text-slate-900">
-                              <span>Total</span>
-                              <span>₱{money(calculatorResult.totalAmount)}</span>
-                            </div>
-
-                            <div className="text-xs text-slate-500 mt-2">
-                              {calculatorResult.message}
-                            </div>
-                          </div>
-                        </>
-                      )}
+                      ))}
                     </div>
                   )}
+                </div>
+              )}
 
-                  {/* Billing History inside calculator (toggle) */}
-                  {showHistoryInCalculator && recentBills.length > 0 && (
-                    <div className="border border-slate-200 rounded-2xl p-4">
-                      <div className="text-sm font-black text-slate-900 mb-2">Recent Bills (Last 5)</div>
-                      <div className="space-y-2">
-                        {recentBills.map((b) => (
-                          <div
-                            key={b._id}
-                            className={`rounded-xl border p-3 ${
-                              b.status === "overdue"
-                                ? "border-red-200 bg-red-50/40"
-                                : b.status !== "paid"
-                                ? "border-amber-200 bg-amber-50/30"
-                                : "border-slate-200"
+              {/* Water Consumption Chart - New Section */}
+              {bills.length > 0 && (
+                <div className="rounded-3xl bg-white border border-green-100 shadow-lg p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <i className="fas fa-chart-line text-2xl text-green-600"></i>
+                      <div>
+                        <div className="text-lg font-black text-gray-800">Water Consumption History</div>
+                        <div className="text-sm text-gray-600">Last 6 months consumption trend</div>
+                      </div>
+                    </div>
+                    
+                    {/* Summary Stats */}
+                    <div className="flex gap-4">
+                      <div className="text-right">
+                        <div className="text-xs text-gray-500">Average</div>
+                        <div className="font-bold text-green-700">
+                          {averageConsumption} m³
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-xs text-gray-500">Total</div>
+                        <div className="font-bold text-blue-700">
+                          {totalConsumption} m³
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Chart Component */}
+                  <WaterConsumptionChart bills={bills} />
+
+                  {/* Legend */}
+                  <div className="flex items-center justify-center gap-6 mt-4 pt-4 border-t border-gray-100">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                      <span className="text-xs text-gray-600">Normal</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+                      <span className="text-xs text-gray-600">Overdue</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 bg-green-700 rounded-full"></div>
+                      <span className="text-xs text-gray-600">Paid</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Billing History */}
+              <div className="rounded-3xl bg-white border border-green-100 shadow-lg p-6">
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <i className="fas fa-history text-2xl text-green-600"></i>
+                    <div>
+                      <div className="text-lg font-black text-gray-800">Billing History</div>
+                      <div className="text-sm text-gray-600 mt-1">
+                        Last 12 months • {bills.length} record(s)
+                      </div>
+                    </div>
+                  </div>
+
+                  {years.length > 1 && (
+                    <div className="mt-2 md:mt-0">
+                      <div className="flex space-x-1">
+                        {years.map((year) => (
+                          <button
+                            key={year}
+                            onClick={() => setActiveYear(year)}
+                            type="button"
+                            className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-all flex items-center gap-1 ${
+                              activeYear === year
+                                ? "bg-green-600 text-white shadow-md"
+                                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                             }`}
                           >
-                            <div className="flex justify-between text-xs text-slate-600">
-                              <span>{b.periodCovered} • {b.meterNumber || "—"}</span>
-                              <span className="font-bold">{b.status}</span>
-                            </div>
-                            <div className="flex justify-between mt-1">
-                              <span className="text-sm font-semibold text-slate-900">{b.consumed} m³</span>
-                              <span className="text-sm font-black text-slate-900">₱{money(b.totalDue)}</span>
-                            </div>
-                          </div>
+                            <i className="fas fa-calendar-alt"></i>
+                            {year}
+                          </button>
                         ))}
                       </div>
                     </div>
                   )}
                 </div>
 
-                {/* Tariff Guide */}
-                <div className="space-y-4">
-                  <div className="text-sm font-semibold text-slate-700">
-                    {tariffExamples?.description || "Tariff Structure"}
-                  </div>
+                {bills.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">No bills found.</div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gradient-to-r from-green-50 to-green-100 text-left text-gray-600">
+                        <tr>
+                          <th className="py-3 px-4 rounded-l-xl">Period</th>
+                          <th className="py-3 px-4">Meter</th>
+                          <th className="py-3 px-4">Consumption</th>
+                          <th className="py-3 px-4">Total</th>
+                          <th className="py-3 px-4">Due Date</th>
+                          <th className="py-3 px-4">Status</th>
+                          <th className="py-3 px-4 rounded-r-xl">Payments</th>
+                        </tr>
+                      </thead>
 
-                  {tariffExamples?.examples?.length > 0 && (
-                    <div className="border border-slate-200 rounded-2xl overflow-hidden">
-                      <div className="bg-slate-50 px-4 py-3 text-sm font-bold text-slate-700">
-                        Example Calculations
-                      </div>
-                      <div className="max-h-72 overflow-y-auto">
-                        <table className="w-full text-xs">
-                          <thead className="bg-white">
-                            <tr className="text-slate-500">
-                              <th className="py-2 px-4 text-left">Consumption</th>
-                              <th className="py-2 px-4 text-left">Amount</th>
-                              <th className="py-2 px-4 text-left">Formula</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {tariffExamples.examples.slice(0, 9).map((ex, idx) => (
-                              <tr key={idx} className="border-t border-slate-100">
-                                <td className="py-2 px-4 font-semibold">{ex.consumption} m³</td>
-                                <td className="py-2 px-4 font-black">₱{money(ex.amount)}</td>
-                                <td className="py-2 px-4 text-slate-600">{ex.description}</td>
+                      <tbody>
+                        {bills
+                          .filter((bill) => bill.periodCovered?.startsWith(activeYear))
+                          .map((b) => {
+                            const rowTone =
+                              b.status === "overdue"
+                                ? "bg-red-50/40"
+                                : b.status !== "paid"
+                                ? "bg-amber-50/30"
+                                : "";
+
+                            return (
+                              <tr key={b._id} className={`border-t hover:bg-green-50/60 transition-colors ${rowTone}`}>
+                                <td className="py-3 px-4">
+                                  <div className="font-bold text-gray-800">{b.periodCovered}</div>
+                                  {b.readingDate && (
+                                    <div className="text-xs text-gray-500 flex items-center gap-1">
+                                      <i className="fas fa-calendar-check"></i>
+                                      Read: {formatDate(b.readingDate)}
+                                    </div>
+                                  )}
+                                </td>
+
+                                <td className="py-3 px-4">{b.meterNumber || "—"}</td>
+
+                                <td className="py-3 px-4">
+                                  <div className="font-semibold">{b.consumed} m³</div>
+                                  {b.tariffUsed && (
+                                    <div className="text-xs text-gray-500">{b.tariffUsed.tier} Tier</div>
+                                  )}
+                                </td>
+
+                                <td className="py-3 px-4">
+                                  <div className="font-bold">₱{money(b.totalDue)}</div>
+                                  {b.discount > 0 && (
+                                    <div className="text-xs text-green-600 flex items-center gap-1">
+                                      <i className="fas fa-tag"></i>
+                                      -₱{money(b.discount)} discount
+                                    </div>
+                                  )}
+                                </td>
+
+                                <td className="py-3 px-4">{b.dueDate ? formatDate(b.dueDate) : "—"}</td>
+
+                                <td className="py-3 px-4">
+                                  <span
+                                    className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-bold ${
+                                      b.status === "paid"
+                                        ? "bg-green-50 border-green-200 text-green-700"
+                                        : b.status === "overdue"
+                                        ? "bg-red-50 border-red-200 text-red-700"
+                                        : "bg-amber-50 border-amber-200 text-amber-800"
+                                    }`}
+                                  >
+                                    <i className={`fas fa-${b.status === "paid" ? "check-circle" : b.status === "overdue" ? "exclamation-circle" : "clock"}`}></i>
+                                    {b.status}
+                                  </span>
+                                </td>
+
+                                <td className="py-3 px-4">
+                                  {!b.payments || b.payments.length === 0 ? (
+                                    <span className="text-gray-400 text-sm">No payments</span>
+                                  ) : (
+                                    <div className="space-y-1">
+                                      {b.payments.map((p) => (
+                                        <div key={p._id || p.orNo} className="border border-green-100 rounded-lg p-2 bg-green-50/30">
+                                          <div className="text-xs text-gray-600 flex items-center gap-1">
+                                            <i className="fas fa-receipt"></i>
+                                            OR: {p.orNo} • {p.method}
+                                          </div>
+                                          <div className="text-xs text-gray-500">{formatDate(p.paidAt)}</div>
+                                          <div className="text-sm font-bold text-gray-800">
+                                            ₱{money(p.amountPaid)}
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </td>
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="text-xs text-slate-500">
-                    Note: Calculator is an estimate. Final billing may include penalties, adjustments, or verified discounts.
+                            );
+                          })}
+                      </tbody>
+                    </table>
                   </div>
+                )}
+
+                <div className="mt-4 text-xs text-gray-500 bg-blue-50 p-3 rounded-xl flex items-center gap-2">
+                  <i className="fas fa-info-circle text-blue-500"></i>
+                  Note: This public inquiry shows limited information only. Contact the office for detailed bills.
                 </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {!data && (
-          <div className="text-center py-8 text-slate-500 text-sm">
-            <div className="mb-2">💡 How to use this inquiry system:</div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-2xl mx-auto">
-              <div className="p-3 bg-slate-50 rounded-xl">
-                <div className="font-semibold text-slate-700">1. Enter PN No</div>
-                <div className="text-xs mt-1">Find your PN Number on your bill statement</div>
+          {!data && (
+            <div className="text-center py-8 text-gray-500 text-sm">
+              <div className="mb-4 flex items-center justify-center gap-2">
+                <i className="fas fa-lightbulb text-yellow-500 text-xl"></i>
+                <span className="font-semibold">How to use this inquiry system:</span>
               </div>
-              <div className="p-3 bg-slate-50 rounded-xl">
-                <div className="font-semibold text-slate-700">2. View Bills</div>
-                <div className="text-xs mt-1">See your last 12 months of bills and payments</div>
-              </div>
-              <div className="p-3 bg-slate-50 rounded-xl">
-                <div className="font-semibold text-slate-700">3. Use Calculator</div>
-                <div className="text-xs mt-1">Understand how your bill is calculated</div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-2xl mx-auto">
+                <div className="p-4 bg-white rounded-xl shadow-sm border border-green-100">
+                  <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-2">
+                    <span className="font-bold text-green-700">1</span>
+                  </div>
+                  <div className="font-semibold text-gray-700">Enter PN No</div>
+                  <div className="text-xs mt-1 text-gray-500">Find your PN Number on your bill statement</div>
+                </div>
+                <div className="p-4 bg-white rounded-xl shadow-sm border border-green-100">
+                  <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-2">
+                    <span className="font-bold text-green-700">2</span>
+                  </div>
+                  <div className="font-semibold text-gray-700">View Bills</div>
+                  <div className="text-xs mt-1 text-gray-500">See your last 12 months of bills and payments</div>
+                </div>
+                <div className="p-4 bg-white rounded-xl shadow-sm border border-green-100">
+                  <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-2">
+                    <span className="font-bold text-green-700">3</span>
+                  </div>
+                  <div className="font-semibold text-gray-700">Check Chart</div>
+                  <div className="text-xs mt-1 text-gray-500">View your water consumption trends</div>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
-    </div>
+    </>
   );
 }

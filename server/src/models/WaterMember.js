@@ -254,7 +254,7 @@ const WaterMemberSchema = new mongoose.Schema(
     pnNo: { 
       type: String, 
       required: true, 
-      unique: true, 
+      unique: true, // This creates an index automatically
       trim: true,
       uppercase: true 
     },
@@ -435,10 +435,9 @@ WaterMemberSchema.virtual("totalDiscountRate").get(function() {
 });
 
 // Compound indexes for efficient queries
-WaterMemberSchema.index({ pnNo: 1 });
+// Note: pnNo and meters.meterNumber are already indexed via unique:true and field-level indexing
 WaterMemberSchema.index({ accountName: 1 });
 WaterMemberSchema.index({ "personal.fullName": 1 });
-WaterMemberSchema.index({ "meters.meterNumber": 1 });
 WaterMemberSchema.index({ "personal.isSeniorCitizen": 1 });
 WaterMemberSchema.index({ "billing.classification": 1 });
 WaterMemberSchema.index({ accountStatus: 1 });

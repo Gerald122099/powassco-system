@@ -1,5 +1,5 @@
 // utils/waterBillUpsert.js
-import WaterBill from "../models/WaterBill.js";
+import WaterBill from "../models/waterbill.js";
 import WaterSettings from "../models/WaterSettings.js";
 import { calculateWaterBill } from "./waterBillingNew.js";
 
@@ -33,12 +33,13 @@ function calculateDueDate(periodKey, settings) {
  */
 export async function upsertWaterBill({
   member,
-  periodCovered,          // "YYYY-MM"
-  meterReading,           // required (single)
+  periodCovered,
+  meterReading,
   readingDate = new Date(),
   readerId = "",
   remarks = "",
   createdBy = "",
+  forceUpdate = false, // Add this parameter
 }) {
   if (!member) throw new Error("Member is required");
   if (!periodCovered) throw new Error("periodCovered is required");
@@ -49,7 +50,6 @@ export async function upsertWaterBill({
 
   const classification = member.billing?.classification || "residential";
 
-  // Normalize + validate
   const meterNo = String(meterReading.meterNumber || "").toUpperCase().trim();
   const prev = Number(meterReading.previousReading ?? 0);
   const pres = Number(meterReading.presentReading ?? 0);
@@ -65,21 +65,20 @@ export async function upsertWaterBill({
   const rawConsumed = Math.max(0, pres - prev);
   const consumed = rawConsumed * mult;
 
-  // Compute tariff/discounts based on THIS meter consumption only
   const computation = await calculateWaterBill(consumed, classification, member);
 
   const dueDate = calculateDueDate(periodCovered, settings);
 
-  // ✅ NEW: one bill per meter
   const filter = { pnNo: member.pnNo, periodKey: periodCovered, meterNumber: meterNo };
 
-  // If already paid, do not change it (paid per meter now)
+  // Check existing bill
   const existing = await WaterBill.findOne(filter);
-  if (existing && existing.status === "paid") {
+  
+  // If bill is paid and not forcing update, don't change it
+  if (existing && existing.status === "paid" && !forceUpdate) {
     return { bill: existing, computation, consumed, breakdown: existing.meterReadings || [] };
   }
 
-  // meter snapshot (optional)
   const meterDoc = (member.meters || []).find(
     (m) => String(m.meterNumber || "").toUpperCase().trim() === meterNo
   );
@@ -116,7 +115,6 @@ export async function upsertWaterBill({
 
     meterNumber: meterNo,
 
-    // legacy summary fields
     previousReading: toMoney(prev),
     presentReading: toMoney(pres),
     consumed: toMoney(consumed),
@@ -156,6 +154,8 @@ export async function upsertWaterBill({
     needsTariffReview: !computation?.tariffUsed,
   };
 
+  // If bill exists and is unpaid, update it
+  // If forceUpdate is true, update regardless of status
   const bill = await WaterBill.findOneAndUpdate(
     filter,
     { $set: update, $setOnInsert: { status: "unpaid" } },

@@ -8,7 +8,7 @@ dotenv.config();
 async function run() {
   await mongoose.connect(process.env.MONGO_URI);
 
-  const employeeId = "ADMIN001";
+  const employeeId = "ADMIN2026";
   const exists = await User.findOne({ employeeId });
 
   if (exists) {
@@ -16,7 +16,7 @@ async function run() {
     process.exit(0);
   }
 
-  const passwordHash = await bcrypt.hash("Admin@123", 10);
+  const passwordHash = await bcrypt.hash("PowasscoAdmin@2026", 10);
 
   await User.create({
     employeeId,
@@ -26,7 +26,7 @@ async function run() {
     passwordHash
   });
 
-  console.log("âœ… Seeded admin:", employeeId, "password: Admin@123");
+  console.log("âœ… Seeded admin:", employeeId, "password: PowasscoAdmin@2026");
   process.exit(0);
 }
 

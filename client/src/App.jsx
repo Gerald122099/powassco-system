@@ -1,10 +1,13 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import LoginPage from "./pages/LoginPage";
+import HomePage from "./pages/public/HomePage";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import WaterDashboard from "./pages/water/WaterDashboard";
 import LoanDashboard from "./pages/loan/LoanDashboard";
 import MeterDashboard from "./pages/meter/MeterDashboard";
 import MemberInquiryPage from "./pages/public/MemberInquiryPage";
+import TariffCalculatorPage from "./pages/public/TariffCalculatorPage";
+import AboutPage from "./pages/public/AboutPage";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 
 function RoleHome() {
@@ -30,12 +33,15 @@ export default function App() {
   return (
     <AuthProvider>
       <Routes>
+        {/* PUBLIC PAGES */}
+        <Route path="/" element={<HomePage />} />
         <Route path="/login" element={<LoginPage />} />
-
-        {/* ✅ PUBLIC PAGE */}
         <Route path="/inquiry" element={<MemberInquiryPage />} />
+        <Route path="/calculator" element={<TariffCalculatorPage />} />
+        <Route path="/about" element={<AboutPage />} />
 
-        <Route path="/" element={<RoleHome />} />
+        {/* Role-based home redirect for authenticated users */}
+        <Route path="/dashboard" element={<RoleHome />} />
 
         <Route
           path="/admin"

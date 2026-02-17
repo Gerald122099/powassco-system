@@ -1,3 +1,5 @@
+// client/src/lib/api.js
+
 const RAW_BASE = import.meta.env.VITE_API_BASE || "http://localhost:5000/api";
 const API_BASE = RAW_BASE.replace(/\/+$/, "");
 
@@ -42,6 +44,52 @@ export function getAuthToken() {
   const stored = getStoredToken();
   if (stored && stored !== globalToken) globalToken = stored;
   return globalToken;
+}
+
+/**
+ * Helper for file downloads (like CSV exports)
+ */
+export async function apiDownload(path, { token, filename } = {}) {
+  const cleanPath = String(path).startsWith("/") ? path : `/${path}`;
+  const url = `${API_BASE}${cleanPath}`;
+
+  const storedToken = getStoredToken();
+  const finalToken = token || storedToken || globalToken;
+
+  if (finalToken && finalToken !== globalToken) globalToken = finalToken;
+
+  const headers = {
+    ...(finalToken ? { Authorization: `Bearer ${finalToken}` } : {}),
+  };
+
+  console.log(`[API Download] ${cleanPath}`);
+
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers,
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || `Download failed (${response.status})`);
+    }
+
+    const blob = await response.blob();
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = downloadUrl;
+    a.download = filename || `download_${Date.now()}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(downloadUrl);
+
+    return { success: true, filename: a.download };
+  } catch (error) {
+    console.error("[API Download] Error:", error);
+    throw error;
+  }
 }
 
 export async function apiFetch(
@@ -116,3 +164,11 @@ export async function apiFetch(
 
   return data;
 }
+
+// Optional: Add a default export for convenience
+export default {
+  fetch: apiFetch,
+  download: apiDownload,
+  setAuthToken,
+  getAuthToken,
+};

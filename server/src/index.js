@@ -13,6 +13,7 @@ import waterSettingsRoutes from "./routes/water/waterSettings.routes.js";
 import waterAnalyticsRoutes from "./routes/water/waterAnalytics.routes.js";
 import waterReadingsRoutes from "./routes/water/waterReadings.routes.js";
 import waterInquiryRoutes from "./routes/public/waterInquiry.routes.js";
+import waterBatchesRoutes from "./routes/water/waterBatches.routes.js";
 
 
 dotenv.config();
@@ -55,6 +56,7 @@ app.use("/api/water/settings", waterSettingsRoutes);
 app.use("/api/water/analytics", waterAnalyticsRoutes);
 app.use("/api/water/readings", waterReadingsRoutes);
 app.use("/api/public/water", waterInquiryRoutes);
+app.use("/api/water/batches", waterBatchesRoutes);
 
 
 

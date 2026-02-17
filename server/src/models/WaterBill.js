@@ -1,3 +1,4 @@
+// models/WaterBill.js
 import mongoose from "mongoose";
 
 /** =========================
@@ -55,8 +56,8 @@ const MeterSnapshotSchema = new mongoose.Schema(
  *  ========================= */
 const WaterBillSchema = new mongoose.Schema(
   {
-    pnNo: { type: String, required: true, index: true },
-    periodKey: { type: String, required: true, index: true }, // "YYYY-MM"
+    pnNo: { type: String, required: true }, // REMOVED index:true from here
+    periodKey: { type: String, required: true }, // REMOVED index:true from here
     periodCovered: { type: String, required: true },
 
     accountName: { type: String, default: "" },
@@ -64,7 +65,7 @@ const WaterBillSchema = new mongoose.Schema(
     addressText: { type: String, default: "" },
 
     // ✅ Option C identity
-    meterNumber: { type: String, required: true, index: true },
+    meterNumber: { type: String, required: true }, // REMOVED index:true from here
 
     previousReading: { type: Number, default: 0 },
     presentReading: { type: Number, default: 0 },
@@ -102,13 +103,21 @@ const WaterBillSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// ✅ Option C unique index
+// ✅ KEEP THIS - it creates the unique compound index
 WaterBillSchema.index({ pnNo: 1, periodKey: 1, meterNumber: 1 }, { unique: true });
 
-// helpful indexes
-WaterBillSchema.index({ status: 1 });
-WaterBillSchema.index({ classification: 1 });
-WaterBillSchema.index({ meterNumber: 1 });
-WaterBillSchema.index({ periodKey: 1 });
+// REMOVE these duplicate single-field indexes since they're covered by the compound index
+// WaterBillSchema.index({ status: 1 });
+// WaterBillSchema.index({ classification: 1 });
+// WaterBillSchema.index({ meterNumber: 1 });
+// WaterBillSchema.index({ periodKey: 1 });
 
-export default mongoose.model("WaterBill", WaterBillSchema);
+// IF you frequently query by status alone, you might want to keep this one:
+// IF you frequently query by status alone, you might want to keep this one:
+WaterBillSchema.index({ status: 1 }); // Keep this if you often filter by status only
+
+const WaterBill =
+  mongoose.models.WaterBill ||
+  mongoose.model("WaterBill", WaterBillSchema);
+
+export default WaterBill;

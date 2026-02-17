@@ -1,4 +1,4 @@
-// server/routes/water/waterAnalytics.routes.js
+// server/routes/water/waterAnalytics.routes.js (FIXED)
 import express from "express";
 import WaterMember from "../../models/WaterMember.js";
 import WaterBill from "../../models/WaterBill.js";
@@ -315,7 +315,12 @@ router.get("/", ...guard, async (req, res) => {
       { $group: { _id: "$_id.periodKey", readMeters: { $sum: 1 } } },
       { $sort: { _id: 1 } },
     ]);
-    const readSeriesMap = new Map(readSeriesAgg.map((r) => [r._id, r.readMeters]));
+    
+    // FIXED: Create map properly
+    const readSeriesMap = new Map();
+    readSeriesAgg.forEach((r) => {
+      readSeriesMap.set(r._id, r.readMeters);
+    });
 
     // =========================
     // 5) SERIES (Bills + Payments)
@@ -340,7 +345,12 @@ router.get("/", ...guard, async (req, res) => {
       },
       { $sort: { _id: 1 } },
     ]);
-    const billSeriesMap = new Map(billSeriesAgg.map((r) => [r._id, r]));
+    
+    // FIXED: Create map properly
+    const billSeriesMap = new Map();
+    billSeriesAgg.forEach((r) => {
+      billSeriesMap.set(r._id, r);
+    });
 
     const collectedSeriesAgg = await WaterPayment.aggregate([
       {
@@ -356,18 +366,25 @@ router.get("/", ...guard, async (req, res) => {
       { $group: { _id: "$bill.periodKey", collectedAmount: { $sum: "$amountPaid" } } },
       { $sort: { _id: 1 } },
     ]);
-    const collectedMap = new Map(collectedSeriesAgg.map((r) => [r._id, r.collectedAmount]));
+    
+    // FIXED: Create map properly
+    const collectedMap = new Map();
+    collectedSeriesAgg.forEach((r) => {
+      collectedMap.set(r._id, r.collectedAmount);
+    });
 
     // ✅ Guarantee a row per periodKey (fill missing months with zeros)
     const series = periodKeys.map((k) => {
       const b = billSeriesMap.get(k);
-      const readM = readSeriesMapMapGet(readSeriesMap, k);
+      // FIXED: Use the map directly with get method
+      const readM = readSeriesMap.get(k) || 0;
       const unreadM = Math.max(0, totalActiveMeters - readM);
+      const collected = collectedMap.get(k) || 0;
 
       return {
         periodKey: k,
         billedAmount: safeNum(b?.billedAmount),
-        collectedAmount: safeNum(collectedMap.get(k)),
+        collectedAmount: safeNum(collected),
         unpaidAmount: safeNum(b?.unpaidAmount),
         discounts: safeNum(b?.discounts),
         consumption: safeNum(b?.consumption),
@@ -424,14 +441,11 @@ router.get("/", ...guard, async (req, res) => {
     });
   } catch (e) {
     console.error("analytics error:", e);
-    return res.status(500).json({ message: "Failed to load analytics" });
+    return res.status(500).json({ 
+      message: "Failed to load analytics",
+      error: process.env.NODE_ENV === "development" ? e.message : undefined 
+    });
   }
 });
-
-// helper to safely read map
-function readSeriesMapMapGet(map, key) {
-  const v = map.get(key);
-  return Number.isFinite(Number(v)) ? Number(v) : 0;
-}
 
 export default router;

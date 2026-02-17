@@ -3,11 +3,9 @@ import mongoose from "mongoose";
 
 const WaterReadingSchema = new mongoose.Schema(
   {
-    periodKey: { type: String, required: true, trim: true }, // YYYY-MM
-    pnNo: { type: String, required: true, trim: true, uppercase: true, index: true },
-
-    // multi-meter key
-    meterNumber: { type: String, required: true, trim: true, uppercase: true, index: true },
+    periodKey: { type: String, required: true, trim: true }, // REMOVED index:true from here
+    pnNo: { type: String, required: true, trim: true, uppercase: true }, // REMOVED index:true from here
+    meterNumber: { type: String, required: true, trim: true, uppercase: true }, // REMOVED index:true from here
 
     previousReading: { type: Number, required: true, min: 0 },
     presentReading: { type: Number, required: true, min: 0 },
@@ -50,7 +48,7 @@ const WaterReadingSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// prevent duplicates per meter per month
+// KEEP ONLY THIS - it creates all needed indexes
 WaterReadingSchema.index({ periodKey: 1, pnNo: 1, meterNumber: 1 }, { unique: true });
 
 // ✅ compute rawConsumed + consumed(billed)

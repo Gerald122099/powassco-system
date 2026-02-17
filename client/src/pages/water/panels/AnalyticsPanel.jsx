@@ -1,3 +1,4 @@
+// AnalyticsPanel.jsx (FIXED PDF generation)
 import { useEffect, useMemo, useState } from "react";
 import Card from "../../../components/Card";
 import { apiFetch } from "../../../lib/api";
@@ -79,14 +80,24 @@ function RowKV({ k, v }) {
 }
 
 /**
- * ✅ Build “numbers-only” HTML for A4 print in a NEW window
- * This avoids printing your app header/nav/tabs entirely.
+ * ✅ FIXED: Build “numbers-only” HTML for A4 print with proper money formatting
  */
 function buildReportHtml({ title, periodLabel, generatedAt, data }) {
   const bills = data?.bills || {};
   const membersBy = data?.membersByClassification || {};
   const meterStats = data?.meterStats || {};
   const series = Array.isArray(data?.series) ? data.series : [];
+
+  // Helper functions for print window (redefined here to be available in HTML)
+  const money = (n) => {
+    const x = Number(n || 0);
+    return x.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+  
+  const num = (n) => {
+    const x = Number(n || 0);
+    return Number.isFinite(x) ? x.toLocaleString() : "0";
+  };
 
   const safe = (v) => (v === null || v === undefined ? "" : String(v));
 
@@ -306,6 +317,7 @@ function buildReportHtml({ title, periodLabel, generatedAt, data }) {
 /**
  * Opens new window -> writes report only -> prints.
  * ✅ GUARANTEED: no app header/nav/tabs included.
+ * ✅ FIXED: money() function now properly defined in print window
  */
 function printReportWindow({ title, periodLabel, data }) {
   const w = window.open("", "_blank", "noopener,noreferrer,width=980,height=720");
@@ -536,7 +548,7 @@ export default function AnalyticsPanel() {
                           <YAxis />
                           <Tooltip />
                           <Legend />
-                          <Bar dataKey="consumption" name="Consumption (m³)" />
+                          <Bar dataKey="consumption" name="Consumption (m³)" fill="#3b82f6" />
                         </BarChart>
                       </ResponsiveContainer>
                     </div>
@@ -555,7 +567,7 @@ export default function AnalyticsPanel() {
                           <YAxis />
                           <Tooltip />
                           <Legend />
-                          <Bar dataKey="collected" name="Collected (₱)" />
+                          <Bar dataKey="collected" name="Collected (₱)" fill="#10b981" />
                         </BarChart>
                       </ResponsiveContainer>
                     </div>

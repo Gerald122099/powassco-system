@@ -1,4 +1,5 @@
-﻿import mongoose from "mongoose";
+
+import mongoose from "mongoose";
 
 // Tariff tier schema (UPDATED: supports flat minimum charge OR per-cubic)
 const TariffTierSchema = new mongoose.Schema(

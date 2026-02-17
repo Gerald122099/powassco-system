@@ -1,15 +1,18 @@
-// BillsPanel.jsx (UPDATED for Option C: separate bill per meter)
+// BillsPanel.jsx (UPDATED with Reading Status column)
 // ✅ Fixes:
-// - Create Bill flow supports multiple meters properly (billing meters derived even if virtuals missing)
+// - Create Bill flow supports multiple meters properly
 // - Auto-fills previousReading from selected meter.lastReading
 // - Uses meterNumber + periodKey logic in preview/create payloads
-// - UI stays same, but meter selection is reliable
+// - Shows invoice receipt after payment with print functionality
+// - Added Reading Status column to show if bill came from meter reading
 
 import { useEffect, useMemo, useState } from "react";
 import Card from "../../../components/Card";
 import Modal from "../../../components/Modal";
+import InvoiceReceipt from "../../../components/InvoiceReceipt";
 import { apiFetch } from "../../../lib/api";
 import { useAuth } from "../../../context/AuthContext";
+import { CheckCircle, AlertCircle } from "lucide-react"; // Added icons for reading status
 
 const PAGE_SIZE = 12;
 
@@ -74,6 +77,11 @@ export default function BillsPanel() {
   const [payForm, setPayForm] = useState({ orNo: "", method: "cash" });
   const [payBill, setPayBill] = useState(null);
 
+  // invoice receipt
+  const [invoiceOpen, setInvoiceOpen] = useState(false);
+  const [paidBill, setPaidBill] = useState(null);
+  const [paymentRecord, setPaymentRecord] = useState(null);
+
   // bill details modal
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedBill, setSelectedBill] = useState(null);
@@ -133,15 +141,39 @@ export default function BillsPanel() {
     setDetailsOpen(true);
   }
 
+  async function viewReceipt(bill) {
+    try {
+      const payments = await apiFetch(`/water/bills/${bill._id}/payments`, { token });
+      if (payments.payments && payments.payments.length > 0) {
+        setPaidBill(bill);
+        setPaymentRecord(payments.payments[0]);
+        setInvoiceOpen(true);
+      } else {
+        setToast("No payment record found for this bill");
+        setTimeout(() => setToast(""), 2000);
+      }
+    } catch (e) {
+      setToast("Could not load payment details");
+      setTimeout(() => setToast(""), 2000);
+    }
+  }
+
   async function payNow() {
     setPayErr("");
     try {
-      await apiFetch(`/water/bills/${payBill._id}/pay`, {
+      const response = await apiFetch(`/water/bills/${payBill._id}/pay`, {
         method: "POST",
         token,
         body: { orNo: payForm.orNo, method: payForm.method },
       });
+      
       setPayOpen(false);
+      
+      // Store the paid bill and payment record for invoice
+      setPaidBill(response.bill);
+      setPaymentRecord(response.payment);
+      setInvoiceOpen(true);
+      
       setToast("✅ Payment saved");
       setTimeout(() => setToast(""), 2000);
       load();
@@ -280,8 +312,8 @@ export default function BillsPanel() {
           pnNo: createForm.pnNo,
           previousReading: prev,
           presentReading: pres,
-          meterNumber: createForm.meterNumber, // ✅ Option C
-          periodCovered: createForm.periodCovered, // optional if you want for display
+          meterNumber: createForm.meterNumber,
+          periodCovered: createForm.periodCovered,
         },
       });
 
@@ -302,7 +334,7 @@ export default function BillsPanel() {
       const payload = {
         pnNo: createForm.pnNo,
         periodCovered: createForm.periodCovered,
-        meterNumber: createForm.meterNumber, // ✅ Option C (identity)
+        meterNumber: createForm.meterNumber,
         previousReading: parseFloat(createForm.previousReading),
         presentReading: parseFloat(createForm.presentReading),
         readingDate: createForm.readingDate,
@@ -445,6 +477,7 @@ export default function BillsPanel() {
               <th className="py-3 px-4">Account Name</th>
               <th className="py-3 px-4">Class</th>
               <th className="py-3 px-4">Period</th>
+              <th className="py-3 px-4">Reading</th> {/* New Reading Status Column */}
               <th className="py-3 px-4">Consumption</th>
               <th className="py-3 px-4">Meter</th>
               <th className="py-3 px-4">Tier</th>
@@ -461,13 +494,13 @@ export default function BillsPanel() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={14} className="py-10 text-center text-slate-600">
+                <td colSpan={15} className="py-10 text-center text-slate-600">
                   Loading...
                 </td>
               </tr>
             ) : items.length === 0 ? (
               <tr>
-                <td colSpan={14} className="py-10 text-center text-slate-600">
+                <td colSpan={15} className="py-10 text-center text-slate-600">
                   No bills found.
                 </td>
               </tr>
@@ -486,6 +519,9 @@ export default function BillsPanel() {
 
                 const hasTariff = !!b.tariffUsed;
                 const needsReview = b.needsTariffReview || !hasTariff;
+                
+                // Determine if bill has reading data (came from meter reading)
+                const hasReading = !!(b.previousReading || b.presentReading);
 
                 return (
                   <tr key={b._id} className={`border-t hover:bg-slate-50/60 ${needsReview ? "bg-amber-50/30" : ""}`}>
@@ -497,6 +533,22 @@ export default function BillsPanel() {
                       </span>
                     </td>
                     <td className="py-3 px-4">{b.periodCovered}</td>
+                    
+                    {/* Reading Status Column */}
+                    <td className="py-3 px-4">
+                      {hasReading ? (
+                        <span className="inline-flex items-center rounded-full bg-green-100 text-green-700 px-2 py-1 text-xs font-bold">
+                          <CheckCircle size={10} className="mr-1" />
+                          Read
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center rounded-full bg-amber-100 text-amber-700 px-2 py-1 text-xs font-bold">
+                          <AlertCircle size={10} className="mr-1" />
+                          No Reading
+                        </span>
+                      )}
+                    </td>
+                    
                     <td className="py-3 px-4 font-semibold">{Number(b.consumed || 0)} m³</td>
                     <td className="py-3 px-4 text-xs font-bold text-slate-900">{b.meterNumber || "—"}</td>
                     <td className="py-3 px-4 text-xs">
@@ -554,7 +606,12 @@ export default function BillsPanel() {
                           Pay
                         </button>
                       ) : (
-                        <span className="text-xs text-slate-500">Paid {b.paidAt ? new Date(b.paidAt).toLocaleDateString() : ""}</span>
+                        <button
+                          className="rounded-xl bg-emerald-50 text-emerald-700 px-3 py-2 text-xs font-semibold hover:bg-emerald-100"
+                          onClick={() => viewReceipt(b)}
+                        >
+                          Receipt
+                        </button>
                       )}
                     </td>
                   </tr>
@@ -818,6 +875,58 @@ export default function BillsPanel() {
               </div>
               <div className="mt-2 text-sm text-slate-600">{selectedBill.addressText || "No address"}</div>
             </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Info label="Previous Reading" value={`${selectedBill.previousReading?.toFixed(2) || 0} m³`} />
+              <Info label="Present Reading" value={`${selectedBill.presentReading?.toFixed(2) || 0} m³`} />
+              <Info label="Consumption" value={`${selectedBill.consumed?.toFixed(2) || 0} m³`} />
+              <Info label="Reading Date" value={selectedBill.readingDate ? new Date(selectedBill.readingDate).toLocaleDateString() : "—"} />
+            </div>
+
+            <div className="border-t pt-4">
+              <h3 className="font-bold text-slate-700 mb-3">Billing Summary</h3>
+              <div className="space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Base Amount</span>
+                  <span className="font-bold">₱{money(selectedBill.baseAmount || selectedBill.amount)}</span>
+                </div>
+                {selectedBill.discount > 0 && (
+                  <div className="flex justify-between text-emerald-600">
+                    <span>{selectedBill.discountReason || "Discount"}</span>
+                    <span className="font-bold">-₱{money(selectedBill.discount)}</span>
+                  </div>
+                )}
+                {selectedBill.penaltyApplied > 0 && (
+                  <div className="flex justify-between text-red-600">
+                    <span>Penalty</span>
+                    <span className="font-bold">+₱{money(selectedBill.penaltyApplied)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between pt-2 border-t text-lg font-black">
+                  <span>Total Due</span>
+                  <span className="text-slate-900">₱{money(selectedBill.totalDue)}</span>
+                </div>
+              </div>
+            </div>
+
+            {selectedBill.tariffUsed && (
+              <div className="bg-blue-50 p-3 rounded-lg">
+                <p className="text-xs text-blue-600">Tariff Applied</p>
+                <p className="font-bold text-blue-800">
+                  Tier {selectedBill.tariffUsed.tier}: ₱{selectedBill.tariffUsed.ratePerCubic?.toFixed(2)}/m³
+                </p>
+              </div>
+            )}
+
+            {selectedBill.status === "paid" && (
+              <div className="bg-emerald-50 p-3 rounded-lg">
+                <p className="text-xs text-emerald-600">Payment Details</p>
+                <p className="font-bold text-emerald-800">OR No: {selectedBill.orNo || "—"}</p>
+                <p className="text-sm text-emerald-700">
+                  Paid on: {selectedBill.paidAt ? new Date(selectedBill.paidAt).toLocaleDateString() : "—"}
+                </p>
+              </div>
+            )}
           </div>
         )}
       </Modal>
@@ -853,14 +962,24 @@ export default function BillsPanel() {
 
             <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
               <Field label="OR No.">
-                <input className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5" value={payForm.orNo} onChange={(e) => setPayForm({ ...payForm, orNo: e.target.value })} />
+                <input 
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5" 
+                  value={payForm.orNo} 
+                  onChange={(e) => setPayForm({ ...payForm, orNo: e.target.value })} 
+                  placeholder="Enter OR number"
+                />
               </Field>
 
               <Field label="Payment Method">
-                <select className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5" value={payForm.method} onChange={(e) => setPayForm({ ...payForm, method: e.target.value })}>
+                <select 
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5" 
+                  value={payForm.method} 
+                  onChange={(e) => setPayForm({ ...payForm, method: e.target.value })}
+                >
                   <option value="cash">Cash</option>
                   <option value="gcash">GCash</option>
-                  <option value="bank">Bank</option>
+                  <option value="bank">Bank Transfer</option>
+                  <option value="check">Check</option>
                   <option value="other">Other</option>
                 </select>
               </Field>
@@ -872,13 +991,29 @@ export default function BillsPanel() {
               <button className="rounded-xl border border-slate-200 px-4 py-2.5" onClick={() => setPayOpen(false)}>
                 Cancel
               </button>
-              <button className="rounded-xl bg-slate-900 text-white px-4 py-2.5 font-semibold hover:opacity-90" onClick={payNow}>
+              <button 
+                className="rounded-xl bg-slate-900 text-white px-4 py-2.5 font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed" 
+                onClick={payNow}
+                disabled={!payForm.orNo.trim()}
+              >
                 Confirm Payment
               </button>
             </div>
           </>
         )}
       </Modal>
+
+      {/* Invoice Receipt Modal */}
+      <InvoiceReceipt
+        bill={paidBill}
+        payment={paymentRecord}
+        open={invoiceOpen}
+        onClose={() => {
+          setInvoiceOpen(false);
+          setPaidBill(null);
+          setPaymentRecord(null);
+        }}
+      />
     </Card>
   );
 }

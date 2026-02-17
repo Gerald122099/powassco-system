@@ -1,6 +1,6 @@
 import express from "express";
 import WaterMember from "../../models/WaterMember.js";
-import WaterBill from "../../models/WaterBill.js";
+import WaterBill from "../../models/waterbill.js";
 import { requireAuth, requireRole } from "../../middleware/auth.js";
 
 const router = express.Router();

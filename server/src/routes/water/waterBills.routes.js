@@ -6,7 +6,7 @@
 // - Reads meter.lastReading to update only selected meter
 
 import express from "express";
-import WaterBill from "../../models/WaterBill.js";
+import WaterBill from "../../models/waterbill.js";
 import WaterPayment from "../../models/WaterPayment.js";
 import WaterMember from "../../models/WaterMember.js";
 import WaterSettings from "../../models/WaterSettings.js";
@@ -308,20 +308,32 @@ router.get("/", ...guard, async (req, res) => {
   const classification = (req.query.classification || "").trim();
   const month = req.query.month;
   const year = req.query.year;
+  const periodKey = req.query.periodKey;
+  const pnNos = req.query.pnNos ? req.query.pnNos.split(',') : [];
   const page = Math.max(1, parseInt(req.query.page || "1", 10));
   const limit = Math.min(100, Math.max(1, parseInt(req.query.limit || "12", 10)));
   const skip = (page - 1) * limit;
 
   const filter = {};
-  if (status) filter.status = status;
-  if (classification) filter.classification = classification;
-
-  if (month && year) {
+  
+  // Filter by periodKey if provided (used by MeterReadingsPanel)
+  if (periodKey) {
+    filter.periodKey = periodKey;
+  } else if (month && year) {
+    // Legacy filtering for BillsPanel
     const periodPattern = `${year}-${String(month).padStart(2, "0")}`;
     filter.periodCovered = { $regex: `^${periodPattern}` };
   } else if (year) {
     filter.periodCovered = { $regex: `^${year}` };
   }
+
+  // Filter by multiple PN Nos if provided (used by MeterReadingsPanel)
+  if (pnNos.length > 0) {
+    filter.pnNo = { $in: pnNos };
+  }
+
+  if (status) filter.status = status;
+  if (classification) filter.classification = classification;
 
   if (q) {
     filter.$or = [
