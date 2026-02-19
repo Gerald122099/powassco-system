@@ -5,7 +5,7 @@ import { useState, useEffect } from "react";
 import logo from "../../assets/logo.png";
 import "./HomePage.css";
 
-// Philippine Time Clock Component with Glass Morphism
+// Philippine Time Clock Component
 function PhilippineTimeClock() {
   const [time, setTime] = useState(new Date());
 
@@ -150,8 +150,8 @@ export default function HomePage() {
           ))}
         </div>
 
-        {/* Clock Widget - Glass Morphism */}
-        <div className="clock-widget-container">
+        {/* Clock Widget - Hidden on mobile */}
+        <div className="clock-widget-container hide-on-mobile">
           <PhilippineTimeClock />
         </div>
 

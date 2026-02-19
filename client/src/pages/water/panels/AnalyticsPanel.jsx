@@ -376,7 +376,7 @@ export default function AnalyticsPanel() {
 
   useEffect(() => {
     load();
-    // eslint-disable-next-line
+    
   }, [query]);
 
   const reportTitle = useMemo(() => {

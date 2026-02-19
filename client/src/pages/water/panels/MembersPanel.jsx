@@ -46,11 +46,11 @@ export default function MembersPanel() {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [viewOpen, setViewOpen] = useState(false);
-  const [metersModalOpen, setMetersModalOpen] = useState(false); // NEW: Meters management modal
+  const [metersModalOpen, setMetersModalOpen] = useState(false); 
 
   const [editing, setEditing] = useState(null);
   const [viewing, setViewing] = useState(null);
-  const [managingMetersFor, setManagingMetersFor] = useState(null); // NEW: For meters management
+  const [managingMetersFor, setManagingMetersFor] = useState(null); 
 
   const [err, setErr] = useState("");
 

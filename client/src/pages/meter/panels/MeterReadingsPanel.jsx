@@ -1,9 +1,10 @@
-// MeterReadingsPanel.jsx (COMPLETE with Batch Management Tab)
+// MeterReadingsPanel.jsx (COMPLETE with Batch Management Tab and Refresh Events)
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import Card from "../../../components/Card";
 import Modal from "../../../components/Modal";
 import { apiFetch } from "../../../lib/api";
 import { useAuth } from "../../../context/AuthContext";
+import { on, emit } from "../../../lib/events"; // Import event system
 import {
   Printer,
   Download,
@@ -102,6 +103,16 @@ export default function MeterReadingsPanel() {
   // Check if user can edit
   const canEdit = user?.role === "admin" || user?.role === "water_bill_officer" || user?.role === "meter_reader";
 
+  // Listen for import events from BatchManagementPanel
+  useEffect(() => {
+    const unsubscribe = on('readingsImported', () => {
+      console.log("Readings imported event received, refreshing meter readings...");
+      loadMembers();
+    });
+    
+    return unsubscribe;
+  }, []);
+
   // ---------- helpers ----------
   const getActiveBillingMeters = (member) => {
     return (member?.meters || []).filter((m) => m?.meterStatus === "active" && m?.isBillingActive === true);
@@ -150,63 +161,60 @@ export default function MeterReadingsPanel() {
   };
 
   // Get previous reading for a meter (from the most recent ACTUAL reading, even if there are gaps)
-const getPreviousReading = useCallback((member, meterNumber) => {
-  const pn = member?.pnNo;
-  if (!pn) return null;
-  
-  const mn = safeUpper(meterNumber);
-  
-  // First try to get from the immediate previous month
-  const immediatePrev = previousReadings[pn]?.[mn];
-  if (immediatePrev) {
-    return {
-      presentReading: immediatePrev.presentReading,
-      previousReading: immediatePrev.previousReading,
-      consumed: immediatePrev.consumed,
-      readAt: immediatePrev.readAt,
-      periodKey: previousPeriodKey,
-      source: "immediate_previous"
-    };
-  }
-  
-  // If no immediate previous, try to get from last actual reading data
-  if (member.lastActualReadings && member.lastActualReadings[mn]) {
-    const lastActual = member.lastActualReadings[mn];
+  const getPreviousReading = useCallback((member, meterNumber) => {
+    const pn = member?.pnNo;
+    if (!pn) return null;
     
-    // CRITICAL FIX: Skip if the last actual reading is from the current period
-    if (lastActual.periodKey === periodKey) {
-      // This is from current period - we need to find an older one
-      // For now, return null and let the caller handle it
-      console.log(`Skipping current period reading in getPreviousReading`);
-      return null;
+    const mn = safeUpper(meterNumber);
+    
+    // First try to get from the immediate previous month
+    const immediatePrev = previousReadings[pn]?.[mn];
+    if (immediatePrev) {
+      return {
+        presentReading: immediatePrev.presentReading,
+        previousReading: immediatePrev.previousReading,
+        consumed: immediatePrev.consumed,
+        readAt: immediatePrev.readAt,
+        periodKey: previousPeriodKey,
+        source: "immediate_previous"
+      };
     }
     
-    // Last actual is from a previous period - use it
-    return {
-      presentReading: lastActual.presentReading,
-      previousReading: lastActual.previousReading,
-      consumed: lastActual.consumed,
-      readAt: lastActual.readAt,
-      periodKey: lastActual.periodKey,
-      source: lastActual.source === "reading" ? "last_reading" : "last_paid_bill",
-      isGap: lastActual.periodKey !== previousPeriodKey
-    };
-  }
-  
-  // Finally, fall back to meter's lastReading
-  const meter = member.meters?.find(m => safeUpper(m.meterNumber) === mn);
-  if (meter && meter.lastReading) {
-    return {
-      presentReading: meter.lastReading,
-      readAt: meter.lastReadingDate,
-      periodKey: "previous",
-      source: "meter_last",
-      isGap: true
-    };
-  }
-  
-  return null;
-}, [previousReadings, previousPeriodKey, periodKey]);
+    // If no immediate previous, try to get from last actual reading data
+    if (member.lastActualReadings && member.lastActualReadings[mn]) {
+      const lastActual = member.lastActualReadings[mn];
+      
+      // Skip if the last actual reading is from the current period
+      if (lastActual.periodKey === periodKey) {
+        return null;
+      }
+      
+      return {
+        presentReading: lastActual.presentReading,
+        previousReading: lastActual.previousReading,
+        consumed: lastActual.consumed,
+        readAt: lastActual.readAt,
+        periodKey: lastActual.periodKey,
+        source: lastActual.source === "reading" ? "last_reading" : "last_paid_bill",
+        isGap: lastActual.periodKey !== previousPeriodKey
+      };
+    }
+    
+    // Finally, fall back to meter's lastReading
+    const meter = member.meters?.find(m => safeUpper(m.meterNumber) === mn);
+    if (meter && meter.lastReading) {
+      return {
+        presentReading: meter.lastReading,
+        readAt: meter.lastReadingDate,
+        periodKey: "previous",
+        source: "meter_last",
+        isGap: true
+      };
+    }
+    
+    return null;
+  }, [previousReadings, previousPeriodKey, periodKey]);
+
   const isMeterInEditMode = useCallback((member, meterNumber) => {
     const key = `${member.pnNo}-${safeUpper(meterNumber)}`;
     return !!editingMeters[key];
@@ -433,8 +441,7 @@ const getPreviousReading = useCallback((member, meterNumber) => {
       setReadings(newReadings);
     }
   };
-
-  // ---------- load members ----------
+    // ---------- load members ----------
   const loadMembers = async () => {
     setLoading(true);
     try {
@@ -464,7 +471,7 @@ const getPreviousReading = useCallback((member, meterNumber) => {
           hasBillForAnyMeter: member.hasBillForAnyMeter || false,
           readingWithoutBill: member.readingWithoutBill || false,
           billWithoutReading: member.billWithoutReading || false,
-          lastActualReadings: member.lastActualReadings || {} // Add last actual readings
+          lastActualReadings: member.lastActualReadings || {}
         };
       });
 
@@ -812,142 +819,120 @@ const getPreviousReading = useCallback((member, meterNumber) => {
   };
 
   // ---------- save reading (with edit support) ----------
- const saveReading = async (member) => {
-  const pn = member.pnNo;
+  const saveReading = async (member) => {
+    const pn = member.pnNo;
 
-  // Validate all inputs first
-  let hasErrors = false;
-  (member.activeBillingMeters || []).forEach((meter) => {
-    const mn = safeUpper(meter.meterNumber);
-    const input = readings[pn]?.[mn]?.presentReading;
-    const inEditMode = isMeterInEditMode(member, meter.meterNumber);
-    
-    if (safeStr(input) !== "" && !inEditMode) {
-      const isValid = validateReading(member, meter, input);
-      if (!isValid) hasErrors = true;
-    }
-  });
-
-  if (hasErrors) {
-    alert("Please fix validation errors before saving.");
-    return;
-  }
-
-  // Collect meters with input
-  const toSend = (member.activeBillingMeters || [])
-    .map((meter) => {
+    // Validate all inputs first
+    let hasErrors = false;
+    (member.activeBillingMeters || []).forEach((meter) => {
       const mn = safeUpper(meter.meterNumber);
       const input = readings[pn]?.[mn]?.presentReading;
-      const savedReading = getSavedReading(member, meter.meterNumber);
-      
-      // FIXED: Get the correct previous reading
-      let previousReading;
-      
-      // First try to get reading from the immediate previous month
-      const immediatePrev = previousReadings[pn]?.[mn];
-      
-      if (immediatePrev) {
-        // We have a reading from last month - use its present reading
-        previousReading = immediatePrev.presentReading;
-        console.log(`Using immediate previous: ${previousReading} from ${previousPeriodKey}`);
-      } else {
-        // No reading from last month - try to find the most recent reading
-        // that is NOT from the current period
-        const meterObj = member.meters?.find(m => safeUpper(m.meterNumber) === mn);
-        
-        if (member.lastActualReadings && member.lastActualReadings[mn]) {
-          const lastActual = member.lastActualReadings[mn];
-          
-          // IMPORTANT: Check if this is from the current period
-          if (lastActual.periodKey === periodKey) {
-            // This is from current period - we need the previous reading from the saved reading
-            // The saved reading should have the correct previous reading stored
-            if (savedReading) {
-              previousReading = savedReading.previousReading;
-              console.log(`Using saved reading's previous: ${previousReading}`);
-            } else {
-              // Fallback to meter's last reading
-              previousReading = meterObj?.lastReading || 0;
-              console.log(`Using meter last reading: ${previousReading}`);
-            }
-          } else {
-            // Last actual is from a previous period - use its present reading
-            previousReading = lastActual.presentReading;
-            console.log(`Using last actual: ${previousReading} from ${lastActual.periodKey}`);
-          }
-        } else {
-          // No historical readings - use meter's last reading
-          previousReading = meterObj?.lastReading || 0;
-          console.log(`Using meter last reading (fallback): ${previousReading}`);
-        }
-      }
-      
       const inEditMode = isMeterInEditMode(member, meter.meterNumber);
       
-      if (safeStr(input) === "") return null;
-
-      // Skip if it's the same as saved and not in edit mode
-      if (savedReading && savedReading.presentReading.toString() === input && !inEditMode) {
-        return null;
+      if (safeStr(input) !== "" && !inEditMode) {
+        const isValid = validateReading(member, meter, input);
+        if (!isValid) hasErrors = true;
       }
-
-      const pres = parseFloat(input);
-
-      // Debug log to verify values
-      console.log({
-        meter: meter.meterNumber,
-        previousReading,
-        presentReading: pres,
-        savedReading: savedReading?.presentReading,
-        periodKey,
-        previousPeriodKey
-      });
-
-      return {
-        meterNumber: meter.meterNumber,
-        previousReading: previousReading,
-        presentReading: pres,
-        consumptionMultiplier: meter.consumptionMultiplier || 1,
-        readingId: savedReading?.readingId,
-        forceUpdate: inEditMode,
-      };
-    })
-    .filter(Boolean);
-
-  if (toSend.length === 0) {
-    alert("No changes to save.");
-    return;
-  }
-
-  setLoading(true);
-  try {
-    // Use PUT for edits, POST for new
-    const hasExisting = toSend.some(r => r.readingId);
-    const method = hasExisting ? "PUT" : "POST";
-    
-    const response = await apiFetch("/water/readings", {
-      method,
-      token,
-      body: {
-        periodKey,
-        pnNo: member.pnNo,
-        meterReadings: toSend,
-        generateBill: true,
-        editMode: editMode,
-        remarks: editMode ? "Edited reading" : "New reading",
-      },
     });
 
-    // Reload data to show the saved readings
-    await loadMembers();
+    if (hasErrors) {
+      alert("Please fix validation errors before saving.");
+      return;
+    }
 
-    alert(`Saved! ${response.bills?.length || 0} bills generated/updated.`);
-  } catch (error) {
-    alert("Error saving: " + error.message);
-  } finally {
-    setLoading(false);
-  }
-};
+    // Collect meters with input
+    const toSend = (member.activeBillingMeters || [])
+      .map((meter) => {
+        const mn = safeUpper(meter.meterNumber);
+        const input = readings[pn]?.[mn]?.presentReading;
+        const savedReading = getSavedReading(member, meter.meterNumber);
+        
+        // Get the correct previous reading
+        let previousReading;
+        
+        // First try to get reading from the immediate previous month
+        const immediatePrev = previousReadings[pn]?.[mn];
+        
+        if (immediatePrev) {
+          previousReading = immediatePrev.presentReading;
+        } else {
+          const meterObj = member.meters?.find(m => safeUpper(m.meterNumber) === mn);
+          
+          if (member.lastActualReadings && member.lastActualReadings[mn]) {
+            const lastActual = member.lastActualReadings[mn];
+            
+            if (lastActual.periodKey === periodKey) {
+              if (savedReading) {
+                previousReading = savedReading.previousReading;
+              } else {
+                previousReading = meterObj?.lastReading || 0;
+              }
+            } else {
+              previousReading = lastActual.presentReading;
+            }
+          } else {
+            previousReading = meterObj?.lastReading || 0;
+          }
+        }
+        
+        const inEditMode = isMeterInEditMode(member, meter.meterNumber);
+        
+        if (safeStr(input) === "") return null;
+
+        // Skip if it's the same as saved and not in edit mode
+        if (savedReading && savedReading.presentReading.toString() === input && !inEditMode) {
+          return null;
+        }
+
+        const pres = parseFloat(input);
+
+        return {
+          meterNumber: meter.meterNumber,
+          previousReading: previousReading,
+          presentReading: pres,
+          consumptionMultiplier: meter.consumptionMultiplier || 1,
+          readingId: savedReading?.readingId,
+          forceUpdate: inEditMode,
+        };
+      })
+      .filter(Boolean);
+
+    if (toSend.length === 0) {
+      alert("No changes to save.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const hasExisting = toSend.some(r => r.readingId);
+      const method = hasExisting ? "PUT" : "POST";
+      
+      const response = await apiFetch("/water/readings", {
+        method,
+        token,
+        body: {
+          periodKey,
+          pnNo: member.pnNo,
+          meterReadings: toSend,
+          generateBill: true,
+          editMode: editMode,
+          remarks: editMode ? "Edited reading" : "New reading",
+        },
+      });
+
+      await loadMembers();
+      
+      // Emit event to notify BillsPanel to refresh
+      emit('readingsImported', { period: periodKey });
+      
+      alert(`Saved! ${response.bills?.length || 0} bills generated/updated.`);
+    } catch (error) {
+      alert("Error saving: " + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // View bill details modal
   const viewBill = async (member) => {
     await loadMemberBills(member);
@@ -1022,6 +1007,10 @@ const getPreviousReading = useCallback((member, meterNumber) => {
       });
 
       await loadMembers();
+      
+      // Emit event to notify BillsPanel to refresh
+      emit('readingsImported', { period: periodKey });
+      
       setReceiptData(response);
       alert(`Batch done. Success: ${response.success || 0}, Failed: ${response.failed || 0}`);
     } catch (e) {
@@ -2063,7 +2052,6 @@ function ReadingRow({
     const inEditMode = isMeterInEditMode(member, m.meterNumber);
     const billStatus = getMeterBillStatus(member.pnNo, m.meterNumber);
     
-    // If bill is paid and not in edit mode, don't allow changes
     if (billStatus?.status === "paid" && !inEditMode) return false;
     
     if (safeStr(input) === "") return false;
@@ -2214,69 +2202,55 @@ function ReadingRow({
           <td colSpan={6} className="px-4 py-3">
             <div className="pl-4 border-l-2 border-blue-200">
               <div className="text-xs font-semibold text-slate-700 mb-3 flex justify-between items-center">
-  <div className="flex items-center gap-4">
-    <span className="flex items-center gap-1">
-      <FileTextIcon size={12} />
-      Meter Readings
-    </span>
-    <span className="flex items-center gap-1 text-blue-600">
-      <ArrowLeft size={10} />
-      Previous
-    </span>
-    <span className="flex items-center gap-1 text-green-600">
-      <ArrowRight size={10} />
-      Current: {periodKey}
-    </span>
-  </div>
-  {editMode && (
-    <span className="text-amber-600 text-[10px] flex items-center gap-1 bg-amber-50 px-2 py-1 rounded-full">
-      <PenTool size={10} />
-      Edit Mode
-    </span>
-  )}
-</div>
+                <div className="flex items-center gap-4">
+                  <span className="flex items-center gap-1">
+                    <FileTextIcon size={12} />
+                    Meter Readings
+                  </span>
+                  <span className="flex items-center gap-1 text-blue-600">
+                    <ArrowLeft size={10} />
+                    Previous
+                  </span>
+                  <span className="flex items-center gap-1 text-green-600">
+                    <ArrowRight size={10} />
+                    Current: {periodKey}
+                  </span>
+                </div>
+                {editMode && (
+                  <span className="text-amber-600 text-[10px] flex items-center gap-1 bg-amber-50 px-2 py-1 rounded-full">
+                    <PenTool size={10} />
+                    Edit Mode
+                  </span>
+                )}
+              </div>
 
               <div className="space-y-4">
                 {(member.activeBillingMeters || []).map((meter, index) => {
                   const pn = member.pnNo;
                   const meterKey = safeUpper(meter.meterNumber);
 
-                  // Get readings from different sources
                   const savedReading = getSavedReading(member, meter.meterNumber);
                   const previousReadingData = getPreviousReading(member, meter.meterNumber);
                   const billStatus = getMeterBillStatus(member.pnNo, meter.meterNumber);
                   
-                  // PREVIOUS READING: from the most recent actual reading (with gap detection)
                   const previousReading = previousReadingData?.presentReading ?? 0;
-                  
-                  // PRESENT READING: current input or saved reading from current period
                   const presentReading = readings[pn]?.[meterKey]?.presentReading ?? savedReading?.presentReading ?? "";
                   
                   const inEditMode = isMeterInEditMode(member, meter.meterNumber);
                   const alreadySaved = isMeterAlreadySaved(member, meter.meterNumber) || !!savedReading;
                   const hasError = validationErrors[`${pn}-${meterKey}`];
                   
-                  // Check if current period already has a reading or paid bill
                   const hasCurrentReading = !!savedReading;
                   const isCurrentPaid = billStatus?.status === "paid";
                   
-                  // Determine if input should be auto-filled and disabled
                   const isAutoFilled = hasCurrentReading || isCurrentPaid;
                   const isDisabled = (() => {
-                    // If in edit mode, never disable
                     if (inEditMode) return false;
-                    
-                    // If auto-filled (already read or paid), disable
                     if (isAutoFilled) return true;
-                    
-                    // If bill is paid for CURRENT period, disable
                     if (billStatus?.status === "paid") return true;
-                    
-                    // Otherwise allow editing
                     return false;
                   })();
 
-                  // Calculate consumption
                   const consumption = presentReading ? 
                     (parseFloat(presentReading) - previousReading) * (meter.consumptionMultiplier || 1) : 0;
 
@@ -2293,7 +2267,6 @@ function ReadingRow({
                           : "border-slate-200 hover:border-blue-200"
                       }`}
                     >
-                      {/* Header with meter info and bill status */}
                       <div className="flex justify-between items-center mb-4">
                         <div className="flex items-center gap-3">
                           <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
@@ -2310,7 +2283,6 @@ function ReadingRow({
                             </div>
                           </div>
                           
-                          {/* Bill Status Badge */}
                           {billStatus && (
                             <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
                               billStatus.status === "paid" 
@@ -2339,9 +2311,7 @@ function ReadingRow({
                           )}
                         </div>
                         
-                        {/* Action Buttons */}
                         <div className="flex items-center gap-2">
-                          {/* View Bill Button */}
                           {billStatus && (
                             <button
                               onClick={() => onViewBillDetails(member.pnNo, meter.meterNumber)}
@@ -2353,7 +2323,6 @@ function ReadingRow({
                             </button>
                           )}
 
-                          {/* Edit toggle */}
                           {(hasCurrentReading || isCurrentPaid) && editMode && (
                             <button
                               onClick={() => onToggleMeterEdit(member, meter.meterNumber)}
@@ -2371,9 +2340,7 @@ function ReadingRow({
                         </div>
                       </div>
 
-                      {/* Reading Display Grid */}
                       <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
-                        {/* Previous Reading - with gap detection */}
                         <div className="md:col-span-3">
                           <div className="text-xs text-slate-500 mb-1 flex items-center gap-1">
                             <ArrowLeft size={10} className="text-blue-500" />
@@ -2413,7 +2380,6 @@ function ReadingRow({
                           </div>
                         </div>
 
-                        {/* Present Reading Input - with auto-fill */}
                         <div className="md:col-span-4">
                           <div className="text-xs text-slate-500 mb-1 flex items-center gap-1">
                             <ArrowRight size={10} className="text-green-500" />
@@ -2462,7 +2428,6 @@ function ReadingRow({
                           )}
                         </div>
 
-                        {/* Consumption */}
                         <div className="md:col-span-3">
                           <div className="text-xs text-slate-500 mb-1">Consumption</div>
                           <div className={`p-3 rounded-lg border ${
@@ -2479,7 +2444,6 @@ function ReadingRow({
                           </div>
                         </div>
 
-                        {/* History Button */}
                         <div className="md:col-span-2 flex justify-end">
                           <button
                             onClick={() => onViewHistory(meter)}
@@ -2491,7 +2455,6 @@ function ReadingRow({
                         </div>
                       </div>
 
-                      {/* Manual Bill Warning */}
                       {billStatus && !billStatus.hasReading && (
                         <div className="mt-3 p-2 bg-amber-50 border border-amber-200 rounded-lg">
                           <div className="text-xs text-amber-700 flex items-center gap-1">

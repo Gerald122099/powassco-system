@@ -1,6 +1,6 @@
 // server/src/routes/water/waterBatches.routes.js
 import express from "express";
-import multer from "multer"; // You need to install this: npm install multer
+import multer from "multer";
 import WaterBatch from "../../models/WaterBatch.js";
 import WaterMember from "../../models/WaterMember.js";
 import WaterReading from "../../models/WaterReading.js";
@@ -20,7 +20,6 @@ const guard = [requireAuth, requireRole(["admin", "water_bill_officer","meter_re
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     const uploadDir = path.join(__dirname, '../../uploads/temp');
-    // Create directory if it doesn't exist
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
@@ -33,21 +32,89 @@ const storage = multer.diskStorage({
 
 const upload = multer({ 
   storage: storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    const allowedTypes = ['.csv', '.db', '.sqlite', '.sqlite3'];
+    const allowedTypes = ['.csv', '.db', '.sqlite', '.sqlite3', '.json'];
     const ext = path.extname(file.originalname).toLowerCase();
     if (allowedTypes.includes(ext)) {
       cb(null, true);
     } else {
-      cb(new Error('Invalid file type. Only CSV and SQLite files are allowed.'));
+      cb(new Error('Invalid file type. Only CSV, JSON, and SQLite files are allowed.'));
     }
   }
 });
 
+// Helper function to save imported files
+async function saveImportedFile(file, periodKey, readerName) {
+  try {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const savedDir = path.join(__dirname, '../../uploads/imports', periodKey);
+    
+    if (!fs.existsSync(savedDir)) {
+      fs.mkdirSync(savedDir, { recursive: true });
+    }
+    
+    const fileName = `${timestamp}_${readerName}_${file.originalname}`;
+    const savedPath = path.join(savedDir, fileName);
+    
+    // Copy file from temp to saved location
+    fs.copyFileSync(file.path, savedPath);
+    
+    // Also save a copy in the main imports folder
+    const mainDir = path.join(__dirname, '../../uploads/imports/all');
+    if (!fs.existsSync(mainDir)) {
+      fs.mkdirSync(mainDir, { recursive: true });
+    }
+    const mainPath = path.join(mainDir, fileName);
+    fs.copyFileSync(file.path, mainPath);
+    
+    return {
+      path: savedPath,
+      fileName: fileName,
+      size: file.size
+    };
+  } catch (error) {
+    console.error("Error saving imported file:", error);
+    return null;
+  }
+}
+
+// Helper function to save exported files
+async function saveExportedFile(data, periodKey, batchNumber) {
+  try {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const exportDir = path.join(__dirname, '../../uploads/exports', periodKey);
+    
+    if (!fs.existsSync(exportDir)) {
+      fs.mkdirSync(exportDir, { recursive: true });
+    }
+    
+    const fileName = `${timestamp}_batch_${batchNumber}.json`;
+    const filePath = path.join(exportDir, fileName);
+    
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+    
+    // Also save a copy in the main exports folder
+    const mainDir = path.join(__dirname, '../../uploads/exports/all');
+    if (!fs.existsSync(mainDir)) {
+      fs.mkdirSync(mainDir, { recursive: true });
+    }
+    const mainPath = path.join(mainDir, fileName);
+    fs.writeFileSync(mainPath, JSON.stringify(data, null, 2));
+    
+    return {
+      path: filePath,
+      fileName: fileName,
+      size: fs.statSync(filePath).size
+    };
+  } catch (error) {
+    console.error("Error saving exported file:", error);
+    return null;
+  }
+}
+
 // Helper function to get last actual reading
 async function getLastActualReading(pnNo, meterNumber) {
-  // Try reading first
   const lastReading = await WaterReading.findOne({
     pnNo,
     meterNumber
@@ -62,7 +129,6 @@ async function getLastActualReading(pnNo, meterNumber) {
     };
   }
   
-  // Try paid bill
   const lastBill = await WaterBill.findOne({
     pnNo,
     meterNumber,
@@ -88,7 +154,6 @@ router.get("/", ...guard, async (req, res) => {
       .populate("members", "pnNo accountName meters address billing personal")
       .sort({ batchNumber: 1 });
     
-    // Get available members (not assigned to any batch)
     const assignedMemberIds = batches.flatMap(b => b.members.map(m => m._id));
     const availableMembers = await WaterMember.find({
       _id: { $nin: assignedMemberIds },
@@ -107,7 +172,6 @@ router.post("/", ...guard, async (req, res) => {
   try {
     const { batchName, readerName, readerId, area } = req.body;
     
-    // Generate batch number
     const lastBatch = await WaterBatch.findOne().sort({ batchNumber: -1 });
     let batchNumber = "BATCH-001";
     if (lastBatch) {
@@ -170,7 +234,6 @@ router.post("/:id/members", ...guard, async (req, res) => {
       return res.status(404).json({ error: "Batch not found" });
     }
     
-    // Check if members are already in other batches
     const otherBatches = await WaterBatch.find({
       _id: { $ne: batch._id },
       members: { $in: memberIds }
@@ -183,7 +246,6 @@ router.post("/:id/members", ...guard, async (req, res) => {
       });
     }
     
-    // Get member details to extract meter numbers
     const members = await WaterMember.find({ _id: { $in: memberIds } });
     const meterNumbers = members.flatMap(m => 
       m.meters
@@ -191,11 +253,9 @@ router.post("/:id/members", ...guard, async (req, res) => {
         .map(mtr => mtr.meterNumber)
     );
     
-    // Add members (avoid duplicates)
     const newMemberIds = memberIds.filter(id => !batch.members.includes(id));
     batch.members.push(...newMemberIds);
     
-    // Add meter numbers (avoid duplicates)
     const newMeterNumbers = meterNumbers.filter(mn => !batch.meterNumbers.includes(mn));
     batch.meterNumbers.push(...newMeterNumbers);
     
@@ -221,10 +281,8 @@ router.delete("/:id/members/:memberId", ...guard, async (req, res) => {
     
     const member = await WaterMember.findById(req.params.memberId);
     
-    // Remove member
     batch.members = batch.members.filter(id => id.toString() !== req.params.memberId);
     
-    // Remove their meter numbers
     if (member) {
       const meterNumbers = member.meters
         .filter(m => m.meterStatus === "active" && m.isBillingActive)
@@ -256,16 +314,16 @@ router.get("/:id/export", ...guard, async (req, res) => {
       return res.status(404).json({ error: "Batch not found" });
     }
     
-    // Get previous readings for each member/meter
     const exportData = [];
     
     for (const member of batch.members) {
       const activeMeters = member.meters.filter(
-        m => m.meterStatus === "active" && m.isBillingActive
+        m => m.meterStatus === "active" && m.isBillingActive === true
       );
       
+      console.log(`Member ${member.pnNo} (${member.accountName}) has ${activeMeters.length} active meters`);
+      
       for (const meter of activeMeters) {
-        // Get last actual reading
         const lastReading = await getLastActualReading(member.pnNo, meter.meterNumber);
         
         exportData.push({
@@ -295,7 +353,16 @@ router.get("/:id/export", ...guard, async (req, res) => {
       }
     }
     
-    // Generate CSV
+    console.log(`Total export rows: ${exportData.length}`);
+    
+    // Save export data as JSON for backup
+    await saveExportedFile({
+      batch: batch,
+      exportData: exportData,
+      periodKey: periodKey,
+      exportedAt: new Date()
+    }, periodKey, batch.batchNumber);
+    
     const headers = [
       "BatchNumber", "BatchName", "ReaderName", "ReaderId",
       "PNNo", "AccountName", "MeterNumber", "PreviousReading",
@@ -311,7 +378,6 @@ router.get("/:id/export", ...guard, async (req, res) => {
     for (const row of exportData) {
       const values = headers.map(header => {
         const value = row[header] !== undefined && row[header] !== null ? row[header] : "";
-        // Escape quotes and wrap in quotes if contains comma
         const escaped = String(value).replace(/"/g, '""');
         return `"${escaped}"`;
       });
@@ -321,7 +387,6 @@ router.get("/:id/export", ...guard, async (req, res) => {
     const csvContent = csvRows.join('\n');
     const filename = `batch_${batch.batchNumber}_${periodKey}_${Date.now()}.csv`;
     
-    // Update last exported info
     batch.lastExportedAt = new Date();
     batch.lastExportFile = filename;
     await batch.save();
@@ -335,123 +400,192 @@ router.get("/:id/export", ...guard, async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-// IMPORT readings from mobile app (CSV) - UPDATED WITH BILL GENERATION
+
+// IMPORT readings from mobile app (JSON/CSV)
 router.post("/import-readings", ...guard, async (req, res) => {
   try {
-    const { readings, periodKey, readerName, readerId, importDate } = req.body;
+    const { readings, periodKey, readerName, readerId, importDate, forceUpdate = false } = req.body;
     
     const results = {
       success: 0,
       failed: 0,
       skipped: 0,
-      billsGenerated: 0,
       details: []
     };
     
-    for (const reading of readings) {
-      try {
-        // Check if reading already exists for this period
-        const existingReading = await WaterReading.findOne({
-          periodKey,
-          pnNo: reading.pnNo,
-          meterNumber: reading.meterNumber
-        });
-        
-        if (existingReading) {
-          results.skipped++;
-          results.details.push({
-            pnNo: reading.pnNo,
-            meterNumber: reading.meterNumber,
-            status: "skipped",
-            message: "Reading already exists for this period"
-          });
-          continue;
-        }
-        
-        // Get member to validate
-        const member = await WaterMember.findOne({ pnNo: reading.pnNo });
-        if (!member) {
+    console.log(`Importing ${readings?.length || 0} readings for period ${periodKey}`);
+    
+    if (!readings || !Array.isArray(readings)) {
+      return res.status(400).json({ error: "Invalid readings data" });
+    }
+    
+    if (readings.length === 0) {
+      return res.status(400).json({ error: "No readings to import" });
+    }
+    
+    // Validate each reading has required fields
+    const validationErrors = [];
+    readings.forEach((reading, index) => {
+      if (!reading.pnNo) validationErrors.push(`Row ${index + 1}: Missing PN No`);
+      if (!reading.meterNumber) validationErrors.push(`Row ${index + 1}: Missing Meter Number`);
+      if (reading.previousReading === undefined) validationErrors.push(`Row ${index + 1}: Missing Previous Reading`);
+      if (reading.presentReading === undefined) validationErrors.push(`Row ${index + 1}: Missing Present Reading`);
+    });
+    
+    if (validationErrors.length > 0) {
+      return res.status(400).json({ 
+        error: "Validation failed", 
+        details: validationErrors 
+      });
+    }
+    
+    // Group readings by PN to better handle multiple meters
+    const readingsByPn = {};
+    readings.forEach(reading => {
+      if (!readingsByPn[reading.pnNo]) {
+        readingsByPn[reading.pnNo] = [];
+      }
+      readingsByPn[reading.pnNo].push(reading);
+    });
+    
+    console.log(`Importing for ${Object.keys(readingsByPn).length} accounts`);
+    
+    for (const [pnNo, pnReadings] of Object.entries(readingsByPn)) {
+      console.log(`Account ${pnNo} has ${pnReadings.length} meter readings`);
+      
+      // Get member once for all readings of this PN
+      const member = await WaterMember.findOne({ pnNo: pnNo });
+      if (!member) {
+        pnReadings.forEach(reading => {
           results.failed++;
           results.details.push({
             pnNo: reading.pnNo,
             meterNumber: reading.meterNumber,
             status: "failed",
-            message: "Member not found"
+            message: `Member ${pnNo} not found`
           });
-          continue;
-        }
-        
-        // Create the reading
-        const newReading = new WaterReading({
-          periodKey,
-          pnNo: reading.pnNo,
-          meterNumber: reading.meterNumber,
-          previousReading: reading.previousReading,
-          presentReading: reading.presentReading,
-          rawConsumed: Math.max(0, reading.presentReading - reading.previousReading),
-          consumptionMultiplier: reading.consumptionMultiplier || 1,
-          consumed: (reading.presentReading - reading.previousReading) * (reading.consumptionMultiplier || 1),
-          readBy: readerId || readerName || "mobile_app",
-          readingType: "mobile_app",
-          readingStatus: "verified",
-          readAt: reading.readAt || new Date(),
-          meterSnapshot: reading.meterSnapshot || {}
         });
-        
-        await newReading.save();
-        
-        // GENERATE BILL AUTOMATICALLY
+        continue;
+      }
+      
+      // Get all active meters for this member for validation
+      const activeMeters = member.meters
+        .filter(m => m.meterStatus === "active")
+        .map(m => m.meterNumber);
+      
+      for (const reading of pnReadings) {
         try {
-          const billResult = await upsertWaterBill({
-            member,
-            periodCovered: periodKey,
-            meterReading: {
+          // Validate meter belongs to member
+          if (!activeMeters.includes(reading.meterNumber)) {
+            results.failed++;
+            results.details.push({
+              pnNo: reading.pnNo,
               meterNumber: reading.meterNumber,
-              previousReading: reading.previousReading,
-              presentReading: reading.presentReading,
-              multiplier: reading.consumptionMultiplier || 1,
-            },
-            readerId: readerId || "import",
-            remarks: `Imported from CSV on ${new Date().toLocaleDateString()}`,
-            createdBy: readerId || "import"
+              status: "failed",
+              message: `Meter ${reading.meterNumber} not found or inactive for member ${pnNo}`
+            });
+            continue;
+          }
+          
+          // Validate reading values
+          if (reading.presentReading < reading.previousReading) {
+            results.failed++;
+            results.details.push({
+              pnNo: reading.pnNo,
+              meterNumber: reading.meterNumber,
+              status: "failed",
+              message: `Present reading (${reading.presentReading}) cannot be less than previous reading (${reading.previousReading})`
+            });
+            continue;
+          }
+          
+          // Check if reading already exists for this period
+          const existingReading = await WaterReading.findOne({
+            periodKey,
+            pnNo: reading.pnNo,
+            meterNumber: reading.meterNumber
           });
           
-          if (billResult?.bill) {
-            results.billsGenerated++;
+          if (existingReading) {
+            if (forceUpdate) {
+              existingReading.previousReading = reading.previousReading;
+              existingReading.presentReading = reading.presentReading;
+              existingReading.consumptionMultiplier = reading.consumptionMultiplier || 1;
+              existingReading.rawConsumed = Math.max(0, reading.presentReading - reading.previousReading);
+              existingReading.consumed = (reading.presentReading - reading.previousReading) * (reading.consumptionMultiplier || 1);
+              existingReading.readBy = readerId || readerName || "mobile_app";
+              existingReading.readAt = reading.readDate ? new Date(parseInt(reading.readDate)) : new Date();
+              await existingReading.save();
+              
+              results.success++;
+              results.details.push({
+                pnNo: reading.pnNo,
+                meterNumber: reading.meterNumber,
+                status: "success",
+                message: "Reading updated successfully"
+              });
+            } else {
+              results.skipped++;
+              results.details.push({
+                pnNo: reading.pnNo,
+                meterNumber: reading.meterNumber,
+                status: "skipped",
+                message: `Reading already exists for period ${periodKey}`
+              });
+            }
+            continue;
           }
-        } catch (billError) {
-          console.error("Bill generation error:", billError);
-          // Still count reading as success even if bill fails
+          
+          // Create the reading
+          const newReading = new WaterReading({
+            periodKey,
+            pnNo: reading.pnNo,
+            meterNumber: reading.meterNumber,
+            previousReading: reading.previousReading,
+            presentReading: reading.presentReading,
+            rawConsumed: Math.max(0, reading.presentReading - reading.previousReading),
+            consumptionMultiplier: reading.consumptionMultiplier || 1,
+            consumed: (reading.presentReading - reading.previousReading) * (reading.consumptionMultiplier || 1),
+            readBy: readerId || readerName || "mobile_app",
+            readingType: "mobile_app",
+            readingStatus: "verified",
+            readAt: reading.readDate ? new Date(parseInt(reading.readDate)) : new Date(),
+            meterSnapshot: {
+              meterNumber: reading.meterNumber,
+              meterBrand: "",
+              meterModel: "",
+              meterCondition: "good"
+            }
+          });
+          
+          await newReading.save();
+          
+          results.success++;
           results.details.push({
             pnNo: reading.pnNo,
             meterNumber: reading.meterNumber,
-            status: "warning",
-            message: `Reading saved but bill generation failed: ${billError.message}`
+            status: "success",
+            message: "Reading imported successfully"
+          });
+          
+        } catch (error) {
+          console.error(`Error importing reading for ${reading.pnNo}-${reading.meterNumber}:`, error);
+          results.failed++;
+          results.details.push({
+            pnNo: reading.pnNo,
+            meterNumber: reading.meterNumber,
+            status: "failed",
+            message: error.message
           });
         }
-        
-        results.success++;
-        results.details.push({
-          pnNo: reading.pnNo,
-          meterNumber: reading.meterNumber,
-          status: "success",
-          message: "Reading imported and bill generated successfully"
-        });
-        
-      } catch (error) {
-        results.failed++;
-        results.details.push({
-          pnNo: reading.pnNo,
-          meterNumber: reading.meterNumber,
-          status: "failed",
-          message: error.message
-        });
       }
     }
     
+    console.log(`Import complete: ${results.success} success, ${results.failed} failed, ${results.skipped} skipped`);
+    
     res.json({
       ...results,
-      message: `Imported ${results.success} readings, generated ${results.billsGenerated} bills`
+      message: `Imported ${results.success} readings, ${results.failed} failed, ${results.skipped} skipped`
     });
     
   } catch (error) {
@@ -459,9 +593,7 @@ router.post("/import-readings", ...guard, async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-// ===========================================
-// ADD THIS NEW ENDPOINT FOR SQLITE IMPORT
-// ===========================================
+
 // IMPORT SQLite file from mobile app
 router.post("/import-sqlite", ...guard, upload.single('file'), async (req, res) => {
   let filePath = null;
@@ -477,12 +609,11 @@ router.post("/import-sqlite", ...guard, upload.single('file'), async (req, res) 
     filePath = file.path;
     console.log(`Processing SQLite file: ${file.originalname}`);
     
+    // Save the imported file
+    const savedFile = await saveImportedFile(file, periodKey, req.user?.username || "unknown");
+    
     // For now, we'll simulate a successful import
-    // In a production environment, you would:
-    // 1. Use a SQLite parser like 'sqlite3' or 'better-sqlite3'
-    // 2. Read the database file
-    // 3. Extract readings from the 'readings' table
-    // 4. Process each reading similarly to the CSV import
+    // In production, you would parse the SQLite file here
     
     const results = {
       success: 4,
@@ -516,7 +647,6 @@ router.post("/import-sqlite", ...guard, upload.single('file'), async (req, res) 
       ]
     };
     
-    // Clean up the uploaded file
     if (filePath && fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
     }
@@ -525,16 +655,132 @@ router.post("/import-sqlite", ...guard, upload.single('file'), async (req, res) 
       message: "SQLite import successful",
       filename: file.originalname,
       periodKey,
+      savedFile: savedFile,
       ...results
     });
     
   } catch (error) {
-    // Clean up the uploaded file in case of error
     if (filePath && fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
     }
     
     console.error("SQLite import error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET list of imported files
+router.get("/imports/list", ...guard, async (req, res) => {
+  try {
+    const { periodKey } = req.query;
+    const importsDir = path.join(__dirname, '../../uploads/imports');
+    
+    if (!fs.existsSync(importsDir)) {
+      return res.json({ files: [] });
+    }
+    
+    let files = [];
+    
+    if (periodKey) {
+      // Get files for specific period
+      const periodDir = path.join(importsDir, periodKey);
+      if (fs.existsSync(periodDir)) {
+        files = fs.readdirSync(periodDir).map(file => {
+          const stats = fs.statSync(path.join(periodDir, file));
+          return {
+            name: file,
+            size: stats.size,
+            modified: stats.mtime,
+            period: periodKey
+          };
+        });
+      }
+    } else {
+      // Get all files grouped by period
+      const periods = fs.readdirSync(importsDir).filter(f => 
+        fs.statSync(path.join(importsDir, f)).isDirectory()
+      );
+      
+      periods.forEach(period => {
+        const periodDir = path.join(importsDir, period);
+        const periodFiles = fs.readdirSync(periodDir).map(file => {
+          const stats = fs.statSync(path.join(periodDir, file));
+          return {
+            name: file,
+            size: stats.size,
+            modified: stats.mtime,
+            period: period
+          };
+        });
+        files = files.concat(periodFiles);
+      });
+    }
+    
+    // Sort by modified date descending
+    files.sort((a, b) => new Date(b.modified) - new Date(a.modified));
+    
+    res.json({ files });
+    
+  } catch (error) {
+    console.error("Error listing imports:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET list of exported files
+router.get("/exports/list", ...guard, async (req, res) => {
+  try {
+    const { periodKey } = req.query;
+    const exportsDir = path.join(__dirname, '../../uploads/exports');
+    
+    if (!fs.existsSync(exportsDir)) {
+      return res.json({ files: [] });
+    }
+    
+    let files = [];
+    
+    if (periodKey) {
+      // Get files for specific period
+      const periodDir = path.join(exportsDir, periodKey);
+      if (fs.existsSync(periodDir)) {
+        files = fs.readdirSync(periodDir).map(file => {
+          const stats = fs.statSync(path.join(periodDir, file));
+          return {
+            name: file,
+            size: stats.size,
+            modified: stats.mtime,
+            period: periodKey
+          };
+        });
+      }
+    } else {
+      // Get all files grouped by period
+      const periods = fs.readdirSync(exportsDir).filter(f => 
+        fs.statSync(path.join(exportsDir, f)).isDirectory()
+      );
+      
+      periods.forEach(period => {
+        const periodDir = path.join(exportsDir, period);
+        const periodFiles = fs.readdirSync(periodDir).map(file => {
+          const stats = fs.statSync(path.join(periodDir, file));
+          return {
+            name: file,
+            size: stats.size,
+            modified: stats.mtime,
+            period: period
+          };
+        });
+        files = files.concat(periodFiles);
+      });
+    }
+    
+    // Sort by modified date descending
+    files.sort((a, b) => new Date(b.modified) - new Date(a.modified));
+    
+    res.json({ files });
+    
+  } catch (error) {
+    console.error("Error listing exports:", error);
     res.status(500).json({ error: error.message });
   }
 });

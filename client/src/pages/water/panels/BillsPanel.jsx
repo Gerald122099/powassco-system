@@ -1,18 +1,20 @@
-// BillsPanel.jsx (UPDATED with Reading Status column)
+// BillsPanel.jsx (UPDATED with Refresh Event Listener)
 // ✅ Fixes:
 // - Create Bill flow supports multiple meters properly
 // - Auto-fills previousReading from selected meter.lastReading
 // - Uses meterNumber + periodKey logic in preview/create payloads
 // - Shows invoice receipt after payment with print functionality
 // - Added Reading Status column to show if bill came from meter reading
+// - Added event listener to auto-refresh when readings are imported
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import Card from "../../../components/Card";
 import Modal from "../../../components/Modal";
 import InvoiceReceipt from "../../../components/InvoiceReceipt";
 import { apiFetch } from "../../../lib/api";
 import { useAuth } from "../../../context/AuthContext";
-import { CheckCircle, AlertCircle } from "lucide-react"; // Added icons for reading status
+import { on } from "../../../lib/events"; // Import event system
+import { CheckCircle, AlertCircle } from "lucide-react";
 
 const PAGE_SIZE = 12;
 
@@ -44,6 +46,7 @@ export default function BillsPanel() {
   const [classification, setClassification] = useState(""); // "" | "residential" | "commercial"
   const [period, setPeriod] = useState(""); // YYYY-MM
   const [page, setPage] = useState(1);
+  const [refreshTrigger, setRefreshTrigger] = useState(0); // Add refresh trigger
 
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
@@ -88,6 +91,16 @@ export default function BillsPanel() {
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / PAGE_SIZE)), [total]);
 
+  // Listen for readingsImported events to refresh
+  useEffect(() => {
+    const unsubscribe = on('readingsImported', (data) => {
+      console.log("Readings imported event received in BillsPanel:", data);
+      setRefreshTrigger(prev => prev + 1);
+    });
+    
+    return unsubscribe;
+  }, []);
+
   // Period options (last 12 months)
   const periodOptions = useMemo(() => {
     const options = [];
@@ -124,10 +137,11 @@ export default function BillsPanel() {
     }
   }
 
+  // Add refreshTrigger to dependency array
   useEffect(() => {
     load();
     // eslint-disable-next-line
-  }, [q, status, classification, period, page]);
+  }, [q, status, classification, period, page, refreshTrigger]);
 
   function openPay(b) {
     setPayErr("");
@@ -477,7 +491,7 @@ export default function BillsPanel() {
               <th className="py-3 px-4">Account Name</th>
               <th className="py-3 px-4">Class</th>
               <th className="py-3 px-4">Period</th>
-              <th className="py-3 px-4">Reading</th> {/* New Reading Status Column */}
+              <th className="py-3 px-4">Reading</th> {/* Reading Status Column */}
               <th className="py-3 px-4">Consumption</th>
               <th className="py-3 px-4">Meter</th>
               <th className="py-3 px-4">Tier</th>

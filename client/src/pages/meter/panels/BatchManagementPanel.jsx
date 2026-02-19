@@ -21,7 +21,7 @@ import {
   CheckCircle,
   RefreshCw,
   FileText,
-   XCircle,
+  XCircle,
   Database,
 } from "lucide-react";
 
@@ -40,10 +40,9 @@ export default function BatchManagementPanel() {
   const [importResults, setImportResults] = useState(null);
   const [importFile, setImportFile] = useState(null);
   const [importPreview, setImportPreview] = useState([]);
+  const [previewData, setPreviewData] = useState(null);
   
-  // NEW: State for selected members in the add members modal
   const [selectedMemberIds, setSelectedMemberIds] = useState([]);
-  // NEW: State for select all checkbox
   const [selectAll, setSelectAll] = useState(false);
   
   const [newBatch, setNewBatch] = useState({
@@ -53,7 +52,6 @@ export default function BatchManagementPanel() {
     area: ""
   });
 
-  // Load batches
   const loadBatches = async () => {
     setLoading(true);
     try {
@@ -72,7 +70,6 @@ export default function BatchManagementPanel() {
     loadBatches();
   }, []);
 
-  // Create batch
   const createBatch = async () => {
     if (!newBatch.batchName || !newBatch.readerName || !newBatch.readerId) {
       alert("Please fill all required fields");
@@ -95,7 +92,6 @@ export default function BatchManagementPanel() {
     }
   };
 
-  // Add members to batch
   const addMembersToBatch = async () => {
     if (!selectedBatch || selectedMemberIds.length === 0) {
       alert("Please select at least one member");
@@ -109,15 +105,14 @@ export default function BatchManagementPanel() {
         body: { memberIds: selectedMemberIds }
       });
       
-      // Update batches list
+      console.log("Members added:", response);
+      
       setBatches(batches.map(b => 
         b._id === response._id ? response : b
       ));
       
-      // Remove added members from available list
       setAvailableMembers(availableMembers.filter(m => !selectedMemberIds.includes(m._id)));
       
-      // Reset selection
       setSelectedMemberIds([]);
       setSelectAll(false);
       setShowAddMembersModal(false);
@@ -127,7 +122,6 @@ export default function BatchManagementPanel() {
     }
   };
 
-  // Handle individual member checkbox change
   const handleMemberSelect = (memberId) => {
     setSelectedMemberIds(prev => {
       if (prev.includes(memberId)) {
@@ -138,7 +132,6 @@ export default function BatchManagementPanel() {
     });
   };
 
-  // Handle select all checkbox
   const handleSelectAll = () => {
     if (selectAll) {
       setSelectedMemberIds([]);
@@ -148,7 +141,6 @@ export default function BatchManagementPanel() {
     setSelectAll(!selectAll);
   };
 
-  // Update selectAll state when selectedMemberIds changes
   useEffect(() => {
     if (availableMembers.length > 0 && selectedMemberIds.length === availableMembers.length) {
       setSelectAll(true);
@@ -157,7 +149,6 @@ export default function BatchManagementPanel() {
     }
   }, [selectedMemberIds, availableMembers]);
 
-  // Remove member from batch
   const removeMemberFromBatch = async (batchId, memberId) => {
     if (!confirm("Remove this member from batch?")) return;
 
@@ -167,14 +158,12 @@ export default function BatchManagementPanel() {
         token
       });
       
-      // Reload batches to get updated data
       await loadBatches();
     } catch (error) {
       alert("Failed to remove member: " + error.message);
     }
   };
 
-  // Export batch
   const exportBatch = async () => {
     if (!selectedBatch) return;
 
@@ -194,112 +183,181 @@ export default function BatchManagementPanel() {
     }
   };
 
-// Handle import file selection
-const handleImportFile = async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
+  const handleImportFile = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
 
-  setImportFile(file);
-  
-  // Handle CSV files
-  if (file.name.endsWith('.csv')) {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const text = e.target.result;
-        const lines = text.split('\n').slice(0, 11); // Preview first 10 rows + header
-        setImportPreview(lines);
-      } catch (error) {
-        console.error("Preview error:", error);
-        setImportPreview(["Error previewing CSV file"]);
-      }
-    };
-    reader.readAsText(file);
-  }
-  // Handle SQLite files
-  else if (file.name.endsWith('.db') || file.name.endsWith('.sqlite') || file.name.endsWith('.sqlite3')) {
-    setImportPreview([
-      "SQLite database file detected.",
-      "File: " + file.name,
-      "Size: " + (file.size / 1024).toFixed(2) + " KB",
-      "",
-      "Click 'Import Readings' to process this file."
-    ]);
-  }
-  else {
-    setImportPreview(["Unsupported file type. Please upload CSV or SQLite files."]);
-  }
-};
-
-  // Import readings
-const importReadings = async () => {
-  if (!importFile) return;
-
-  let readings = [];
-
-  try {
-    // Handle CSV files
-    if (importFile.name.endsWith('.csv')) {
-      const text = await importFile.text();
-      const lines = text.split('\n');
-      const headers = lines[0].split(',');
-      
-      // Parse CSV (simplified - you'd want proper CSV parsing)
-      for (let i = 1; i < lines.length; i++) {
-        if (!lines[i].trim()) continue;
-        
-        const values = lines[i].split(',');
-        const reading = {
-          pnNo: values[0]?.replace(/"/g, '') || "",
-          meterNumber: values[1]?.replace(/"/g, '') || "",
-          previousReading: parseFloat(values[2]) || 0,
-          presentReading: parseFloat(values[3]) || 0,
-          consumptionMultiplier: parseFloat(values[4]) || 1,
-          readDate: values[5] || new Date().toISOString(),
-          readBy: values[6]?.replace(/"/g, '') || "mobile_app",
-        };
-        readings.push(reading);
-      }
-    }
-    // Handle SQLite files
-    else if (importFile.name.endsWith('.db') || importFile.name.endsWith('.sqlite')) {
-      // For SQLite, you'd need to parse it on the server
-      // Send the file to backend for processing
-      const formData = new FormData();
-      formData.append('file', importFile);
-      formData.append('periodKey', periodKey);
-      
-      const response = await fetch('/api/water/batches/import-sqlite', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        },
-        body: formData
-      });
-      
-      const result = await response.json();
-      setImportResults(result);
-      return;
-    }
-
-    // Send CSV readings to server
-    const response = await apiFetch("/water/batches/import-readings", {
-      method: "POST",
-      token,
-      body: {
-        readings,
-        periodKey,
-        readerName: "Mobile Reader",
-        readerId: "mobile001",
-        importDate: new Date()
-      }
-    });
+    setImportFile(file);
+    setPreviewData(null);
     
-    setImportResults(response);
-  } catch (error) {
-    alert("Import failed: " + error.message);
-  }
-};
+    if (file.name.endsWith('.json')) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const jsonData = JSON.parse(e.target.result);
+          setPreviewData(jsonData);
+          
+          const preview = [
+            "JSON file detected",
+            `Reader: ${jsonData.readerName} (${jsonData.readerId})`,
+            `Period: ${jsonData.periodKey}`,
+            `Export Date: ${jsonData.exportDate}`,
+            `Readings: ${jsonData.readings?.length || 0}`,
+          ];
+          setImportPreview(preview);
+        } catch (error) {
+          console.error("Preview error:", error);
+          setImportPreview(["Error previewing JSON file"]);
+        }
+      };
+      reader.readAsText(file);
+    }
+    else if (file.name.endsWith('.csv')) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const text = e.target.result;
+          const lines = text.split('\n').slice(0, 11);
+          setImportPreview(lines);
+        } catch (error) {
+          console.error("Preview error:", error);
+          setImportPreview(["Error previewing CSV file"]);
+        }
+      };
+      reader.readAsText(file);
+    }
+    else if (file.name.endsWith('.db') || file.name.endsWith('.sqlite') || file.name.endsWith('.sqlite3')) {
+      setImportPreview([
+        "SQLite database file detected.",
+        "File: " + file.name,
+        "Size: " + (file.size / 1024).toFixed(2) + " KB",
+        "",
+        "Click 'Import Readings' to process this file."
+      ]);
+    }
+    else {
+      setImportPreview(["Unsupported file type. Please upload JSON, CSV, or SQLite files."]);
+    }
+  };
+
+  const importReadings = async () => {
+    if (!importFile) return;
+
+    try {
+      if (importFile.name.endsWith('.json')) {
+        const text = await importFile.text();
+        const jsonData = JSON.parse(text);
+        
+        console.log("Imported JSON:", jsonData);
+        
+        const readings = jsonData.readings || [];
+        
+        if (readings.length === 0) {
+          alert("No readings found in the file");
+          return;
+        }
+        
+        const uniqueReadings = [];
+        const seen = new Set();
+        
+        for (const reading of readings) {
+          const key = `${reading.pnNo}-${reading.meterNumber}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            uniqueReadings.push(reading);
+          } else {
+            console.warn(`Duplicate reading in file: ${reading.pnNo} - ${reading.meterNumber}`);
+          }
+        }
+        
+        if (uniqueReadings.length !== readings.length) {
+          console.log(`Removed ${readings.length - uniqueReadings.length} duplicates from file`);
+        }
+        
+        const response = await apiFetch("/water/batches/import-readings", {
+          method: "POST",
+          token,
+          body: {
+            readings: uniqueReadings,
+            periodKey: jsonData.periodKey || periodKey,
+            readerName: jsonData.readerName || "Mobile Reader",
+            readerId: jsonData.readerId || "mobile",
+            importDate: new Date(),
+            forceUpdate: false
+          }
+        });
+        
+        setImportResults(response);
+      }
+      else if (importFile.name.endsWith('.csv')) {
+        const text = await importFile.text();
+        const lines = text.split('\n');
+        
+        const readings = [];
+        for (let i = 1; i < lines.length; i++) {
+          if (!lines[i].trim()) continue;
+          
+          const values = lines[i].split(',').map(v => v.replace(/"/g, '').trim());
+          
+          const reading = {
+            pnNo: values[0] || "",
+            meterNumber: values[1] || "",
+            previousReading: parseFloat(values[2]) || 0,
+            presentReading: parseFloat(values[3]) || 0,
+            consumptionMultiplier: parseFloat(values[4]) || 1,
+            readDate: values[5] || new Date().toISOString(),
+            readBy: values[6] || "mobile_app",
+          };
+          
+          if (reading.pnNo && reading.meterNumber) {
+            readings.push(reading);
+          }
+        }
+        
+        if (readings.length === 0) {
+          alert("No valid readings found in CSV file");
+          return;
+        }
+        
+        const response = await apiFetch("/water/batches/import-readings", {
+          method: "POST",
+          token,
+          body: {
+            readings,
+            periodKey,
+            readerName: "Mobile Reader",
+            readerId: "mobile001",
+            importDate: new Date()
+          }
+        });
+        
+        setImportResults(response);
+      }
+      else if (importFile.name.endsWith('.db') || importFile.name.endsWith('.sqlite')) {
+        const formData = new FormData();
+        formData.append('file', importFile);
+        formData.append('periodKey', periodKey);
+        
+        const response = await fetch('/api/water/batches/import-sqlite', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          },
+          body: formData
+        });
+        
+        const result = await response.json();
+        setImportResults(result);
+        return;
+      }
+      else {
+        alert("Unsupported file type. Please upload JSON, CSV, or SQLite files.");
+      }
+    } catch (error) {
+      console.error("Import error:", error);
+      alert("Import failed: " + error.message);
+    }
+  };
 
   const toggleBatchExpansion = (batchId) => {
     setExpandedBatches(prev => ({
@@ -348,7 +406,6 @@ const importReadings = async () => {
         </div>
       </div>
 
-      {/* Batches List */}
       <div className="space-y-4">
         {loading ? (
           <div className="text-center py-10">Loading batches...</div>
@@ -359,7 +416,6 @@ const importReadings = async () => {
         ) : (
           batches.map(batch => (
             <div key={batch._id} className="border rounded-xl overflow-hidden">
-              {/* Batch Header */}
               <div
                 className="bg-slate-50 p-4 flex items-center justify-between cursor-pointer hover:bg-slate-100"
                 onClick={() => toggleBatchExpansion(batch._id)}
@@ -405,7 +461,7 @@ const importReadings = async () => {
                     onClick={(e) => {
                       e.stopPropagation();
                       setSelectedBatch(batch);
-                      setSelectedMemberIds([]); // Reset selection when opening modal
+                      setSelectedMemberIds([]);
                       setSelectAll(false);
                       setShowAddMembersModal(true);
                     }}
@@ -422,7 +478,6 @@ const importReadings = async () => {
                 </div>
               </div>
 
-              {/* Expanded Members List */}
               {expandedBatches[batch._id] && (
                 <div className="p-4 border-t">
                   <table className="w-full text-sm">
@@ -475,7 +530,6 @@ const importReadings = async () => {
         )}
       </div>
 
-      {/* Create Batch Modal */}
       <Modal open={showCreateModal} title="Create New Batch" onClose={() => setShowCreateModal(false)}>
         <div className="space-y-4">
           <div>
@@ -488,7 +542,6 @@ const importReadings = async () => {
               placeholder="e.g., North Area - Juan"
             />
           </div>
-
           <div>
             <label className="text-sm font-semibold text-slate-700">Reader Name *</label>
             <input
@@ -499,7 +552,6 @@ const importReadings = async () => {
               placeholder="e.g., Juan Dela Cruz"
             />
           </div>
-
           <div>
             <label className="text-sm font-semibold text-slate-700">Reader ID *</label>
             <input
@@ -510,7 +562,6 @@ const importReadings = async () => {
               placeholder="e.g., RD001"
             />
           </div>
-
           <div>
             <label className="text-sm font-semibold text-slate-700">Area (Optional)</label>
             <input
@@ -521,7 +572,6 @@ const importReadings = async () => {
               placeholder="e.g., Barangay San Jose"
             />
           </div>
-
           <div className="flex justify-end gap-2 pt-4">
             <button
               onClick={() => setShowCreateModal(false)}
@@ -539,7 +589,6 @@ const importReadings = async () => {
         </div>
       </Modal>
 
-      {/* Add Members Modal - FIXED VERSION */}
       <Modal open={showAddMembersModal} title={`Add Members to ${selectedBatch?.batchName}`} onClose={() => {
         setShowAddMembersModal(false);
         setSelectedMemberIds([]);
@@ -550,7 +599,6 @@ const importReadings = async () => {
             <div className="text-sm text-slate-600">
               Select members to add to this batch. Members can only belong to one batch.
             </div>
-
             <div className="max-h-96 overflow-auto border rounded-xl">
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 sticky top-0">
@@ -603,7 +651,6 @@ const importReadings = async () => {
                 </tbody>
               </table>
             </div>
-
             <div className="flex items-center justify-between">
               <div className="text-sm text-slate-600">
                 Selected: <span className="font-bold">{selectedMemberIds.length}</span> members
@@ -636,7 +683,6 @@ const importReadings = async () => {
         )}
       </Modal>
 
-      {/* Export Modal */}
       <Modal open={showExportModal} title={`Export ${selectedBatch?.batchName}`} onClose={() => setShowExportModal(false)}>
         {selectedBatch && (
           <div className="space-y-4">
@@ -649,7 +695,6 @@ const importReadings = async () => {
                 onChange={(e) => setPeriodKey(e.target.value)}
               />
             </div>
-
             <div className="bg-blue-50 p-4 rounded-xl">
               <div className="text-sm text-blue-700">
                 <strong>Export Summary:</strong>
@@ -660,7 +705,6 @@ const importReadings = async () => {
                 <li>• Format: CSV (compatible with mobile app)</li>
               </ul>
             </div>
-
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => setShowExportModal(false)}
@@ -680,11 +724,11 @@ const importReadings = async () => {
         )}
       </Modal>
 
-      {/* Import Modal */}
       <Modal open={showImportModal} title="Import Readings from Mobile App" onClose={() => {
         setShowImportModal(false);
         setImportFile(null);
         setImportPreview([]);
+        setPreviewData(null);
         setImportResults(null);
       }} size="lg">
         <div className="space-y-4">
@@ -699,16 +743,64 @@ const importReadings = async () => {
           </div>
 
           <div>
-            <label className="text-sm font-semibold text-slate-700">CSV File</label>
+            <label className="text-sm font-semibold text-slate-700">Import File</label>
             <input
-  type="file"
-  accept=".csv,.db,.sqlite,.sqlite3"
-  onChange={handleImportFile}
-  className="mt-1 w-full"
-/>
+              type="file"
+              accept=".csv,.json,.db,.sqlite,.sqlite3"
+              onChange={handleImportFile}
+              className="mt-1 w-full"
+            />
           </div>
 
-          {importPreview.length > 0 && (
+          {previewData && previewData.readings && previewData.readings.length > 0 && (
+            <div className="border rounded-xl p-4">
+              <div className="font-semibold mb-3 flex items-center justify-between">
+                <span>Readings Preview ({previewData.readings.length} records)</span>
+                <span className="text-xs text-slate-500">
+                  Reader: {previewData.readerName} | Period: {previewData.periodKey}
+                </span>
+              </div>
+              <div className="overflow-auto max-h-64 border rounded-lg">
+                <table className="w-full text-xs">
+                  <thead className="bg-slate-50 sticky top-0">
+                    <tr>
+                      <th className="py-2 px-3 text-left">PN No</th>
+                      <th className="py-2 px-3 text-left">Meter</th>
+                      <th className="py-2 px-3 text-right">Previous</th>
+                      <th className="py-2 px-3 text-right">Present</th>
+                      <th className="py-2 px-3 text-right">Consumption</th>
+                      <th className="py-2 px-3 text-left">Read Date</th>
+                      <th className="py-2 px-3 text-left">Read By</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {previewData.readings.slice(0, 10).map((reading, index) => (
+                      <tr key={index} className="border-t hover:bg-slate-50">
+                        <td className="py-2 px-3 font-mono font-bold">{reading.pnNo}</td>
+                        <td className="py-2 px-3 font-mono">{reading.meterNumber}</td>
+                        <td className="py-2 px-3 text-right">{reading.previousReading?.toFixed(3)}</td>
+                        <td className="py-2 px-3 text-right">{reading.presentReading?.toFixed(3)}</td>
+                        <td className="py-2 px-3 text-right font-semibold text-blue-600">
+                          {reading.consumption?.toFixed(2)} m³
+                        </td>
+                        <td className="py-2 px-3">
+                          {reading.readDate ? new Date(parseInt(reading.readDate)).toLocaleDateString() : '-'}
+                        </td>
+                        <td className="py-2 px-3">{reading.readBy}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {previewData.readings.length > 10 && (
+                <div className="mt-2 text-xs text-slate-500 text-center">
+                  Showing first 10 of {previewData.readings.length} readings
+                </div>
+              )}
+            </div>
+          )}
+
+          {importPreview.length > 0 && !previewData && (
             <div className="border rounded-xl p-4">
               <div className="font-semibold mb-2">Preview (first 10 rows):</div>
               <pre className="text-xs bg-slate-50 p-2 rounded overflow-auto max-h-40">
@@ -776,6 +868,7 @@ const importReadings = async () => {
                 setShowImportModal(false);
                 setImportFile(null);
                 setImportPreview([]);
+                setPreviewData(null);
                 setImportResults(null);
               }}
               className="px-4 py-2.5 border rounded-xl hover:bg-slate-50"
