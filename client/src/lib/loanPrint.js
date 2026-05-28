@@ -42,8 +42,14 @@ const BASE_CSS = `
 `;
 
 function printDoc(title, bodyHtml) {
-  const w = window.open("", "_blank", "noopener,noreferrer,width=900,height=700");
-  if (!w) return;
+  // NOTE: do NOT pass noopener/noreferrer here — those make window.open()
+  // return null, so we'd lose the reference and never write the document
+  // (the symptom is a blank white print window).
+  const w = window.open("", "_blank", "width=900,height=700");
+  if (!w) {
+    alert("Unable to open the print window. Please allow pop-ups for this site and try again.");
+    return;
+  }
   w.document.open();
   w.document.write(`<!doctype html><html><head><meta charset="utf-8"/><title>${safe(title)}</title><style>${BASE_CSS}</style></head><body>${bodyHtml}</body></html>`);
   w.document.close();
