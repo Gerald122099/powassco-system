@@ -1,116 +1,112 @@
-// src/components/Navbar.jsx
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { useState, useEffect } from "react"; // Add useState and useEffect
+import { useState, useEffect } from "react";
 import logo from "../assets/logo.png";
-import "./Navbar.css";
+import { Menu, X, LogOut } from "lucide-react";
+
+const links = [
+  { to: "/", label: "Home" },
+  { to: "/inquiry", label: "Bill Inquiry" },
+  { to: "/calculator", label: "Tariff Calculator" },
+  { to: "/about", label: "About" },
+];
 
 export default function Navbar() {
   const { user, logout } = useAuth();
   const location = useLocation();
-  const [isMenuOpen, setIsMenuOpen] = useState(false); // Add state for mobile menu
+  const [open, setOpen] = useState(false);
 
-  const isActive = (path) => {
-    return location.pathname === path;
-  };
-
-  // Close menu when route changes
   useEffect(() => {
-    setIsMenuOpen(false);
+    // close the mobile menu when the route changes
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setOpen(false);
   }, [location]);
 
-  // Close menu when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (!e.target.closest('.nav-menu') && !e.target.closest('.mobile-menu-btn')) {
-        setIsMenuOpen(false);
-      }
-    };
-
-    document.addEventListener('click', handleClickOutside);
-    return () => document.removeEventListener('click', handleClickOutside);
-  }, []);
-
-  // Prevent body scroll when menu is open
-  useEffect(() => {
-    if (isMenuOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = 'unset';
-    }
-
-    return () => {
-      document.body.style.overflow = 'unset';
-    };
-  }, [isMenuOpen]);
-
-  const toggleMenu = () => {
-    setIsMenuOpen(!isMenuOpen);
-  };
+  const isActive = (path) => location.pathname === path;
 
   return (
-    <nav className="navbar">
-      <div className="nav-container">
-        <Link to="/" className="nav-logo" onClick={() => setIsMenuOpen(false)}>
-          <img src={logo} alt="Powassco Logo" className="logo" />
-          <div className="logo-text">
-            <span className="logo-main">POWASSCO</span>
-            <span className="logo-sub">Multipurpose Cooperative</span>
+    <nav className="fixed inset-x-0 top-0 z-40 border-b border-slate-200/70 bg-white/80 backdrop-blur">
+      <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-3">
+        <Link to="/" className="flex items-center gap-3">
+          <img src={logo} alt="POWASSCO" className="h-9 w-9 rounded-lg object-contain" />
+          <div className="leading-tight">
+            <div className="text-sm font-bold text-slate-900">POWASSCO</div>
+            <div className="text-[11px] text-slate-500">Multipurpose Cooperative</div>
           </div>
         </Link>
 
-        {/* Mobile Menu Button - Hamburger Icon */}
-        <button 
-          className={`mobile-menu-btn ${isMenuOpen ? 'active' : ''}`} 
-          onClick={toggleMenu}
+        {/* Desktop */}
+        <div className="hidden items-center gap-1 md:flex">
+          {links.map((l) => (
+            <Link
+              key={l.to}
+              to={l.to}
+              className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
+                isActive(l.to)
+                  ? "bg-emerald-50 text-emerald-700"
+                  : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+              }`}
+            >
+              {l.label}
+            </Link>
+          ))}
+          {user ? (
+            <button
+              onClick={logout}
+              className="ml-2 inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
+            >
+              <LogOut size={15} /> Logout
+            </button>
+          ) : (
+            <Link
+              to="/login"
+              className="ml-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700"
+            >
+              Staff Login
+            </Link>
+          )}
+        </div>
+
+        {/* Mobile toggle */}
+        <button
+          onClick={() => setOpen((v) => !v)}
+          className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-700 transition hover:bg-slate-100 md:hidden"
           aria-label="Toggle menu"
         >
-          <span className="hamburger-line"></span>
-          <span className="hamburger-line"></span>
-          <span className="hamburger-line"></span>
+          {open ? <X size={20} /> : <Menu size={20} />}
         </button>
+      </div>
 
-        {/* Navigation Menu */}
-        <ul className={`nav-menu ${isMenuOpen ? 'active' : ''}`}>
-          <li className="nav-item">
-            <Link to="/" className={`nav-link ${isActive('/') ? 'active' : ''}`}>
-              <i className="fas fa-home"></i>
-              <span>Home</span>
-            </Link>
-          </li>
-          <li className="nav-item">
-            <Link to="/inquiry" className={`nav-link ${isActive('/inquiry') ? 'active' : ''}`}>
-              <i className="fas fa-search"></i>
-              <span>Inquiry</span>
-            </Link>
-          </li>
-          <li className="nav-item">
-            <Link to="/calculator" className={`nav-link ${isActive('/calculator') ? 'active' : ''}`}>
-              <i className="fas fa-calculator"></i>
-              <span>Tariff Calculator</span>
-            </Link>
-          </li>
-          <li className="nav-item">
-            <Link to="/about" className={`nav-link ${isActive('/about') ? 'active' : ''}`}>
-              <i className="fas fa-info-circle"></i>
-              <span>About</span>
-            </Link>
-          </li>
-          <li className="nav-item">
+      {/* Mobile menu */}
+      {open && (
+        <div className="border-t border-slate-200 bg-white px-5 py-3 md:hidden">
+          <div className="flex flex-col gap-1">
+            {links.map((l) => (
+              <Link
+                key={l.to}
+                to={l.to}
+                className={`rounded-lg px-3 py-2 text-sm font-medium ${
+                  isActive(l.to) ? "bg-emerald-50 text-emerald-700" : "text-slate-700 hover:bg-slate-100"
+                }`}
+              >
+                {l.label}
+              </Link>
+            ))}
             {user ? (
-              <button onClick={logout} className="nav-link logout-btn">
-                <i className="fas fa-sign-out-alt"></i>
-                <span>Logout</span>
+              <button
+                onClick={logout}
+                className="mt-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white"
+              >
+                <LogOut size={15} /> Logout
               </button>
             ) : (
-              <Link to="/login" className={`nav-link login-link ${isActive('/login') ? 'active' : ''}`}>
-                <i className="fas fa-user-lock"></i>
-                <span>Login</span>
+              <Link to="/login" className="mt-1 rounded-lg bg-emerald-600 px-3 py-2 text-center text-sm font-semibold text-white">
+                Staff Login
               </Link>
             )}
-          </li>
-        </ul>
-      </div>
+          </div>
+        </div>
+      )}
     </nav>
   );
 }

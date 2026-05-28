@@ -81,10 +81,7 @@ export default function TariffCalculatorPage() {
                 />
               </div>
               <div>
-                <div className="text-sm font-semibold text-green-600 flex items-center gap-2">
-                  <i className="fas fa-calculator text-green-500"></i>
-                  POWASSCO
-                </div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-green-600">POWASSCO</div>
                 <div className="text-2xl font-bold text-gray-800">Water Tariff Calculator</div>
                 <div className="text-sm text-gray-500 mt-1">
                   Estimate your water bill based on consumption and classification
@@ -97,17 +94,11 @@ export default function TariffCalculatorPage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
             {/* Calculator Form */}
             <div className="rounded-3xl bg-white border border-green-100 shadow-lg p-6">
-              <h3 className="text-lg font-black text-gray-800 mb-4 flex items-center gap-2">
-                <i className="fas fa-sliders-h text-green-600"></i>
-                Calculate Your Bill
-              </h3>
+              <h3 className="mb-4 text-lg font-bold text-gray-900">Calculate Your Bill</h3>
 
               <div className="space-y-4">
                 <div>
-                  <label className="text-sm font-medium text-gray-700 block mb-2 flex items-center gap-1">
-                    <i className="fas fa-tag text-green-600"></i>
-                    Classification
-                  </label>
+                  <label className="mb-2 block text-sm font-medium text-gray-700">Classification</label>
                   <select
                     className="w-full rounded-xl border border-green-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-green-400"
                     value={calculatorForm.classification}
@@ -124,10 +115,7 @@ export default function TariffCalculatorPage() {
                 </div>
 
                 <div>
-                  <label className="text-sm font-medium text-gray-700 block mb-2 flex items-center gap-1">
-                    <i className="fas fa-chart-bar text-green-600"></i>
-                    Monthly Consumption (m³)
-                  </label>
+                  <label className="mb-2 block text-sm font-medium text-gray-700">Monthly Consumption (m³)</label>
                   <input
                     type="number"
                     min="0"
@@ -152,10 +140,7 @@ export default function TariffCalculatorPage() {
                     }
                     className="rounded border-green-300 text-green-600 focus:ring-green-500"
                   />
-                  <label htmlFor="isSenior" className="text-sm text-gray-700 flex items-center gap-1">
-                    <i className="fas fa-user-shield text-green-600"></i>
-                    Apply Senior Citizen Discount (5%)
-                  </label>
+                  <label htmlFor="isSenior" className="text-sm text-gray-700">Apply Senior Citizen Discount (5%)</label>
                 </div>
 
                 <button
@@ -163,27 +148,14 @@ export default function TariffCalculatorPage() {
                   disabled={Number(calculatorForm.consumption || 0) <= 0 || loading}
                   className="w-full rounded-xl bg-gradient-to-r from-green-600 to-green-700 text-white py-3 font-semibold hover:from-green-700 hover:to-green-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all transform hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2"
                 >
-                  {loading ? (
-                    <>
-                      <i className="fas fa-spinner fa-spin"></i>
-                      Calculating...
-                    </>
-                  ) : (
-                    <>
-                      <i className="fas fa-calculator"></i>
-                      Calculate Bill
-                    </>
-                  )}
+                  {loading ? "Calculating..." : "Calculate Bill"}
                 </button>
 
                 {/* Result */}
                 {calculatorResult && (
                   <div className="mt-4 border border-green-100 rounded-2xl p-4 bg-gradient-to-br from-green-50 to-white">
                     {calculatorResult.error ? (
-                      <div className="text-sm font-semibold text-red-700 flex items-center gap-2">
-                        <i className="fas fa-exclamation-triangle"></i>
-                        {calculatorResult.message}
-                      </div>
+                      <div className="text-sm font-semibold text-red-700">{calculatorResult.message}</div>
                     ) : (
                       <>
                         <div className="flex items-center justify-between mb-3">
@@ -214,10 +186,7 @@ export default function TariffCalculatorPage() {
                           </div>
                         </div>
 
-                        <div className="mt-3 text-xs text-gray-500 bg-blue-50 p-2 rounded-lg flex items-center gap-1">
-                          <i className="fas fa-info-circle text-blue-500"></i>
-                          {calculatorResult.message}
-                        </div>
+                        <div className="mt-3 rounded-lg bg-slate-50 p-2 text-xs text-gray-500">{calculatorResult.message}</div>
                       </>
                     )}
                   </div>
@@ -227,10 +196,7 @@ export default function TariffCalculatorPage() {
 
             {/* Tariff Guide */}
             <div className="rounded-3xl bg-white border border-green-100 shadow-lg p-6">
-              <h3 className="text-lg font-black text-gray-800 mb-4 flex items-center gap-2">
-                <i className="fas fa-book-open text-green-600"></i>
-                Tariff Guide
-              </h3>
+              <h3 className="mb-4 text-lg font-bold text-gray-900">Tariff Guide</h3>
 
               <p className="text-sm text-gray-600 mb-4">
                 {tariffExamples?.description || "Select a classification to see example calculations"}
@@ -264,9 +230,8 @@ export default function TariffCalculatorPage() {
                 </div>
               )}
 
-              <div className="mt-4 text-xs text-gray-500 bg-amber-50 p-3 rounded-xl flex items-start gap-2">
-                <i className="fas fa-exclamation-triangle text-amber-600 mt-0.5"></i>
-                <span>This calculator provides estimates only. Actual bills may include additional charges, penalties, or verified discounts.</span>
+              <div className="mt-4 rounded-xl bg-amber-50 p-3 text-xs text-amber-700">
+                This calculator provides estimates only. Actual bills may include additional charges, penalties, or verified discounts.
               </div>
             </div>
           </div>

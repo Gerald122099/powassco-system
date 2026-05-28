@@ -124,13 +124,9 @@ export default function MemberInquiryPage() {
                 />
               </div>
               <div>
-                <div className="text-sm font-semibold text-green-600 flex items-center gap-2">
-                  <i className="fas fa-droplet text-green-500"></i>
-                  POWASSCO
-                </div>
-                <div className="text-2xl font-bold text-gray-800">Member Bill Inquiry</div>
-                <div className="text-sm text-gray-500 mt-1 flex items-center gap-2">
-                  <i className="fas fa-info-circle text-green-500"></i>
+                <div className="text-xs font-semibold uppercase tracking-wide text-green-600">POWASSCO</div>
+                <div className="text-2xl font-bold text-gray-900">Member Bill Inquiry</div>
+                <div className="mt-1 text-sm text-gray-500">
                   Enter your PN No to view bills, payment history, and meter information.
                 </div>
               </div>
@@ -139,8 +135,7 @@ export default function MemberInquiryPage() {
             <form onSubmit={submit} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="md:col-span-2">
-                  <label className="text-sm font-semibold text-gray-700 block mb-2 flex items-center gap-2">
-                    <i className="fas fa-id-card text-green-600"></i>
+                  <label className="mb-2 block text-sm font-semibold text-gray-700">
                     PN No (Account Number)
                   </label>
                   <input
@@ -157,30 +152,18 @@ export default function MemberInquiryPage() {
                     disabled={loading}
                     className="w-full rounded-2xl bg-gradient-to-r from-green-600 to-green-700 text-white py-3 font-semibold hover:from-green-700 hover:to-green-800 disabled:opacity-60 transition-all transform hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2"
                   >
-                    {loading ? (
-                      <>
-                        <i className="fas fa-spinner fa-spin"></i>
-                        Checking...
-                      </>
-                    ) : (
-                      <>
-                        <i className="fas fa-search"></i>
-                        Check Bills
-                      </>
-                    )}
+                    {loading ? "Checking..." : "Check Bills"}
                   </button>
                 </div>
               </div>
 
-              <div className="text-xs text-gray-500 bg-blue-50 p-3 rounded-xl flex items-center gap-2">
-                <i className="fas fa-lightbulb text-yellow-500"></i>
-                Note: Enter your PN Number exactly as it appears on your bill statement.
+              <div className="rounded-xl bg-slate-50 p-3 text-xs text-gray-500">
+                Enter your PN Number exactly as it appears on your bill statement.
               </div>
             </form>
 
             {err && (
-              <div className="mt-4 rounded-2xl bg-red-50 border border-red-200 text-red-700 px-4 py-3 text-sm font-semibold flex items-center gap-2">
-                <i className="fas fa-exclamation-circle"></i>
+              <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
                 {err}
               </div>
             )}
@@ -192,15 +175,9 @@ export default function MemberInquiryPage() {
               <div className="rounded-3xl bg-white border border-green-100 shadow-lg p-6">
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                   <div>
-                    <div className="flex items-center gap-2 mb-2">
-                      <i className="fas fa-user-circle text-2xl text-green-600"></i>
-                      <div className="text-xl font-black text-gray-800">{data.member?.accountName}</div>
-                    </div>
+                    <div className="mb-2 text-xl font-bold text-gray-900">{data.member?.accountName}</div>
                     <div className="text-sm text-gray-600 flex flex-wrap items-center gap-2">
-                      <span className="flex items-center gap-1">
-                        <i className="fas fa-hashtag text-green-500"></i>
-                        PN No: <span className="font-semibold">{data.member?.pnNo}</span>
-                      </span>
+                      <span>PN No: <span className="font-semibold">{data.member?.pnNo}</span></span>
                       <span className="text-gray-300">•</span>
                       <span
                         className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold ${
@@ -209,7 +186,6 @@ export default function MemberInquiryPage() {
                             : "bg-purple-100 text-purple-800"
                         }`}
                       >
-                        <i className={`fas fa-${data.member?.billing?.classification === "residential" ? "home" : "building"}`}></i>
                         {data.member?.billing?.classification || "—"}
                       </span>
                       <span className="text-gray-300">•</span>
@@ -220,7 +196,6 @@ export default function MemberInquiryPage() {
                             : "bg-red-100 border-red-200 text-red-800"
                         }`}
                       >
-                        <i className={`fas fa-${data.member?.accountStatus === "active" ? "check-circle" : "exclamation-circle"}`}></i>
                         {data.member?.accountStatus}
                       </span>
                     </div>
@@ -228,15 +203,9 @@ export default function MemberInquiryPage() {
 
                   <div className="flex flex-col items-start md:items-end">
                     {totalOutstanding > 0 ? (
-                      <div className="text-lg font-bold text-red-600 flex items-center gap-2">
-                        <i className="fas fa-exclamation-triangle"></i>
-                        Outstanding: ₱{money(totalOutstanding)}
-                      </div>
+                      <div className="text-lg font-bold text-red-600">Outstanding: ₱{money(totalOutstanding)}</div>
                     ) : (
-                      <div className="text-sm font-semibold text-green-700 flex items-center gap-2">
-                        <i className="fas fa-check-circle"></i>
-                        No outstanding balance
-                      </div>
+                      <div className="text-sm font-semibold text-green-700">No outstanding balance</div>
                     )}
 
                     <button
@@ -254,10 +223,7 @@ export default function MemberInquiryPage() {
                 {showAccountDetails && (
                   <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="rounded-2xl border border-green-100 p-4 bg-gradient-to-br from-green-50 to-white">
-                      <div className="text-xs text-gray-500 flex items-center gap-1 mb-2">
-                        <i className="fas fa-map-marker-alt text-green-600"></i>
-                        Address
-                      </div>
+                      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Address</div>
                       <div className="text-sm font-semibold text-gray-800">
                         {[
                           data.member?.address?.houseLotNo,
@@ -272,10 +238,7 @@ export default function MemberInquiryPage() {
                     </div>
 
                     <div className="rounded-2xl border border-green-100 p-4 bg-gradient-to-br from-green-50 to-white">
-                      <div className="text-xs text-gray-500 flex items-center gap-1 mb-2">
-                        <i className="fas fa-phone-alt text-green-600"></i>
-                        Contact
-                      </div>
+                      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Contact</div>
                       <div className="text-sm font-semibold text-gray-800">
                         {data.member?.contact?.mobileNumber || "—"}
                       </div>
@@ -283,22 +246,15 @@ export default function MemberInquiryPage() {
                     </div>
 
                     <div className="rounded-2xl border border-green-100 p-4 bg-gradient-to-br from-green-50 to-white">
-                      <div className="text-xs text-gray-500 flex items-center gap-1 mb-2">
-                        <i className="fas fa-tag text-green-600"></i>
-                        Discount
-                      </div>
+                      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Discount</div>
                       {data.member?.personal?.isSeniorCitizen ? (
-                        <div className="mt-1 text-sm font-bold text-amber-700 flex items-center gap-1">
-                          <i className="fas fa-user-shield"></i>
+                        <div className="mt-1 text-sm font-bold text-amber-700">
                           Senior • {data.member?.personal?.seniorDiscountRate || 5}%
                         </div>
                       ) : (
                         <div className="mt-1 text-sm font-semibold text-gray-700">None</div>
                       )}
-                      <div className="text-xs text-gray-500 mt-2 flex items-center gap-1">
-                        <i className="fas fa-lock"></i>
-                        Some info is masked for privacy.
-                      </div>
+                      <div className="mt-2 text-xs text-gray-400">Some info is masked for privacy.</div>
                     </div>
                   </div>
                 )}
@@ -308,21 +264,16 @@ export default function MemberInquiryPage() {
               {activeMeters.length > 0 && (
                 <div className="rounded-3xl bg-white border border-green-100 shadow-lg p-6">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <i className="fas fa-tachometer-alt text-2xl text-green-600"></i>
-                      <div>
-                        <div className="text-lg font-black text-gray-800">Meters</div>
-                        <div className="text-sm text-gray-600">{activeMeters.length} active billing meter(s)</div>
-                      </div>
+                    <div>
+                      <div className="text-lg font-bold text-gray-900">Meters</div>
+                      <div className="text-sm text-gray-500">{activeMeters.length} active billing meter(s)</div>
                     </div>
-
                     <button
-                      className="text-xs font-semibold text-green-600 hover:text-green-800 flex items-center gap-1 transition-colors"
+                      className="text-sm font-semibold text-green-600 transition-colors hover:text-green-800"
                       onClick={() => setShowMeterDetails((v) => !v)}
                       type="button"
                     >
-                      <i className={`fas fa-chevron-${showMeterDetails ? 'up' : 'down'}`}></i>
-                      {showMeterDetails ? "Hide meters" : "Show meters"}
+                      {showMeterDetails ? "Hide" : "Show"}
                     </button>
                   </div>
 
@@ -330,15 +281,9 @@ export default function MemberInquiryPage() {
                     <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                       {activeMeters.map((meter, index) => (
                         <div key={meter._id || index} className="border border-green-100 rounded-2xl p-4 hover:shadow-md transition-shadow bg-gradient-to-br from-white to-green-50">
-                          <div className="flex justify-between items-start">
-                            <div className="font-black text-gray-800 flex items-center gap-2">
-                              <i className="fas fa-qrcode text-green-600"></i>
-                              {meter.meterNumber}
-                            </div>
-                            <span className="inline-flex items-center gap-1 rounded-full bg-green-100 text-green-800 px-2 py-1 text-xs font-bold">
-                              <i className="fas fa-circle text-xs"></i>
-                              Active
-                            </span>
+                          <div className="flex items-start justify-between">
+                            <div className="font-mono font-bold text-gray-900">{meter.meterNumber}</div>
+                            <span className="inline-flex rounded-full bg-green-100 px-2 py-1 text-xs font-bold text-green-700">Active</span>
                           </div>
 
                           <div className="mt-2 text-sm text-gray-600">
@@ -347,22 +292,19 @@ export default function MemberInquiryPage() {
                           </div>
 
                           {meter.location?.description && (
-                            <div className="mt-1 text-xs text-gray-500 truncate flex items-center gap-1" title={meter.location.description}>
-                              <i className="fas fa-map-pin text-green-500"></i>
+                            <div className="mt-1 truncate text-xs text-gray-500" title={meter.location.description}>
                               {meter.location.description}
                             </div>
                           )}
 
-                          <div className="mt-2 text-xs text-gray-500 flex items-center gap-1">
-                            <i className="fas fa-wrench"></i>
+                          <div className="mt-2 text-xs text-gray-500">
                             Condition:{" "}
                             <span className={`font-bold ${meter.meterCondition === "good" ? "text-green-700" : "text-amber-700"}`}>
                               {meter.meterCondition}
                             </span>
                           </div>
 
-                          <div className="mt-1 text-xs text-gray-500 flex items-center gap-1">
-                            <i className="fas fa-chart-line"></i>
+                          <div className="mt-1 text-xs text-gray-500">
                             Last Reading: <span className="font-bold text-gray-800">{meter.lastReading || 0}</span> m³
                           </div>
                         </div>
@@ -375,14 +317,9 @@ export default function MemberInquiryPage() {
               {/* Billing History - BELOW METERS */}
               <div className="rounded-3xl bg-white border border-green-100 shadow-lg p-6">
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <i className="fas fa-history text-2xl text-green-600"></i>
-                    <div>
-                      <div className="text-lg font-black text-gray-800">Billing History</div>
-                      <div className="text-sm text-gray-600 mt-1">
-                        Last 12 months • {bills.length} record(s)
-                      </div>
-                    </div>
+                  <div>
+                    <div className="text-lg font-bold text-gray-900">Billing History</div>
+                    <div className="mt-1 text-sm text-gray-500">Last 12 months • {bills.length} record(s)</div>
                   </div>
 
                   {years.length > 1 && (
@@ -393,13 +330,12 @@ export default function MemberInquiryPage() {
                             key={year}
                             onClick={() => setActiveYear(year)}
                             type="button"
-                            className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-all flex items-center gap-1 ${
+                            className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-all ${
                               activeYear === year
                                 ? "bg-green-600 text-white shadow-md"
                                 : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                             }`}
                           >
-                            <i className="fas fa-calendar-alt"></i>
                             {year}
                           </button>
                         ))}
@@ -441,10 +377,7 @@ export default function MemberInquiryPage() {
                                 <td className="py-3 px-4">
                                   <div className="font-bold text-gray-800">{b.periodCovered}</div>
                                   {b.readingDate && (
-                                    <div className="text-xs text-gray-500 flex items-center gap-1">
-                                      <i className="fas fa-calendar-check"></i>
-                                      Read: {formatDate(b.readingDate)}
-                                    </div>
+                                    <div className="text-xs text-gray-500">Read: {formatDate(b.readingDate)}</div>
                                   )}
                                 </td>
 
@@ -460,10 +393,7 @@ export default function MemberInquiryPage() {
                                 <td className="py-3 px-4">
                                   <div className="font-bold">₱{money(b.totalDue)}</div>
                                   {b.discount > 0 && (
-                                    <div className="text-xs text-green-600 flex items-center gap-1">
-                                      <i className="fas fa-tag"></i>
-                                      -₱{money(b.discount)} discount
-                                    </div>
+                                    <div className="text-xs text-green-600">-₱{money(b.discount)} discount</div>
                                   )}
                                 </td>
 
@@ -479,7 +409,6 @@ export default function MemberInquiryPage() {
                                         : "bg-amber-50 border-amber-200 text-amber-800"
                                     }`}
                                   >
-                                    <i className={`fas fa-${b.status === "paid" ? "check-circle" : b.status === "overdue" ? "exclamation-circle" : "clock"}`}></i>
                                     {b.status}
                                   </span>
                                 </td>
@@ -491,10 +420,7 @@ export default function MemberInquiryPage() {
                                     <div className="space-y-1">
                                       {b.payments.map((p) => (
                                         <div key={p._id || p.orNo} className="border border-green-100 rounded-lg p-2 bg-green-50/30">
-                                          <div className="text-xs text-gray-600 flex items-center gap-1">
-                                            <i className="fas fa-receipt"></i>
-                                            OR: {p.orNo} • {p.method}
-                                          </div>
+                                          <div className="text-xs text-gray-600">OR: {p.orNo} • {p.method}</div>
                                           <div className="text-xs text-gray-500">{formatDate(p.paidAt)}</div>
                                           <div className="text-sm font-bold text-gray-800">
                                             ₱{money(p.amountPaid)}
@@ -512,21 +438,17 @@ export default function MemberInquiryPage() {
                   </div>
                 )}
 
-                <div className="mt-4 text-xs text-gray-500 bg-blue-50 p-3 rounded-xl flex items-center gap-2">
-                  <i className="fas fa-info-circle text-blue-500"></i>
-                  Note: This public inquiry shows limited information only. Contact the office for detailed bills.
+                <div className="mt-4 rounded-xl bg-slate-50 p-3 text-xs text-gray-500">
+                  This public inquiry shows limited information only. Contact the office for detailed bills.
                 </div>
               </div>
 
               {/* Loans */}
               {(data.loans || []).length > 0 && (
                 <div className="rounded-3xl bg-white border border-green-100 shadow-lg p-6">
-                  <div className="flex items-center gap-2 mb-4">
-                    <i className="fas fa-hand-holding-usd text-2xl text-green-600"></i>
-                    <div>
-                      <div className="text-lg font-black text-gray-800">My Loans</div>
-                      <div className="text-sm text-gray-600">{data.loans.length} loan record(s)</div>
-                    </div>
+                  <div className="mb-4">
+                    <div className="text-lg font-bold text-gray-900">My Loans</div>
+                    <div className="text-sm text-gray-500">{data.loans.length} loan record(s)</div>
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
@@ -581,9 +503,8 @@ export default function MemberInquiryPage() {
                       </tbody>
                     </table>
                   </div>
-                  <div className="mt-3 text-xs text-gray-500 bg-amber-50 p-3 rounded-xl flex items-center gap-2">
-                    <i className="fas fa-info-circle text-amber-600"></i>
-                    Loan due dates — please settle on or before the due date to avoid penalties and water disconnection.
+                  <div className="mt-3 rounded-xl bg-amber-50 p-3 text-xs text-amber-700">
+                    Please settle on or before the due date to avoid penalties and water disconnection.
                   </div>
                 </div>
               )}
@@ -592,12 +513,9 @@ export default function MemberInquiryPage() {
               {bills.length > 0 && (
                 <div className="rounded-3xl bg-white border border-green-100 shadow-lg p-6">
                   <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <i className="fas fa-chart-line text-2xl text-green-600"></i>
-                      <div>
-                        <div className="text-lg font-black text-gray-800">Water Consumption History</div>
-                        <div className="text-sm text-gray-600">Last 6 months consumption trend</div>
-                      </div>
+                    <div>
+                      <div className="text-lg font-bold text-gray-900">Water Consumption History</div>
+                      <div className="text-sm text-gray-500">Last 6 months consumption trend</div>
                     </div>
                     
                     {/* Summary Stats */}
@@ -642,10 +560,7 @@ export default function MemberInquiryPage() {
 
           {!data && (
             <div className="text-center py-8 text-gray-500 text-sm">
-              <div className="mb-4 flex items-center justify-center gap-2">
-                <i className="fas fa-lightbulb text-yellow-500 text-xl"></i>
-                <span className="font-semibold">How to use this inquiry system:</span>
-              </div>
+              <div className="mb-4 font-semibold">How to use this inquiry system</div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-2xl mx-auto">
                 <div className="p-4 bg-white rounded-xl shadow-sm border border-green-100">
                   <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-2">

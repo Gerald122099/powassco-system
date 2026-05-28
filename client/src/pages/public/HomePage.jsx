@@ -16,14 +16,13 @@ import {
 const services = [
   { icon: FileSearch, title: "Bill Inquiry", desc: "Check your water bill, consumption history, and payment status online.", to: "/inquiry", cta: "Check your bill" },
   { icon: Calculator, title: "Tariff Calculator", desc: "Estimate your monthly water bill by consumption and classification.", to: "/calculator", cta: "Calculate" },
-  { icon: HandCoins, title: "Member Loans", desc: "Affordable member loans with flexible terms and clear amortization.", to: "/login", cta: "Learn more" },
-  { icon: Droplets, title: "Water Billing", desc: "Accurate metered billing managed by the cooperative.", to: "/login", cta: "Member login" },
+  { icon: HandCoins, title: "Member Loans", desc: "Affordable member loans with flexible terms and clear amortization.", to: "/about", cta: "Learn more" },
+  { icon: Droplets, title: "Water Billing", desc: "Accurate metered billing managed by the cooperative.", to: "/about", cta: "Learn more" },
 ];
 
 const stats = [
   { value: "25+", label: "Years of service" },
   { value: "2,000+", label: "Members served" },
-  { value: "2.5%", label: "Loan rate / month" },
 ];
 
 const trust = [
@@ -50,11 +49,11 @@ export default function HomePage() {
               POWASSCO Multipurpose Cooperative
             </div>
             <h1 className="text-4xl font-bold leading-tight tracking-tight text-white sm:text-5xl">
-              Water &amp; cooperative services, <span className="text-emerald-300">made simple.</span>
+              Clean water and trusted cooperative services, <span className="text-emerald-300">for every home.</span>
             </h1>
             <p className="mt-5 max-w-xl text-lg text-emerald-50/90">
-              Manage your water bills, estimate tariffs, and access member loans — all in one place,
-              built for the community of Owak, Asturias, Cebu.
+              Check your water bill, estimate tariffs, and access member loans — transparent,
+              modern, and always within reach for the community of Owak, Asturias, Cebu.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Link to="/inquiry" className="inline-flex items-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-semibold text-emerald-800 shadow-lg transition hover:bg-emerald-50">
@@ -64,7 +63,7 @@ export default function HomePage() {
                 <Calculator size={16} /> Tariff calculator
               </Link>
               <Link to="/login" className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-5 py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-emerald-400">
-                Member login
+                Staff login
               </Link>
             </div>
           </div>
@@ -73,7 +72,7 @@ export default function HomePage() {
 
       {/* Stats (overlapping the hero) */}
       <section className="relative mx-auto -mt-12 max-w-6xl px-5">
-        <div className="grid grid-cols-1 gap-2 rounded-2xl border border-slate-200 bg-white p-4 shadow-xl sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-2 rounded-2xl border border-slate-200 bg-white p-4 shadow-xl sm:grid-cols-2">
           {stats.map((s) => (
             <div key={s.label} className="rounded-xl px-4 py-3 text-center">
               <div className="text-2xl font-bold text-emerald-700">{s.value}</div>
