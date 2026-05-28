@@ -62,34 +62,27 @@ export async function apiDownload(path, { token, filename } = {}) {
     ...(finalToken ? { Authorization: `Bearer ${finalToken}` } : {}),
   };
 
-  console.log(`[API Download] ${cleanPath}`);
+  const response = await fetch(url, {
+    method: "GET",
+    headers,
+  });
 
-  try {
-    const response = await fetch(url, {
-      method: "GET",
-      headers,
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(text || `Download failed (${response.status})`);
-    }
-
-    const blob = await response.blob();
-    const downloadUrl = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = downloadUrl;
-    a.download = filename || `download_${Date.now()}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(downloadUrl);
-
-    return { success: true, filename: a.download };
-  } catch (error) {
-    console.error("[API Download] Error:", error);
-    throw error;
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `Download failed (${response.status})`);
   }
+
+  const blob = await response.blob();
+  const downloadUrl = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = downloadUrl;
+  a.download = filename || `download_${Date.now()}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  window.URL.revokeObjectURL(downloadUrl);
+
+  return { success: true, filename: a.download };
 }
 
 export async function apiFetch(
@@ -115,14 +108,6 @@ export async function apiFetch(
     ...(extraHeaders || {}),
   };
 
-  console.log(`[API] ${method} ${cleanPath}`, {
-    url,
-    hasExplicitToken: !!token,
-    hasStoredToken: !!storedToken,
-    hasGlobalToken: !!globalToken,
-    authHeader: headers.Authorization ? "Bearer ***" : "none",
-  });
-
   let res;
   try {
     res = await fetch(url, {
@@ -130,8 +115,7 @@ export async function apiFetch(
       headers,
       body: body ? JSON.stringify(body) : undefined,
     });
-  } catch (networkErr) {
-    console.error("[API] Network error:", networkErr);
+  } catch {
     throw new Error("Network error. Please check server or connection.");
   }
 
@@ -142,8 +126,6 @@ export async function apiFetch(
   } catch {
     data = { message: text };
   }
-
-  console.log(`[API] Response ${res.status}:`, data?.message || text?.slice(0, 200));
 
   if (!res.ok) {
     // If your backend sometimes sends 403 for expired/invalid token,

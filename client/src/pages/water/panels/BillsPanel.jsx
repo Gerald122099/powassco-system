@@ -664,6 +664,48 @@ export default function BillsPanel() {
 
       {/* Create New Bill Modal */}
       <Modal open={createModalOpen} title="Create New Bill (Per Meter)" onClose={() => setCreateModalOpen(false)} size="lg">
+        {(() => {
+          const order = ["search", "meter", "details", "preview"];
+          const steps = [
+            { k: "search", label: "Find" },
+            { k: "meter", label: "Meter" },
+            { k: "details", label: "Reading" },
+            { k: "preview", label: "Preview" },
+          ];
+          const cur = order.indexOf(createStep);
+          return (
+            <div className="mb-5 flex items-center">
+              {steps.map((s, i) => {
+                const done = i < cur;
+                const active = i === cur;
+                return (
+                  <div key={s.k} className="flex flex-1 items-center last:flex-none">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${
+                          active
+                            ? "bg-emerald-600 text-white"
+                            : done
+                            ? "bg-emerald-100 text-emerald-700"
+                            : "bg-slate-100 text-slate-400"
+                        }`}
+                      >
+                        {done ? "✓" : i + 1}
+                      </div>
+                      <span className={`text-xs font-semibold ${active ? "text-slate-900" : "text-slate-400"}`}>
+                        {s.label}
+                      </span>
+                    </div>
+                    {i < steps.length - 1 && (
+                      <div className={`mx-2 h-px flex-1 ${done ? "bg-emerald-300" : "bg-slate-200"}`} />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
+
         <div className="space-y-4">
           {createStep === "search" && (
             <>
@@ -742,22 +784,67 @@ export default function BillsPanel() {
 
           {createStep === "details" && memberInfo && (
             <>
-              <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
-                <div className="font-bold text-blue-900">{memberInfo.accountName}</div>
-                <div className="text-sm text-blue-700 mt-1">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="font-bold text-slate-900">{memberInfo.accountName}</div>
+                <div className="mt-1 text-sm text-slate-600">
                   PN No: {memberInfo.pnNo} • Classification: {memberInfo.billing?.classification || "residential"} • Meter:{" "}
-                  <span className="font-bold">{createForm.meterNumber || "—"}</span>
+                  <span className="font-bold text-slate-900">{createForm.meterNumber || "—"}</span>
                 </div>
                 {memberInfo.personal?.isSeniorCitizen && (
-                  <div className="text-sm text-amber-700 mt-1">👴 Senior Citizen • Discount Rate: {memberInfo.personal?.seniorDiscountRate || 5}%</div>
+                  <div className="mt-1 text-sm font-medium text-amber-700">
+                    Senior Citizen • Discount Rate: {memberInfo.personal?.seniorDiscountRate || 5}%
+                  </div>
                 )}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {/* Reading input */}
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4">
+                <div className="mb-3 text-sm font-semibold text-emerald-800">Meter Reading</div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <Field label="Previous Reading (m³)" required>
+                    <div className="relative mt-1">
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 pr-12 text-lg font-semibold focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+                        value={createForm.previousReading}
+                        onChange={(e) => setCreateForm({ ...createForm, previousReading: e.target.value })}
+                        placeholder="0"
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">m³</span>
+                    </div>
+                  </Field>
+
+                  <Field label="Present Reading (m³)" required>
+                    <div className="relative mt-1">
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 pr-12 text-lg font-semibold focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+                        value={createForm.presentReading}
+                        onChange={(e) => setCreateForm({ ...createForm, presentReading: e.target.value })}
+                        placeholder="0"
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">m³</span>
+                    </div>
+                  </Field>
+                </div>
+
+                <div className="mt-3 flex items-center justify-between rounded-xl border border-emerald-200 bg-white px-4 py-2.5">
+                  <span className="text-sm font-medium text-slate-600">Consumption</span>
+                  <span className="text-lg font-bold text-emerald-700">
+                    {Math.max(0, (Number(createForm.presentReading) || 0) - (Number(createForm.previousReading) || 0)).toFixed(2)} m³
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <Field label="Period Covered">
                   <input
                     type="month"
-                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5"
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
                     value={createForm.periodCovered}
                     onChange={(e) => setCreateForm({ ...createForm, periodCovered: e.target.value })}
                   />
@@ -766,54 +853,32 @@ export default function BillsPanel() {
                 <Field label="Reading Date">
                   <input
                     type="date"
-                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5"
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
                     value={createForm.readingDate}
                     onChange={(e) => setCreateForm({ ...createForm, readingDate: e.target.value })}
                   />
                 </Field>
 
-                <Field label="Previous Reading (m³)" required>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5"
-                    value={createForm.previousReading}
-                    onChange={(e) => setCreateForm({ ...createForm, previousReading: e.target.value })}
-                    placeholder="0"
-                  />
-                </Field>
-
-                <Field label="Present Reading (m³)" required>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5"
-                    value={createForm.presentReading}
-                    onChange={(e) => setCreateForm({ ...createForm, presentReading: e.target.value })}
-                    placeholder="0"
-                  />
-                </Field>
-
-                <Field label="Remarks (Optional)">
-                  <input
-                    type="text"
-                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5"
-                    value={createForm.remarks}
-                    onChange={(e) => setCreateForm({ ...createForm, remarks: e.target.value })}
-                    placeholder="e.g., Meter reading notes"
-                  />
-                </Field>
+                <div className="sm:col-span-2">
+                  <Field label="Remarks (Optional)">
+                    <input
+                      type="text"
+                      className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+                      value={createForm.remarks}
+                      onChange={(e) => setCreateForm({ ...createForm, remarks: e.target.value })}
+                      placeholder="e.g., Meter reading notes"
+                    />
+                  </Field>
+                </div>
               </div>
 
               {createError && <div className="rounded-xl bg-red-50 border border-red-100 text-red-700 px-3 py-2 text-sm">{createError}</div>}
 
               <div className="flex justify-end gap-2">
-                <button className="rounded-xl border border-slate-200 px-4 py-2.5" onClick={() => setCreateStep(getBillingMeters(memberInfo).length > 1 ? "meter" : "search")}>
+                <button className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50" onClick={() => setCreateStep(getBillingMeters(memberInfo).length > 1 ? "meter" : "search")}>
                   Back
                 </button>
-                <button className="rounded-xl bg-emerald-600 text-white px-4 py-2.5 font-semibold hover:bg-emerald-700" onClick={generatePreview} disabled={createLoading || !createForm.previousReading || !createForm.presentReading}>
+                <button className="rounded-xl bg-emerald-600 text-white px-4 py-2.5 text-sm font-semibold hover:bg-emerald-700 disabled:opacity-60" onClick={generatePreview} disabled={createLoading || !createForm.previousReading || !createForm.presentReading}>
                   {createLoading ? "Generating..." : "Preview Bill"}
                 </button>
               </div>
