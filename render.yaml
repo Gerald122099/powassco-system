@@ -1,0 +1,21 @@
+# Render Blueprint for the POWASSCO Express API (monorepo backend in server/).
+# Deploy: Render Dashboard -> New -> Blueprint -> pick this repo -> fill in the
+# MONGO_URI and JWT_SECRET values when prompted.
+services:
+  - type: web
+    name: powassco-api
+    runtime: node
+    plan: free
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: MONGO_URI
+        sync: false # set in the Render dashboard (secret)
+      - key: JWT_SECRET
+        sync: false # set in the Render dashboard (secret)
+      - key: CLIENT_ORIGIN
+        value: https://powassco.site
+      # PORT is provided by Render automatically; the server reads process.env.PORT
