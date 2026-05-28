@@ -1,9 +1,8 @@
 import logo from "../../assets/logo.png";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Navbar from "../../components/Navbar";
 import WaterConsumptionChart from "../../components/WaterConsumptionChart";
-
-const API_BASE = import.meta.env.VITE_API_BASE;
+import { apiFetch } from "../../lib/api";
 
 function money(n) {
   return Number(n || 0).toLocaleString(undefined, {
@@ -31,9 +30,6 @@ export default function MemberInquiryPage() {
   const [showAccountDetails, setShowAccountDetails] = useState(false);
   const [showMeterDetails, setShowMeterDetails] = useState(false);
 
-  // debounce
-  const calcTimerRef = useRef(null);
-
   async function submit(e) {
     e.preventDefault();
     setErr("");
@@ -47,14 +43,10 @@ export default function MemberInquiryPage() {
 
     try {
       setLoading(true);
-      const res = await fetch(`${API_BASE}/public/water/inquiry`, {
+      const json = await apiFetch("/public/water/inquiry", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pnNo: pn, onlyLast12: true }),
+        body: { pnNo: pn, onlyLast12: true },
       });
-
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.message || "Inquiry failed.");
 
       setData(json);
 
