@@ -22,20 +22,28 @@ dotenv.config();
 const app = express();
 app.use(express.json());
 
-// ✅ CORS - Allow all necessary origins
+// ✅ CORS - allow configured origins. CLIENT_ORIGIN may be a comma-separated list.
+const envOrigins = (process.env.CLIENT_ORIGIN || "")
+  .split(",")
+  .map((s) => s.trim().replace(/\/+$/, "")) // trim + drop trailing slash
+  .filter(Boolean);
+
 const allowedOrigins = new Set([
   "http://localhost:5173",
   "http://127.0.0.1:5173",
-  "http://192.168.1.45:5173",  // Your network IP
-  "http://100.100.137.248:5173", // Other network IP
-  process.env.CLIENT_ORIGIN,
-].filter(Boolean));
+  "http://192.168.1.45:5173",
+  "http://100.100.137.248:5173",
+  "https://powassco.site",
+  "https://www.powassco.site",
+  ...envOrigins,
+]);
 
 const corsOptions = {
   origin: (origin, cb) => {
-    if (!origin) return cb(null, true);
-    if (allowedOrigins.has(origin)) return cb(null, true);
-    console.log("⚠️ Blocked origin:", origin); // Log blocked origins for debugging
+    if (!origin) return cb(null, true); // non-browser clients (curl, server-to-server)
+    const normalized = origin.replace(/\/+$/, "");
+    if (allowedOrigins.has(normalized)) return cb(null, true);
+    console.log("⚠️ Blocked origin:", origin);
     return cb(null, false);
   },
   credentials: true,
