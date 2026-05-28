@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import BrandHeader from "../../components/BrandHeader";
+import DashboardLayout from "../../components/DashboardLayout";
+import { Users, Settings, BarChart3 } from "lucide-react";
 import Card from "../../components/Card";
 import Modal from "../../components/Modal";
 import { apiFetch } from "../../lib/api";
@@ -68,10 +69,10 @@ function IconButton({ children, onClick, tone = "default", title }) {
 }
 
 // UPDATED: Admin Tabs with Analytics
-const adminTabs = [
-  { key: "users", label: "User Management", icon: "👥" },
-  { key: "water", label: "Water Settings", icon: "⚙️" },
-  { key: "analytics", label: "Analytics", icon: "📊" }, // ADDED
+const adminNavItems = [
+  { key: "users", label: "User Management", icon: Users, desc: "Create employees, assign roles, manage accounts" },
+  { key: "water", label: "Water Settings", icon: Settings, desc: "Tariffs, due dates, penalties, and discounts" },
+  { key: "analytics", label: "Analytics", icon: BarChart3, desc: "System analytics and summaries" },
 ];
 
 export default function AdminDashboard() {
@@ -228,36 +229,18 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 p-5">
-      <BrandHeader 
-        title="Admin Dashboard" 
-        subtitle="Manage system settings, users, water tariffs, and view analytics."
-      />
-
+    <DashboardLayout
+      title="Admin"
+      accent="slate"
+      items={adminNavItems}
+      active={activeTab}
+      onSelect={setActiveTab}
+    >
       {toast && (
-        <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
+        <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
           {toast}
         </div>
       )}
-
-      {/* Tab Navigation */}
-      <div className="mt-4 flex flex-wrap gap-2">
-        {adminTabs.map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
-            className={[
-              "flex items-center gap-2 px-4 py-2 rounded-2xl text-sm font-semibold border transition",
-              activeTab === tab.key
-                ? "bg-blue-600 text-white border-blue-600"
-                : "bg-white hover:bg-slate-50 border-slate-200 text-slate-700",
-            ].join(" ")}
-          >
-            <span>{tab.icon}</span>
-            <span>{tab.label}</span>
-          </button>
-        ))}
-      </div>
 
       <div className="mt-6">
         {/* User Management Tab */}
@@ -459,7 +442,7 @@ export default function AdminDashboard() {
           </button>
         </div>
       </Modal>
-    </div>
+    </DashboardLayout>
   );
 }
 

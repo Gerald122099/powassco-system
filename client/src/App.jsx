@@ -2,9 +2,9 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import LoginPage from "./pages/LoginPage";
 import HomePage from "./pages/public/HomePage";
 import AdminDashboard from "./pages/admin/AdminDashboard";
-import WaterDashboard from "./pages/water/WaterDashboard";
+import WaterBillingDashboard from "./pages/water/WaterBillingDashboard";
 import LoanDashboard from "./pages/loan/LoanDashboard";
-import MeterDashboard from "./pages/meter/MeterDashboard";
+import MeterReadingDashboard from "./pages/meter/MeterReadingDashboard";
 import MemberInquiryPage from "./pages/public/MemberInquiryPage";
 import TariffCalculatorPage from "./pages/public/TariffCalculatorPage";
 import AboutPage from "./pages/public/AboutPage";
@@ -56,7 +56,7 @@ export default function App() {
           path="/water"
           element={
             <Protected roles={["admin", "water_bill_officer"]}>
-              <WaterDashboard />
+              <WaterBillingDashboard />
             </Protected>
           }
         />
@@ -74,7 +74,7 @@ export default function App() {
           path="/meter"
           element={
             <Protected roles={["admin", "meter_reader"]}>
-              <MeterDashboard />
+              <MeterReadingDashboard />
             </Protected>
           }
         />
