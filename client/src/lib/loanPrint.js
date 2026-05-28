@@ -249,8 +249,8 @@ export function printPromissory(loan) {
     </div>
 
     <div class="sign">
-      <div class="signbox"><div class="signline">Signature over Printed Name of Maker</div><div class="muted">${safe(loan.borrowerName)}</div></div>
-      <div class="signbox"><div class="signline">Signature over Printed Name of Co-Maker</div><div class="muted">${safe(loan.coMaker?.name)}</div></div>
+      <div class="signbox"><div class="signline">Signature over Printed Name of Maker</div></div>
+      <div class="signbox"><div class="signline">Signature over Printed Name of Co-Maker</div></div>
     </div>
     <div class="sign" style="margin-top:24px;">
       <div class="signbox"><div class="signline">Loans Officer</div></div>
