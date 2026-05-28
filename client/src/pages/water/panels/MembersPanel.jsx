@@ -511,6 +511,7 @@ export default function MembersPanel() {
           serialNumber: (meter.serialNumber || "").trim(),
           initialReading: parseFloat(meter.initialReading) || 0,
           isBillingActive: meter.isBillingActive !== false,
+          isDiscountMeter: meter.isDiscountMeter || false,
           billingSequence: index
         };
         
@@ -521,14 +522,14 @@ export default function MembersPanel() {
     console.log("Sending payload:", JSON.stringify(payload, null, 2));
 
     if (!editing) {
-      const response = await apiFetch("/water/members", { 
+      await apiFetch("/water/members", {
         method: "POST", 
         token, 
         body: payload 
       });
       setToast("✅ Member added successfully");
     } else {
-      const response = await apiFetch(`/water/members/${editing._id}`, {
+      await apiFetch(`/water/members/${editing._id}`, {
         method: "PUT",
         token,
         body: payload,
@@ -1534,6 +1535,27 @@ export default function MembersPanel() {
                         />
                         <label htmlFor={`isBillingActive-${index}`} className="text-sm font-medium text-slate-700">
                           Include this meter in billing
+                        </label>
+                      </div>
+                      <div className="mt-2 flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          id={`isDiscountMeter-${index}`}
+                          checked={!!meter.isDiscountMeter}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setForm((f) => ({
+                              ...f,
+                              meters: (f.meters || []).map((mm, i) => ({
+                                ...mm,
+                                isDiscountMeter: checked && i === index,
+                              })),
+                            }));
+                          }}
+                          className="rounded border-slate-300"
+                        />
+                        <label htmlFor={`isDiscountMeter-${index}`} className="text-sm font-medium text-slate-700">
+                          Apply senior/PWD discount to this meter (for multi-meter accounts)
                         </label>
                       </div>
                     </div>
