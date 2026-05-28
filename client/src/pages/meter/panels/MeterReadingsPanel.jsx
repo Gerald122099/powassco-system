@@ -74,6 +74,7 @@ export default function MeterReadingsPanel() {
   const [selectedBillForView, setSelectedBillForView] = useState(null);
 
   const [selectedMember, setSelectedMember] = useState(null);
+  const [inputMember, setInputMember] = useState(null);
   const [preview, setPreview] = useState(null);
   const [receiptData, setReceiptData] = useState(null);
   const [selectedBill, setSelectedBill] = useState(null);
@@ -1435,6 +1436,7 @@ export default function MeterReadingsPanel() {
                       onReset={() => resetMemberReadings(member)}
                       onViewHistory={(meter) => viewReadingHistory(member, meter)}
                       onViewBillDetails={viewBillDetails}
+                      onInput={() => setInputMember(member)}
                     />
                   ))
                 )}
@@ -1488,6 +1490,118 @@ export default function MeterReadingsPanel() {
         /* Batch Management Panel */
         <BatchManagementPanel />
       )}
+
+      {/* Encode Reading Modal */}
+      <Modal
+        open={!!inputMember}
+        title={inputMember ? `Encode Reading — ${inputMember.pnNo}` : "Encode Reading"}
+        subtitle={inputMember?.accountName}
+        onClose={() => setInputMember(null)}
+        size="lg"
+      >
+        {inputMember && (
+          <div className="space-y-3">
+            <div className="text-sm text-slate-500">
+              Period <span className="font-semibold text-slate-700">{periodKey}</span> • Enter the present reading for each meter.
+            </div>
+
+            {(inputMember.activeBillingMeters || getActiveBillingMeters(inputMember)).map((meter) => {
+              const pn = inputMember.pnNo;
+              const meterKey = safeUpper(meter.meterNumber);
+              const savedReading = getSavedReading(inputMember, meter.meterNumber);
+              const prevData = getPreviousReading(inputMember, meter.meterNumber);
+              const billStatus = getMeterBillStatus(inputMember.pnNo, meter.meterNumber);
+              const previousReading = prevData?.presentReading ?? 0;
+              const present = readings[pn]?.[meterKey]?.presentReading ?? savedReading?.presentReading ?? "";
+              const err = validationErrors[`${pn}-${meterKey}`];
+              const consumption = present
+                ? (parseFloat(present) - previousReading) * (meter.consumptionMultiplier || 1)
+                : 0;
+
+              return (
+                <div key={meterKey} className="rounded-2xl border border-slate-200 p-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <span className="font-mono font-bold text-slate-900">{meter.meterNumber}</span>
+                      <div className="truncate text-xs text-slate-500">
+                        {meter.meterBrand} {meter.meterModel} {meter.meterSize ? `• ${meter.meterSize}` : ""}
+                      </div>
+                    </div>
+                    {billStatus && (
+                      <span
+                        className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                          billStatus.status === "paid"
+                            ? "bg-green-100 text-green-700"
+                            : billStatus.status === "overdue"
+                            ? "bg-red-100 text-red-700"
+                            : "bg-amber-100 text-amber-700"
+                        }`}
+                      >
+                        {billStatus.status}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <div>
+                      <div className="mb-1 text-xs font-semibold text-slate-500">Previous</div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 font-mono text-lg font-bold text-slate-700">
+                        {formatNumber(previousReading)}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="mb-1 text-xs font-semibold text-emerald-600">Present</div>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          step="0.001"
+                          className={`w-full rounded-xl border px-3 py-2.5 pr-10 font-mono text-lg focus:outline-none focus:ring-2 ${
+                            err
+                              ? "border-red-300 focus:ring-red-100"
+                              : "border-slate-200 focus:border-emerald-400 focus:ring-emerald-100"
+                          }`}
+                          value={present}
+                          onChange={(e) => handleReadingChange(pn, meter.meterNumber, e.target.value)}
+                          placeholder="Enter reading"
+                        />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">m³</span>
+                      </div>
+                      {err && <div className="mt-1 text-[10px] text-red-600">{err}</div>}
+                    </div>
+                    <div>
+                      <div className="mb-1 text-xs font-semibold text-purple-600">Consumption</div>
+                      <div className="rounded-xl border border-purple-200 bg-purple-50 px-3 py-2.5 font-mono text-lg font-bold text-purple-700">
+                        {formatNumber(consumption)} m³
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+
+            <div className="flex items-center justify-end gap-2 border-t border-slate-100 pt-3">
+              <button
+                onClick={() => setInputMember(null)}
+                className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  const m = inputMember;
+                  await saveReading(m);
+                  setInputMember(null);
+                }}
+                disabled={!canEdit}
+                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+              >
+                <Save size={16} />
+                Save Reading
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* Preview Modal */}
       <Modal open={!!preview} title="Bill Preview" onClose={() => setPreview(null)} size="lg">
@@ -2036,6 +2150,7 @@ function ReadingRow({
   onReset,
   onViewHistory,
   onViewBillDetails,
+  onInput,
 }) {
   const pnKey = safeUpper(member.pnNo || "");
   const isExpanded = !!expandedMeters[pnKey];
@@ -2160,6 +2275,16 @@ function ReadingRow({
         </td>
 
         <td className="py-3 px-4 text-right space-x-2">
+          {canEdit && (
+            <button
+              onClick={onInput}
+              className="rounded-lg bg-purple-600 text-white px-3 py-1.5 text-xs font-semibold hover:bg-purple-700 transition-colors shadow-sm"
+              title="Encode meter reading"
+            >
+              <PenTool size={14} className="inline mr-1" />
+              Input
+            </button>
+          )}
           <button
             onClick={onPreview}
             disabled={!hasCompleteInputForMember(member) || !canEdit}
