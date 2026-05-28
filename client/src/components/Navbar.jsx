@@ -62,7 +62,7 @@ export default function Navbar() {
               to="/login"
               className="ml-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700"
             >
-              Staff Login
+              Login
             </Link>
           )}
         </div>
@@ -101,7 +101,7 @@ export default function Navbar() {
               </button>
             ) : (
               <Link to="/login" className="mt-1 rounded-lg bg-emerald-600 px-3 py-2 text-center text-sm font-semibold text-white">
-                Staff Login
+                Login
               </Link>
             )}
           </div>
