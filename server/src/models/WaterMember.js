@@ -227,6 +227,7 @@ const MeterSchema = new mongoose.Schema(
     
     // Billing settings for this specific meter
     isBillingActive: { type: Boolean, default: true },
+    isDiscountMeter: { type: Boolean, default: false }, // senior/PWD discount applies to this meter (multi-meter accounts)
     billingSequence: { type: Number, default: 0 }, // Order for multiple meters
     consumptionMultiplier: { type: Number, default: 1 }, // For industrial meters
     
