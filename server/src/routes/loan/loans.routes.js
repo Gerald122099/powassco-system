@@ -74,6 +74,36 @@ router.post("/amortization", guard, async (req, res) => {
   res.json({ ...amort, ...charges, interestRatePerMonth: rate, termMonths: term });
 });
 
+// ---- Summary / analytics (capital out, interest/profit, collections) ----
+router.get("/summary", guard, async (req, res) => {
+  const { from, to } = req.query;
+  const match = {};
+  if (from || to) {
+    match.createdAt = {};
+    if (from) match.createdAt.$gte = new Date(from);
+    if (to) match.createdAt.$lte = new Date(`${to}T23:59:59.999Z`);
+  }
+  const loans = await LoanApplication.find(match).lean();
+  const sum = (arr, f) => round2(arr.reduce((s, x) => s + Number(f(x) || 0), 0));
+  const released = loans.filter((l) => ["released", "closed"].includes(l.status));
+
+  const byStatus = { pending: 0, approved: 0, rejected: 0, released: 0, closed: 0 };
+  loans.forEach((l) => {
+    if (byStatus[l.status] != null) byStatus[l.status] += 1;
+  });
+
+  res.json({
+    totalApplications: loans.length,
+    byStatus,
+    capitalReleased: sum(released, (l) => l.principal), // capital out
+    expectedInterest: sum(released, (l) => l.totalInterest), // interest = profit
+    totalCharges: sum(released, (l) => l.totalCharges), // fees collected
+    totalReceivable: sum(released, (l) => l.totalPayment),
+    totalCollected: sum(loans, (l) => l.totalPaid),
+    outstanding: sum(released, (l) => l.balance),
+  });
+});
+
 // ---- Settings ----
 router.get("/settings", guard, async (req, res) => {
   res.json(await getSettings());
