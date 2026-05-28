@@ -14,7 +14,7 @@ function money(n) {
 export default function TariffCalculatorPage() {
   const [calculatorForm, setCalculatorForm] = useState({
     classification: "residential",
-    consumption: 0,
+    consumption: "",
     isSenior: false,
   });
   const [calculatorResult, setCalculatorResult] = useState(null);
@@ -122,10 +122,7 @@ export default function TariffCalculatorPage() {
                     step="0.1"
                     className="w-full rounded-xl border border-green-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-green-400"
                     value={calculatorForm.consumption}
-                    onChange={(e) => {
-                      const value = parseFloat(e.target.value) || 0;
-                      setCalculatorForm(prev => ({ ...prev, consumption: value }));
-                    }}
+                    onChange={(e) => setCalculatorForm((prev) => ({ ...prev, consumption: e.target.value }))}
                     placeholder="Enter consumption in cubic meters"
                   />
                 </div>
