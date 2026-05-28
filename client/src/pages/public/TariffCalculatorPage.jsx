@@ -2,8 +2,7 @@
 import { useState, useEffect } from "react";
 import Navbar from "../../components/Navbar";
 import logo from "../../assets/logo.png";
-
-const API_BASE = import.meta.env.VITE_API_BASE;
+import { apiFetch } from "../../lib/api";
 
 function money(n) {
   return Number(n || 0).toLocaleString(undefined, {
@@ -28,9 +27,8 @@ export default function TariffCalculatorPage() {
 
   async function fetchTariffExamples(classification) {
     try {
-      const res = await fetch(`${API_BASE}/public/water/tariff-examples/${classification}`);
-      const json = await res.json();
-      if (res.ok) setTariffExamples(json);
+      const json = await apiFetch(`/public/water/tariff-examples/${classification}`);
+      setTariffExamples(json);
     } catch (error) {
       console.error("Failed to fetch tariff examples:", error);
     }
@@ -45,18 +43,14 @@ export default function TariffCalculatorPage() {
 
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/public/water/calculate-estimate`, {
+      const json = await apiFetch("/public/water/calculate-estimate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        body: {
           classification: calculatorForm.classification,
           consumption: c,
           isSenior: !!calculatorForm.isSenior,
-        }),
+        },
       });
-
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.message || "Failed to calculate estimate");
 
       setCalculatorResult(json);
     } catch (error) {
