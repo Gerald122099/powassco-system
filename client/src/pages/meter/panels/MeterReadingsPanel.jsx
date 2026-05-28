@@ -1233,29 +1233,29 @@ export default function MeterReadingsPanel() {
       </div>
 
       {/* Tab Navigation */}
-      <div className="mb-4 border-b">
-        <div className="flex gap-4">
-          <button
-            onClick={() => setActiveTab("readings")}
-            className={`px-4 py-2 font-semibold text-sm border-b-2 transition-colors ${
-              activeTab === "readings"
-                ? "border-blue-600 text-blue-600"
-                : "border-transparent text-slate-500 hover:text-slate-700"
-            }`}
-          >
-            Meter Readings
-          </button>
-          <button
-            onClick={() => setActiveTab("batches")}
-            className={`px-4 py-2 font-semibold text-sm border-b-2 transition-colors ${
-              activeTab === "batches"
-                ? "border-blue-600 text-blue-600"
-                : "border-transparent text-slate-500 hover:text-slate-700"
-            }`}
-          >
-            Batch Management
-          </button>
-        </div>
+      <div className="mb-5 inline-flex rounded-2xl border border-slate-200 bg-white p-1 shadow-sm">
+        <button
+          onClick={() => setActiveTab("readings")}
+          className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition ${
+            activeTab === "readings"
+              ? "bg-purple-600 text-white shadow-sm"
+              : "text-slate-600 hover:bg-slate-100"
+          }`}
+        >
+          <FileText size={16} strokeWidth={2.2} />
+          Meter Readings
+        </button>
+        <button
+          onClick={() => setActiveTab("batches")}
+          className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition ${
+            activeTab === "batches"
+              ? "bg-purple-600 text-white shadow-sm"
+              : "text-slate-600 hover:bg-slate-100"
+          }`}
+        >
+          <FileSpreadsheet size={16} strokeWidth={2.2} />
+          Batch Management
+        </button>
       </div>
 
       {/* Period + Search + Status filter - Only show for readings tab */}
@@ -1268,7 +1268,7 @@ export default function MeterReadingsPanel() {
             </label>
             <input
               type="month"
-              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 focus:ring-2 focus:ring-blue-100 focus:border-blue-300 transition-all"
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 focus:ring-2 focus:ring-purple-100 focus:border-purple-300 transition-all"
               value={periodKey}
               onChange={(e) => {
                 setPeriodKey(e.target.value);
@@ -1291,15 +1291,14 @@ export default function MeterReadingsPanel() {
               <Search className="absolute left-3 top-3.5 h-4 w-4 text-slate-400" />
               <input
                 type="text"
-                className="w-full rounded-xl border border-slate-200 pl-10 pr-4 py-2.5 focus:ring-2 focus:ring-blue-100 focus:border-blue-300 transition-all"
+                className="w-full rounded-xl border border-slate-200 pl-10 pr-4 py-2.5 focus:ring-2 focus:ring-purple-100 focus:border-purple-300 transition-all"
                 value={searchInputValue}
                 onChange={handleSearchChange}
                 placeholder="PN No, Account Name, Meter, Address..."
-                disabled={loading}
               />
               {searchInputValue !== searchTerm && (
                 <div className="absolute right-3 top-3.5">
-                  <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                  <div className="w-2 h-2 bg-purple-500 rounded-full animate-pulse"></div>
                 </div>
               )}
             </div>
@@ -1311,7 +1310,7 @@ export default function MeterReadingsPanel() {
               Status
             </label>
             <select
-              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-100 focus:border-blue-300 transition-all"
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:ring-2 focus:ring-purple-100 focus:border-purple-300 transition-all"
               value={statusFilter}
               onChange={(e) => {
                 setStatusFilter(e.target.value);
@@ -1330,34 +1329,42 @@ export default function MeterReadingsPanel() {
 
       {/* Stats - Only show for readings tab */}
       {activeTab === "readings" && (
-        <div className="mb-6 grid grid-cols-1 sm:grid-cols-4 gap-3">
-          <div className="rounded-2xl border border-slate-200 p-4 bg-white hover:shadow-md transition-shadow">
-            <div className="text-xs text-slate-500 flex items-center gap-1">
-              <User size={12} />
-              Total Members
+        <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
+              <User size={20} strokeWidth={2.2} />
             </div>
-            <div className="text-2xl font-bold text-slate-900">{stats.total}</div>
+            <div className="min-w-0">
+              <div className="text-2xl font-bold leading-tight text-slate-900">{stats.total}</div>
+              <div className="truncate text-xs font-medium text-slate-500">Total Members</div>
+            </div>
           </div>
-          <div className="rounded-2xl border border-green-200 bg-green-50 p-4 hover:shadow-md transition-shadow">
-            <div className="text-xs text-green-600 flex items-center gap-1">
-              <CheckCircle size={12} />
-              Complete (All Meters)
+          <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
+              <CheckCircle size={20} strokeWidth={2.2} />
             </div>
-            <div className="text-2xl font-bold text-green-700">{stats.read}</div>
+            <div className="min-w-0">
+              <div className="text-2xl font-bold leading-tight text-slate-900">{stats.read}</div>
+              <div className="truncate text-xs font-medium text-slate-500">Complete</div>
+            </div>
           </div>
-          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 hover:shadow-md transition-shadow">
-            <div className="text-xs text-amber-600 flex items-center gap-1">
-              <AlertCircle size={12} />
-              Unread (No Readings)
+          <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
+              <AlertCircle size={20} strokeWidth={2.2} />
             </div>
-            <div className="text-2xl font-bold text-amber-700">{stats.unread}</div>
+            <div className="min-w-0">
+              <div className="text-2xl font-bold leading-tight text-slate-900">{stats.unread}</div>
+              <div className="truncate text-xs font-medium text-slate-500">Unread</div>
+            </div>
           </div>
-          <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 hover:shadow-md transition-shadow">
-            <div className="text-xs text-blue-600 flex items-center gap-1">
-              <TrendingUp size={12} />
-              Partial + Complete
+          <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-purple-100 text-purple-700">
+              <TrendingUp size={20} strokeWidth={2.2} />
             </div>
-            <div className="text-2xl font-bold text-blue-700">{stats.anyRead}</div>
+            <div className="min-w-0">
+              <div className="text-2xl font-bold leading-tight text-slate-900">{stats.anyRead}</div>
+              <div className="truncate text-xs font-medium text-slate-500">Partial + Complete</div>
+            </div>
           </div>
         </div>
       )}
