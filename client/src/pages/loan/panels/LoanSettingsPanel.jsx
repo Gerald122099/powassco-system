@@ -42,9 +42,6 @@ export default function LoanSettingsPanel() {
   function setField(k, v) {
     setS((p) => ({ ...p, [k]: v }));
   }
-  function setSig(k, v) {
-    setS((p) => ({ ...p, signatories: { ...(p.signatories || {}), [k]: v } }));
-  }
   function setCharge(i, k, v) {
     setS((p) => ({ ...p, charges: p.charges.map((c, idx) => (idx === i ? { ...c, [k]: v } : c)) }));
   }
@@ -73,11 +70,6 @@ export default function LoanSettingsPanel() {
           type: c.type,
           value: Number(c.value) || 0,
         })),
-        signatories: {
-          loanOfficer: s.signatories?.loanOfficer || "",
-          manager: s.signatories?.manager || "",
-          cashier: s.signatories?.cashier || "",
-        },
       };
       const updated = await apiFetch("/loan/settings", { method: "PUT", token, body });
       setS(updated);
@@ -148,24 +140,6 @@ export default function LoanSettingsPanel() {
         </div>
         <div className="mt-2 text-xs text-slate-500">
           Flat charges total ₱{flatTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })} (percent charges scale with the loan amount).
-        </div>
-      </div>
-
-      <div className="mt-6">
-        <div className="mb-2 text-sm font-semibold text-slate-800">Signatories (auto-filled on printed documents)</div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <Labeled label="Loan Officer — “Processed By”">
-            <input value={s.signatories?.loanOfficer ?? ""} onChange={(e) => setSig("loanOfficer", e.target.value)} className={`mt-1 ${inputCls}`} placeholder="Full name" />
-          </Labeled>
-          <Labeled label="Manager — “Approved By”">
-            <input value={s.signatories?.manager ?? ""} onChange={(e) => setSig("manager", e.target.value)} className={`mt-1 ${inputCls}`} placeholder="Full name" />
-          </Labeled>
-          <Labeled label="Cashier — “Released / Received By”">
-            <input value={s.signatories?.cashier ?? ""} onChange={(e) => setSig("cashier", e.target.value)} className={`mt-1 ${inputCls}`} placeholder="Full name" />
-          </Labeled>
-        </div>
-        <div className="mt-2 text-xs text-slate-500">
-          These names print above the signature lines on the Application Form, Disclosure, and Promissory Note.
         </div>
       </div>
 

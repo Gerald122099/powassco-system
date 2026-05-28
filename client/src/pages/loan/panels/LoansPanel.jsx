@@ -63,13 +63,8 @@ export default function LoansPanel() {
   const [payFor, setPayFor] = useState(null);
   const [orNo, setOrNo] = useState("");
   const [amount, setAmount] = useState("");
-  const [settings, setSettings] = useState({});
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / PAGE_SIZE)), [total]);
-
-  useEffect(() => {
-    apiFetch("/loan/settings", { token }).then(setSettings).catch(() => {});
-  }, [token]);
 
   async function load() {
     setLoading(true);
@@ -243,9 +238,9 @@ export default function LoansPanel() {
         {viewing && (
           <div className="space-y-4">
             <div className="flex flex-wrap gap-2">
-              <button onClick={() => printApplication(viewing, settings)} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold hover:bg-slate-50"><FileText size={15} /> Application</button>
-              <button onClick={() => printDisclosure(viewing, settings)} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold hover:bg-slate-50"><FileSpreadsheet size={15} /> Disclosure</button>
-              <button onClick={() => printPromissory(viewing, settings)} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold hover:bg-slate-50"><ScrollText size={15} /> Promissory</button>
+              <button onClick={() => printApplication(viewing)} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold hover:bg-slate-50"><FileText size={15} /> Application</button>
+              <button onClick={() => printDisclosure(viewing)} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold hover:bg-slate-50"><FileSpreadsheet size={15} /> Disclosure</button>
+              <button onClick={() => printPromissory(viewing)} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold hover:bg-slate-50"><ScrollText size={15} /> Promissory</button>
             </div>
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
