@@ -115,6 +115,7 @@ router.put("/settings", guard, async (req, res) => {
     "penaltyRatePerMonth",
     "defaultTermMonths",
     "charges",
+    "signatories",
     "dueDayOfMonth",
     "graceDays",
     "penaltyType",

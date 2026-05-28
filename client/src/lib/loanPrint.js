@@ -21,21 +21,23 @@ const BASE_CSS = `
   @page { size: A4; margin: 14mm; }
   * { box-sizing: border-box; }
   body { font-family: Arial, Helvetica, sans-serif; color: #0f172a; font-size: 12px; }
-  .head { display:flex; justify-content:center; text-align:center; border-bottom:3px solid #1e3a8a; padding-bottom:8px; margin-bottom:14px; }
-  .coop { font-size:18px; font-weight:800; color:#1e3a8a; }
+  .head { display:flex; align-items:center; justify-content:center; gap:12px; text-align:center; border-bottom:3px solid #166534; padding-bottom:8px; margin-bottom:14px; }
+  .head .logo { height:54px; width:54px; object-fit:contain; }
+  .coop { font-size:18px; font-weight:800; color:#166534; }
   .sub { font-size:11px; color:#475569; }
-  .title { text-align:center; font-size:15px; font-weight:800; color:#1e3a8a; letter-spacing:.5px; margin:10px 0 14px; }
+  .title { text-align:center; font-size:15px; font-weight:800; color:#166534; letter-spacing:.5px; margin:10px 0 14px; }
   .row { display:flex; justify-content:space-between; gap:16px; }
   .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:10px 24px; }
   .lbl { font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:.4px; }
   .val { font-weight:700; border-bottom:1px solid #cbd5e1; padding:2px 0 3px; min-height:18px; }
-  .sec { font-size:12px; font-weight:800; color:#1e3a8a; margin:16px 0 6px; }
+  .sec { font-size:12px; font-weight:800; color:#166534; margin:16px 0 6px; }
   table { width:100%; border-collapse:collapse; font-size:11px; margin-top:6px; }
   th,td { border:1px solid #cbd5e1; padding:5px 6px; text-align:left; }
-  thead th { background:#eff6ff; }
+  thead th { background:#f0fdf4; }
   td.r, th.r { text-align:right; }
   .sign { margin-top:40px; display:grid; grid-template-columns:1fr 1fr; gap:40px; }
   .signbox { text-align:center; }
+  .signfill { font-weight:700; font-size:12px; min-height:16px; padding-bottom:2px; }
   .signline { border-top:1px solid #0f172a; padding-top:4px; font-size:11px; font-weight:700; }
   .muted { color:#64748b; font-size:10px; }
   .box { border:1px solid #cbd5e1; border-radius:8px; padding:10px; }
@@ -53,15 +55,34 @@ function printDoc(title, bodyHtml) {
   w.document.open();
   w.document.write(`<!doctype html><html><head><meta charset="utf-8"/><title>${safe(title)}</title><style>${BASE_CSS}</style></head><body>${bodyHtml}</body></html>`);
   w.document.close();
-  setTimeout(() => {
+
+  // Wait for the header logo (and any image) to load before printing, otherwise
+  // the print dialog can render before the logo arrives and drop it.
+  let printed = false;
+  const go = () => {
+    if (printed) return;
+    printed = true;
     w.focus();
     w.print();
-    setTimeout(() => w.close(), 300);
-  }, 250);
+    setTimeout(() => w.close(), 400);
+  };
+  const imgs = Array.from(w.document.images || []);
+  const pending = imgs.filter((im) => !im.complete);
+  if (pending.length === 0) {
+    setTimeout(go, 150);
+  } else {
+    pending.forEach((im) => {
+      im.onload = im.onerror = () => {
+        if (pending.every((p) => p.complete)) go();
+      };
+    });
+  }
+  setTimeout(go, 1500); // fallback in case load events never fire
 }
 
 function header() {
-  return `<div class="head"><div><div class="coop">POWASSCO MULTIPURPOSE COOPERATIVE</div><div class="sub">Owak, Asturias, Cebu &nbsp;&bull;&nbsp; C.D.A Reg. No. 9520-07014753</div></div></div>`;
+  const logo = `${window.location.origin}/logo.png`;
+  return `<div class="head"><img class="logo" src="${logo}" alt="POWASSCO"/><div><div class="coop">POWASSCO MULTIPURPOSE COOPERATIVE</div><div class="sub">Owak, Asturias, Cebu &nbsp;&bull;&nbsp; C.D.A Reg. No. 9520-07014753</div></div></div>`;
 }
 
 function field(label, value) {
@@ -87,7 +108,8 @@ function personBlock(title, p = {}) {
   </div>`;
 }
 
-export function printApplication(loan) {
+export function printApplication(loan, settings = {}) {
+  const sig = settings.signatories || {};
   const inc = (loan.sourceOfIncome || [])
     .map((r) => `<tr><td>${safe(r.source)}</td><td class="r">₱ ${peso(r.amount)}</td><td>${safe(r.frequency)}</td></tr>`)
     .join("");
@@ -135,8 +157,8 @@ export function printApplication(loan) {
       <div class="signbox"><div class="signline">Co-Maker Signature</div><div class="muted">${dt(loan.appliedAt || loan.createdAt)}</div></div>
     </div>
     <div class="sign" style="margin-top:24px;">
-      <div class="signbox"><div class="signline">Processed By (Loan Officer)</div></div>
-      <div class="signbox"><div class="signline">Approved By (Manager)</div></div>
+      <div class="signbox"><div class="signfill">${safe(sig.loanOfficer)}</div><div class="signline">Processed By (Loan Officer)</div></div>
+      <div class="signbox"><div class="signfill">${safe(sig.manager)}</div><div class="signline">Approved By (Manager)</div></div>
     </div>`;
   printDoc("Loan Application Form", body);
 }
@@ -197,7 +219,8 @@ export function printDisclosure(loan) {
   printDoc("Disclosure Statement of Loan", body);
 }
 
-export function printPromissory(loan) {
+export function printPromissory(loan, settings = {}) {
+  const sig = settings.signatories || {};
   const words = `${peso(loan.principal)}`;
   const body = `
     ${header()}
@@ -233,8 +256,8 @@ export function printPromissory(loan) {
       <div class="signbox"><div class="signline">Signature over Printed Name of Co-Maker</div><div class="muted">${safe(loan.coMaker?.name)}</div></div>
     </div>
     <div class="sign" style="margin-top:24px;">
-      <div class="signbox"><div class="signline">Loans Officer</div></div>
-      <div class="signbox"><div class="signline">Released By &nbsp; ${dt(loan.releasedAt)}</div></div>
+      <div class="signbox"><div class="signfill">${safe(sig.loanOfficer)}</div><div class="signline">Loans Officer</div></div>
+      <div class="signbox"><div class="signfill">${safe(sig.cashier)}</div><div class="signline">Released By &nbsp; ${dt(loan.releasedAt)}</div></div>
     </div>`;
   printDoc("Promissory Note", body);
 }
@@ -253,7 +276,7 @@ export function printReceipt({ loan, payment }) {
     </div>
     <div class="box" style="margin-top:14px; text-align:center;">
       <div class="lbl">Amount Received</div>
-      <div style="font-size:22px; font-weight:800; color:#1e3a8a;">₱ ${peso(payment.amountPaid)}</div>
+      <div style="font-size:22px; font-weight:800; color:#166534;">₱ ${peso(payment.amountPaid)}</div>
     </div>
     <div class="grid2" style="margin-top:14px;">
       ${field("Total Payable", `₱ ${peso(loan.totalPayment)}`)}

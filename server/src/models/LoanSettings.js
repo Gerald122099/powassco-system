@@ -10,6 +10,15 @@ const ChargeRuleSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const SignatoriesSchema = new mongoose.Schema(
+  {
+    loanOfficer: { type: String, default: "" }, // "Processed By" / "Loans Officer"
+    manager: { type: String, default: "" }, // "Approved By (Manager)"
+    cashier: { type: String, default: "" }, // "Released By" / "Received By"
+  },
+  { _id: false }
+);
+
 const LoanSettingsSchema = new mongoose.Schema(
   {
     interestRatePerMonth: { type: Number, default: 2.5 }, // diminishing balance
@@ -18,6 +27,9 @@ const LoanSettingsSchema = new mongoose.Schema(
 
     // Add-on charges deducted from principal to get net proceeds
     charges: { type: [ChargeRuleSchema], default: [] },
+
+    // Names auto-filled onto printed documents (officer/manager/cashier lines)
+    signatories: { type: SignatoriesSchema, default: () => ({}) },
 
     // optional due-day scheduling
     dueDayOfMonth: { type: Number, default: 15, min: 1, max: 28 },
