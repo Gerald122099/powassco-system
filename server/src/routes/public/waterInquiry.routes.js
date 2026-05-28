@@ -2,6 +2,7 @@ import express from "express";
 import WaterMember from "../../models/WaterMember.js";
 import WaterBill from "../../models/WaterBill.js";
 import WaterPayment from "../../models/WaterPayment.js";
+import LoanApplication from "../../models/LoanApplication.js";
 
 const router = express.Router();
 
@@ -200,9 +201,17 @@ router.post("/inquiry", rateLimit, async (req, res) => {
       }))
     };
 
+    const loans = await LoanApplication.find({ borrowerPnNo: pn })
+      .sort({ createdAt: -1 })
+      .select(
+        "loanId referenceCode principal monthlyPayment totalPayment totalPaid balance status releasedAt maturityDate firstPaymentDate termMonths interestRatePerMonth createdAt"
+      )
+      .lean();
+
     return res.json({
       member: sanitizedMember,
       bills: billsDecorated,
+      loans,
       summary: {
         totalBills: billsDecorated.length,
         paidBills: paidBills.length,

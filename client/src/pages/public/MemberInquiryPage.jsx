@@ -518,6 +518,76 @@ export default function MemberInquiryPage() {
                 </div>
               </div>
 
+              {/* Loans */}
+              {(data.loans || []).length > 0 && (
+                <div className="rounded-3xl bg-white border border-green-100 shadow-lg p-6">
+                  <div className="flex items-center gap-2 mb-4">
+                    <i className="fas fa-hand-holding-usd text-2xl text-green-600"></i>
+                    <div>
+                      <div className="text-lg font-black text-gray-800">My Loans</div>
+                      <div className="text-sm text-gray-600">{data.loans.length} loan record(s)</div>
+                    </div>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gradient-to-r from-green-50 to-green-100 text-left text-gray-600">
+                        <tr>
+                          <th className="py-3 px-4 rounded-l-xl">Loan</th>
+                          <th className="py-3 px-4">Principal</th>
+                          <th className="py-3 px-4">Monthly</th>
+                          <th className="py-3 px-4">Balance</th>
+                          <th className="py-3 px-4">Due Date</th>
+                          <th className="py-3 px-4 rounded-r-xl">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {data.loans.map((ln) => {
+                          const overdue =
+                            ln.maturityDate &&
+                            new Date(ln.maturityDate) < new Date() &&
+                            (ln.balance || 0) > 0 &&
+                            ln.status === "released";
+                          return (
+                            <tr key={ln.loanId} className={`border-t ${overdue ? "bg-red-50/40" : ""}`}>
+                              <td className="py-3 px-4">
+                                <div className="font-bold text-gray-800 font-mono">{ln.loanId}</div>
+                                <div className="text-xs text-gray-500">{formatDate(ln.createdAt)}</div>
+                              </td>
+                              <td className="py-3 px-4">₱{money(ln.principal)}</td>
+                              <td className="py-3 px-4">₱{money(ln.monthlyPayment)}</td>
+                              <td className="py-3 px-4 font-bold">₱{money(ln.balance)}</td>
+                              <td className="py-3 px-4">
+                                {ln.maturityDate ? formatDate(ln.maturityDate) : "—"}
+                                {overdue && <span className="ml-1 text-xs font-bold text-red-600">OVERDUE</span>}
+                              </td>
+                              <td className="py-3 px-4">
+                                <span
+                                  className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-bold ${
+                                    ln.status === "closed"
+                                      ? "bg-green-50 border-green-200 text-green-700"
+                                      : ln.status === "released"
+                                      ? "bg-blue-50 border-blue-200 text-blue-700"
+                                      : ln.status === "rejected"
+                                      ? "bg-red-50 border-red-200 text-red-700"
+                                      : "bg-amber-50 border-amber-200 text-amber-800"
+                                  }`}
+                                >
+                                  {ln.status}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="mt-3 text-xs text-gray-500 bg-amber-50 p-3 rounded-xl flex items-center gap-2">
+                    <i className="fas fa-info-circle text-amber-600"></i>
+                    Loan due dates — please settle on or before the due date to avoid penalties and water disconnection.
+                  </div>
+                </div>
+              )}
+
               {/* Water Consumption History - BELOW BILLING HISTORY */}
               {bills.length > 0 && (
                 <div className="rounded-3xl bg-white border border-green-100 shadow-lg p-6">
