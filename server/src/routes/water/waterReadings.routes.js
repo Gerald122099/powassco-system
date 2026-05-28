@@ -2,10 +2,10 @@
 import express from "express";
 import WaterReading from "../../models/WaterReading.js";
 import WaterMember from "../../models/WaterMember.js";
-import WaterBill from "../../models/waterbill.js";
+import WaterBill from "../../models/WaterBill.js";
 import { requireAuth, requireRole } from "../../middleware/auth.js";
 import { upsertWaterBill } from "../../utils/waterBillUpsert.js";
-import { calculateWaterBill } from "../../utils/waterBillingNew.js";
+import { calculateWaterBill } from "../../utils/waterBilling.js";
 
 const router = express.Router();
 

@@ -4,7 +4,7 @@ import multer from "multer";
 import WaterBatch from "../../models/WaterBatch.js";
 import WaterMember from "../../models/WaterMember.js";
 import WaterReading from "../../models/WaterReading.js";
-import WaterBill from "../../models/waterbill.js";
+import WaterBill from "../../models/WaterBill.js";
 import { requireAuth, requireRole } from "../../middleware/auth.js";
 import fs from "fs";
 import path from "path";

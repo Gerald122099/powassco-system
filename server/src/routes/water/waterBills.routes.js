@@ -6,13 +6,13 @@
 // - Reads meter.lastReading to update only selected meter
 
 import express from "express";
-import WaterBill from "../../models/waterbill.js";
+import WaterBill from "../../models/WaterBill.js";
 import WaterPayment from "../../models/WaterPayment.js";
 import WaterMember from "../../models/WaterMember.js";
 import WaterSettings from "../../models/WaterSettings.js";
 import { requireAuth, requireRole } from "../../middleware/auth.js";
 import { isPastDue } from "../../utils/waterPeriod.js";
-import { calculateWaterBill } from "../../utils/waterBillingNew.js";
+import { calculateWaterBill } from "../../utils/waterBilling.js";
 
 const router = express.Router();
 const guard = [requireAuth, requireRole(["admin", "water_bill_officer", "meter_reader"])];
