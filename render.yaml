@@ -15,7 +15,7 @@ services:
       - key: MONGO_URI
         sync: false # set in the Render dashboard (secret)
       - key: JWT_SECRET
-        sync: false # set in the Render dashboard (secret)
+        generateValue: true # Render generates a strong random secret (no reuse of the old leaked one)
       - key: CLIENT_ORIGIN
         value: https://powassco.site
       # PORT is provided by Render automatically; the server reads process.env.PORT
