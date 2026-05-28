@@ -36,9 +36,8 @@ const BASE_CSS = `
   thead th { background:#f0fdf4; }
   td.r, th.r { text-align:right; }
   .sign { margin-top:40px; display:grid; grid-template-columns:1fr 1fr; gap:40px; }
-  .signbox { text-align:center; }
-  .signfill { font-weight:700; font-size:12px; min-height:16px; padding-bottom:2px; }
-  .signline { border-top:1px solid #0f172a; padding-top:4px; font-size:11px; font-weight:700; }
+  .signbox { text-align:center; padding-top:18px; }
+  .signline { border-top:1px solid #0f172a; padding-top:4px; font-size:12px; font-weight:700; }
   .muted { color:#64748b; font-size:10px; }
   .box { border:1px solid #cbd5e1; border-radius:8px; padding:10px; }
 `;
@@ -157,8 +156,8 @@ export function printApplication(loan, settings = {}) {
       <div class="signbox"><div class="signline">Co-Maker Signature</div><div class="muted">${dt(loan.appliedAt || loan.createdAt)}</div></div>
     </div>
     <div class="sign" style="margin-top:24px;">
-      <div class="signbox"><div class="signfill">${safe(sig.loanOfficer)}</div><div class="signline">Processed By (Loan Officer)</div></div>
-      <div class="signbox"><div class="signfill">${safe(sig.manager)}</div><div class="signline">Approved By (Manager)</div></div>
+      <div class="signbox"><div class="signline">${safe(sig.loanOfficer)}</div><div class="muted">Processed By (Loan Officer)</div></div>
+      <div class="signbox"><div class="signline">${safe(sig.manager)}</div><div class="muted">Approved By (Manager)</div></div>
     </div>`;
   printDoc("Loan Application Form", body);
 }
@@ -256,8 +255,8 @@ export function printPromissory(loan, settings = {}) {
       <div class="signbox"><div class="signline">Signature over Printed Name of Co-Maker</div><div class="muted">${safe(loan.coMaker?.name)}</div></div>
     </div>
     <div class="sign" style="margin-top:24px;">
-      <div class="signbox"><div class="signfill">${safe(sig.loanOfficer)}</div><div class="signline">Loans Officer</div></div>
-      <div class="signbox"><div class="signfill">${safe(sig.cashier)}</div><div class="signline">Released By &nbsp; ${dt(loan.releasedAt)}</div></div>
+      <div class="signbox"><div class="signline">${safe(sig.loanOfficer)}</div><div class="muted">Loans Officer</div></div>
+      <div class="signbox"><div class="signline">${safe(sig.cashier)}</div><div class="muted">Released By &nbsp; ${dt(loan.releasedAt)}</div></div>
     </div>`;
   printDoc("Promissory Note", body);
 }
