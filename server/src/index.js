@@ -15,6 +15,8 @@ import waterReadingsRoutes from "./routes/water/waterReadings.routes.js";
 import waterInquiryRoutes from "./routes/public/waterInquiry.routes.js";
 import waterBatchesRoutes from "./routes/water/waterBatches.routes.js";
 
+import { ensureBootstrapAdmin } from "./utils/ensureAdmin.js";
+
 dotenv.config();
 
 const app = express();
@@ -67,6 +69,13 @@ async function start() {
   try {
     await mongoose.connect(process.env.MONGO_URI);
     console.log("✅ MongoDB connected");
+
+    // Bootstrap admin (idempotent) so deploys without shell access still get one
+    try {
+      await ensureBootstrapAdmin();
+    } catch (e) {
+      console.error("⚠️  Bootstrap admin seeding failed (continuing):", e.message);
+    }
     
     // Listen on all network interfaces (0.0.0.0)
     app.listen(PORT, '0.0.0.0', () => {
