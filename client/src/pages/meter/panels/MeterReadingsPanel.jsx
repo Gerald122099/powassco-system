@@ -360,7 +360,7 @@ export default function MeterReadingsPanel() {
         });
       }
       setPreviousReadings(readingsMap);
-    } catch (error) {
+    } catch {
       console.log("No previous readings found for period:", previousPeriodKey);
       setPreviousReadings({});
     }
@@ -421,7 +421,7 @@ export default function MeterReadingsPanel() {
       });
       
       setReadings(newReadings);
-    } catch (error) {
+    } catch {
       console.log("No readings found for period:", periodKey);
       setSavedReadings({});
       
@@ -1154,7 +1154,7 @@ export default function MeterReadingsPanel() {
       <div className="mb-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <div className="text-lg font-black text-slate-900">Meter Reading & Bill Generation</div>
+            <div className="text-lg font-bold tracking-tight text-slate-900">Meter Reading &amp; Bill Generation</div>
             <div className="text-xs text-slate-600 mt-1 flex items-center gap-2 flex-wrap">
               {editMode ? (
                 <span className="text-amber-600 font-semibold flex items-center gap-1">
@@ -1376,7 +1376,7 @@ export default function MeterReadingsPanel() {
           {/* Table */}
           <div className="overflow-auto rounded-2xl border border-slate-100 bg-white shadow-sm">
             <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-left text-slate-500">
+              <thead className="border-b border-slate-100 bg-slate-50/70 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">
                 <tr>
                   <th className="py-3 px-4">Status</th>
                   <th className="py-3 px-4">PN No.</th>
@@ -2122,19 +2122,14 @@ export default function MeterReadingsPanel() {
 function ReadingRow({
   member,
   readings,
-  savedReadings,
-  previousReadings,
-  billsForPeriod,
   expandedMeters,
   batchMode,
   editMode,
   canEdit,
   validationErrors,
-  editingMeters,
   periodKey,
   previousPeriodKey,
   getMemberStatus,
-  hasAnyInputForMember,
   hasCompleteInputForMember,
   isMeterAlreadySaved,
   getSavedReading,
@@ -2142,7 +2137,6 @@ function ReadingRow({
   isMeterInEditMode,
   getMeterBillStatus,
   onReadingChange,
-  onToggleMeterExpansion,
   onToggleMeterEdit,
   onPreview,
   onSave,
@@ -2246,16 +2240,6 @@ function ReadingRow({
           <div className="flex items-center gap-2">
             <span className="font-semibold">{member.activeMeters || 0}</span>
             <span className="text-xs text-slate-500">active</span>
-
-            {member.activeMeters > 0 && (
-              <button
-                onClick={() => onToggleMeterExpansion(member.pnNo)}
-                className="ml-2 text-blue-600 hover:text-blue-800 p-1 rounded-lg hover:bg-blue-50 transition-colors"
-                title={isExpanded ? "Hide meters" : "Show meters"}
-              >
-                {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-              </button>
-            )}
           </div>
 
           {hasBillWithoutReading && (
