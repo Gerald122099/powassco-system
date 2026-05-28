@@ -14,6 +14,7 @@ import waterAnalyticsRoutes from "./routes/water/waterAnalytics.routes.js";
 import waterReadingsRoutes from "./routes/water/waterReadings.routes.js";
 import waterInquiryRoutes from "./routes/public/waterInquiry.routes.js";
 import waterBatchesRoutes from "./routes/water/waterBatches.routes.js";
+import loanRoutes from "./routes/loan/loans.routes.js";
 
 import { ensureBootstrapAdmin } from "./utils/ensureAdmin.js";
 
@@ -76,6 +77,9 @@ app.use("/api/water/analytics", waterAnalyticsRoutes);
 app.use("/api/water/readings", waterReadingsRoutes);
 app.use("/api/public/water", waterInquiryRoutes);
 app.use("/api/water/batches", waterBatchesRoutes);
+
+// ✅ LOAN MODULE
+app.use("/api/loan", loanRoutes);
 
 // JSON 404 for unknown routes
 app.use((req, res) => {
