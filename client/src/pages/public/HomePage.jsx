@@ -62,9 +62,6 @@ export default function HomePage() {
               <Link to="/calculator" className="inline-flex items-center gap-2 rounded-xl bg-white/10 px-5 py-3 text-sm font-semibold text-white ring-1 ring-white/30 backdrop-blur transition hover:bg-white/20">
                 <Calculator size={16} /> Tariff calculator
               </Link>
-              <Link to="/login" className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-5 py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-emerald-400">
-                Staff login
-              </Link>
             </div>
           </div>
         </div>

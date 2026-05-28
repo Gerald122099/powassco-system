@@ -113,7 +113,7 @@ export default function MemberInquiryPage() {
       <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-green-100 pt-24 pb-8 px-4 md:px-5">
         <div className="max-w-6xl mx-auto">
           {/* Header */}
-          <div className="rounded-3xl bg-white border border-green-100 shadow-lg p-6 mb-5">
+          <div className="rounded-3xl bg-white border border-green-100 shadow-lg p-4 sm:p-6 mb-5">
             <div className="flex items-center gap-4 mb-6">
               <div className="relative">
                 <div className="absolute inset-0 bg-green-500 rounded-2xl blur-sm opacity-20"></div>
@@ -172,7 +172,7 @@ export default function MemberInquiryPage() {
           {data && (
             <div className="space-y-5">
               {/* Account Summary */}
-              <div className="rounded-3xl bg-white border border-green-100 shadow-lg p-6">
+              <div className="rounded-3xl bg-white border border-green-100 shadow-lg p-4 sm:p-6">
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                   <div>
                     <div className="mb-2 text-xl font-bold text-gray-900">{data.member?.accountName}</div>
@@ -262,7 +262,7 @@ export default function MemberInquiryPage() {
 
               {/* Meter Section */}
               {activeMeters.length > 0 && (
-                <div className="rounded-3xl bg-white border border-green-100 shadow-lg p-6">
+                <div className="rounded-3xl bg-white border border-green-100 shadow-lg p-4 sm:p-6">
                   <div className="flex items-center justify-between">
                     <div>
                       <div className="text-lg font-bold text-gray-900">Meters</div>
@@ -315,7 +315,7 @@ export default function MemberInquiryPage() {
               )}
 
               {/* Billing History - BELOW METERS */}
-              <div className="rounded-3xl bg-white border border-green-100 shadow-lg p-6">
+              <div className="rounded-3xl bg-white border border-green-100 shadow-lg p-4 sm:p-6">
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
                   <div>
                     <div className="text-lg font-bold text-gray-900">Billing History</div>
@@ -445,7 +445,7 @@ export default function MemberInquiryPage() {
 
               {/* Loans */}
               {(data.loans || []).length > 0 && (
-                <div className="rounded-3xl bg-white border border-green-100 shadow-lg p-6">
+                <div className="rounded-3xl bg-white border border-green-100 shadow-lg p-4 sm:p-6">
                   <div className="mb-4">
                     <div className="text-lg font-bold text-gray-900">My Loans</div>
                     <div className="text-sm text-gray-500">{data.loans.length} loan record(s)</div>
@@ -511,7 +511,7 @@ export default function MemberInquiryPage() {
 
               {/* Water Consumption History - BELOW BILLING HISTORY */}
               {bills.length > 0 && (
-                <div className="rounded-3xl bg-white border border-green-100 shadow-lg p-6">
+                <div className="rounded-3xl bg-white border border-green-100 shadow-lg p-4 sm:p-6">
                   <div className="flex items-center justify-between mb-4">
                     <div>
                       <div className="text-lg font-bold text-gray-900">Water Consumption History</div>
