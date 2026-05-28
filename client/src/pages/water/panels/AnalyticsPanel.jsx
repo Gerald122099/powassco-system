@@ -14,6 +14,9 @@ import {
   Tooltip,
   CartesianGrid,
   Legend,
+  PieChart,
+  Pie,
+  Cell,
 } from "recharts";
 
 function money(n) {
@@ -432,7 +435,7 @@ export default function AnalyticsPanel() {
       {/* Top controls */}
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <div className="text-lg font-black text-slate-900">Analytics</div>
+          <div className="text-lg font-bold tracking-tight text-slate-900">Analytics</div>
           <div className="text-xs text-slate-600 mt-1">
             Enhanced totals + yearly trends for consumption and collections.
           </div>
@@ -518,6 +521,46 @@ export default function AnalyticsPanel() {
               sub={`Discount Rate: ${pct(kpis?.discountRate || 0)}`}
               tone="amber"
             />
+          </div>
+
+          {/* Bill status distribution (donut) */}
+          <div className="rounded-3xl border border-slate-100 bg-white p-5">
+            <SectionTitle title="Bill Status Mix" desc="Distribution of bills by payment status" />
+            {(() => {
+              const b = data.bills || {};
+              const statusData = [
+                { name: "Paid", value: Number(b.paidBills || 0), color: "#10b981" },
+                { name: "Unpaid", value: Number(b.unpaidBills || 0), color: "#f59e0b" },
+                { name: "Overdue", value: Number(b.overdueBills || 0), color: "#ef4444" },
+                { name: "Partial", value: Number(b.partialBills || 0), color: "#8b5cf6" },
+              ].filter((d) => d.value > 0);
+              const total = statusData.reduce((s, d) => s + d.value, 0);
+              if (total === 0) {
+                return <div className="text-sm text-slate-600">No bills in this period.</div>;
+              }
+              return (
+                <div style={{ width: "100%", height: 260 }}>
+                  <ResponsiveContainer>
+                    <PieChart>
+                      <Pie
+                        data={statusData}
+                        dataKey="value"
+                        nameKey="name"
+                        innerRadius={60}
+                        outerRadius={100}
+                        paddingAngle={2}
+                      >
+                        {statusData.map((d) => (
+                          <Cell key={d.name} fill={d.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              );
+            })()}
           </div>
 
           {/* ✅ Year / Last12 Trends (Bar Graphs) */}
@@ -650,6 +693,22 @@ export default function AnalyticsPanel() {
                 <RowKV k="Unpaid + Overdue Amount" v={`₱ ${money(data.bills?.unpaidAmount || 0)}`} />
                 <RowKV k="Total Discounts" v={`₱ ${money(data.bills?.totalDiscounts || 0)}`} />
                 <RowKV k="Total Consumption" v={`${money(data.bills?.totalConsumption || 0)} m³`} />
+              </div>
+
+              <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+                <div className="text-xs font-bold text-emerald-800">Collection Rate</div>
+                <div className="mt-2 flex items-end justify-between gap-3">
+                  <div className="text-sm text-emerald-700">
+                    Collected: <b>₱ {money(data.bills?.collectedAmount || 0)}</b>
+                  </div>
+                  <div className="text-sm font-black text-emerald-900">{pct(kpis?.collectionRate || 0)}</div>
+                </div>
+                <div className="mt-3 h-2 rounded-full bg-emerald-100 overflow-hidden">
+                  <div
+                    className="h-full bg-emerald-500"
+                    style={{ width: `${Math.min(100, Math.max(0, Number(kpis?.collectionRate || 0)))}%` }}
+                  />
+                </div>
               </div>
 
               <div className="mt-4 grid grid-cols-2 gap-2">
