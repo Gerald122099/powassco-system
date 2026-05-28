@@ -19,6 +19,7 @@ const TONE_OPTIONS = [
   { key: "warm", label: "Warm" },
   { key: "cool", label: "Cool" },
   { key: "dim", label: "Dim" },
+  { key: "dark", label: "Dark" },
 ];
 const TONE_STYLES = {
   warm: { backgroundColor: "#ff8a00", opacity: 0.12, mixBlendMode: "multiply" },
@@ -42,6 +43,10 @@ export default function DashboardLayout({
   const [tone, setTone] = useState(() => localStorage.getItem("pow_screen_tone") || "normal");
   useEffect(() => {
     localStorage.setItem("pow_screen_tone", tone);
+    const root = document.documentElement;
+    if (tone === "dark") root.classList.add("pow-dark");
+    else root.classList.remove("pow-dark");
+    return () => root.classList.remove("pow-dark");
   }, [tone]);
 
   return (
@@ -127,8 +132,8 @@ export default function DashboardLayout({
         <main className="min-w-0 flex-1 p-4 sm:p-6">{children}</main>
       </div>
 
-      {/* Eye-comfort screen tint overlay */}
-      {tone !== "normal" && (
+      {/* Eye-comfort screen tint overlay (warm / cool / dim) */}
+      {TONE_STYLES[tone] && (
         <div className="pointer-events-none fixed inset-0 z-[60]" style={TONE_STYLES[tone]} aria-hidden="true" />
       )}
     </div>

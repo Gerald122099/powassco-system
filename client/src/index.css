@@ -20,3 +20,17 @@ html, body, #root { height: 100%; }
   .animate-modal-fade,
   .animate-modal-pop { animation: none; }
 }
+
+/* Filter-based dark mode (toggled from the dashboard eye-comfort control).
+   Scoped to #root and made the scroll container so fixed elements (sidebar,
+   modals) stay anchored under the filter. Images are re-inverted to look normal. */
+html.pow-dark #root {
+  filter: invert(1) hue-rotate(180deg);
+  height: 100vh;
+  overflow-y: auto;
+  background-color: #ffffff;
+}
+html.pow-dark #root img,
+html.pow-dark #root video {
+  filter: invert(1) hue-rotate(180deg);
+}
