@@ -1410,7 +1410,7 @@ export default function MembersPanel() {
                       />
                     </Field>
 
-                    <Field label="Initial Reading">
+                    <Field label="Initial / Current Reading (m³)">
                       <input
                         type="number"
                         min="0"
@@ -1420,6 +1420,9 @@ export default function MembersPanel() {
                         onChange={(e) => updateMeterInForm(index, 'initialReading', e.target.value)}
                         placeholder="0"
                       />
+                      <div className="mt-1 text-xs text-slate-500">
+                        For an existing meter, enter its current reading — the next encoded reading bills from here.
+                      </div>
                     </Field>
 
                     <Field label="Installation Date">

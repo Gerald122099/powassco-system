@@ -201,14 +201,15 @@ export default function MeterReadingsPanel() {
       };
     }
     
-    // Finally, fall back to meter's lastReading
+    // Finally, fall back to the meter's last reading, then its registered initial reading
     const meter = member.meters?.find(m => safeUpper(m.meterNumber) === mn);
-    if (meter && meter.lastReading) {
+    const baseline = Number(meter?.lastReading) || Number(meter?.initialReading) || 0;
+    if (meter && baseline) {
       return {
-        presentReading: meter.lastReading,
+        presentReading: baseline,
         readAt: meter.lastReadingDate,
         periodKey: "previous",
-        source: "meter_last",
+        source: meter.lastReading ? "meter_last" : "meter_initial",
         isGap: true
       };
     }
@@ -716,7 +717,7 @@ export default function MeterReadingsPanel() {
       const meterReadings = (member.activeBillingMeters || []).map((meter) => {
         const savedReading = getSavedReading(member, meter.meterNumber);
         const previousReadingData = getPreviousReading(member, meter.meterNumber);
-        const previousReading = previousReadingData?.presentReading || meter.lastReading || 0;
+        const previousReading = previousReadingData?.presentReading || meter.lastReading || meter.initialReading || 0;
         const presentReading = readings[member.pnNo]?.[safeUpper(meter.meterNumber)]?.presentReading || 
                               savedReading?.presentReading || 
                               0;
@@ -866,13 +867,13 @@ export default function MeterReadingsPanel() {
               if (savedReading) {
                 previousReading = savedReading.previousReading;
               } else {
-                previousReading = meterObj?.lastReading || 0;
+                previousReading = meterObj?.lastReading || meterObj?.initialReading || 0;
               }
             } else {
               previousReading = lastActual.presentReading;
             }
           } else {
-            previousReading = meterObj?.lastReading || 0;
+            previousReading = meterObj?.lastReading || meterObj?.initialReading || 0;
           }
         }
         
@@ -958,7 +959,7 @@ export default function MeterReadingsPanel() {
           const input = readings[pn]?.[mn]?.presentReading;
           const savedReading = getSavedReading(member, meter.meterNumber);
           const previousReadingData = getPreviousReading(member, meter.meterNumber);
-          const previousReading = previousReadingData?.presentReading || meter.lastReading || 0;
+          const previousReading = previousReadingData?.presentReading || meter.lastReading || meter.initialReading || 0;
           const inEditMode = isMeterInEditMode(member, meter.meterNumber);
           
           if (safeStr(input) === "") return null;
