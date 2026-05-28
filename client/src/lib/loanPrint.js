@@ -18,7 +18,7 @@ function safe(v) {
 }
 
 const BASE_CSS = `
-  @page { size: A4; margin: 14mm; }
+  @page { size: 8.5in 13in; margin: 14mm; } /* PH long bond paper */
   * { box-sizing: border-box; }
   body { font-family: Arial, Helvetica, sans-serif; color: #0f172a; font-size: 12px; }
   .head { display:flex; align-items:center; justify-content:center; gap:12px; text-align:center; border-bottom:3px solid #166534; padding-bottom:8px; margin-bottom:14px; }
