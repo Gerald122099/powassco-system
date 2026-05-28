@@ -8,6 +8,16 @@ node_modules/
 client/.env
 server/.env
 
+# keystores / certs (keep these out of the repo)
+jkspowasssco
+*.jks
+*.keystore
+*.p12
+*.pfx
+
+# photoshop recovery / scratch files
+*-Recovered.psd
+
 # build output
 dist/
 dist-ssr/
