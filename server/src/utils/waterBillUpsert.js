@@ -65,7 +65,7 @@ export async function upsertWaterBill({
   const rawConsumed = Math.max(0, pres - prev);
   const consumed = rawConsumed * mult;
 
-  const computation = await calculateWaterBill(consumed, classification, member);
+  const computation = await calculateWaterBill(consumed, classification, member, meterNo);
 
   const dueDate = calculateDueDate(periodCovered, settings);
 

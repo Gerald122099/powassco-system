@@ -135,7 +135,7 @@ router.post("/", ...guard, async (req, res) => {
       return res.status(409).json({ message: "Bill already exists for this meter and period", existingBill });
     }
 
-    const billComputation = await calculateWaterBill(consumption, classification, member);
+    const billComputation = await calculateWaterBill(consumption, classification, member, meterNo);
 
     const newBill = await WaterBill.create({
       pnNo: pn,
@@ -275,7 +275,7 @@ router.post("/preview", ...guard, async (req, res) => {
     const settings = await WaterSettings.findOne();
     if (!settings) return res.status(404).json({ message: "Water settings not found" });
 
-    const computation = await calculateWaterBill(consumption, classification, member);
+    const computation = await calculateWaterBill(consumption, classification, member, mn);
 
     res.json({
       pnNo: pn,

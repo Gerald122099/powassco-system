@@ -1,9 +1,27 @@
 import WaterSettings from "../models/WaterSettings.js";
 
+function activeBillingMeters(member) {
+  return (member?.meters || []).filter(
+    (m) => m?.meterStatus === "active" && m?.isBillingActive === true
+  );
+}
+
+// Senior/PWD discounts apply to a SINGLE meter for multi-meter accounts:
+// the meter flagged isDiscountMeter, or the first active billing meter if none
+// is flagged. Single-meter accounts (or calls without a meter context) always qualify.
+function discountAppliesToMeter(member, meterNumber) {
+  if (!meterNumber) return true;
+  const meters = activeBillingMeters(member);
+  if (meters.length <= 1) return true;
+  const target = meters.find((m) => m?.isDiscountMeter) || meters[0];
+  const norm = (v) => String(v || "").toUpperCase().trim();
+  return norm(target?.meterNumber) === norm(meterNumber);
+}
+
 /**
  * Calculate water bill with new tariff structure including minimum charges
  */
-export async function calculateWaterBill(consumption, classification, member = null) {
+export async function calculateWaterBill(consumption, classification, member = null, meterNumber = null) {
   try {
     // Get settings with tariffs
     const settings = await WaterSettings.findOne();
@@ -77,8 +95,11 @@ export async function calculateWaterBill(consumption, classification, member = n
     let discountAmount = 0;
     let discountReason = "";
     let netAmount = baseAmount;
-    
-    if (member?.personal?.isSeniorCitizen) {
+
+    // Multi-meter accounts: discount applies to one designated meter only.
+    const allowDiscount = discountAppliesToMeter(member, meterNumber);
+
+    if (allowDiscount && member?.personal?.isSeniorCitizen) {
       const eligibleTiers = member.billing?.discountApplicableTiers || 
                           settings.seniorDiscount?.applicableTiers || 
                           ["31-40", "41+"];
@@ -98,7 +119,7 @@ export async function calculateWaterBill(consumption, classification, member = n
     }
     
     // Apply PWD discount if applicable (and no senior discount)
-    if (member?.billing?.hasPWD && discountAmount === 0) {
+    if (allowDiscount && member?.billing?.hasPWD && discountAmount === 0) {
       const pwdDiscountRate = member.billing?.pwdDiscountRate || 0;
       if (pwdDiscountRate > 0) {
         discountAmount = baseAmount * (pwdDiscountRate / 100);

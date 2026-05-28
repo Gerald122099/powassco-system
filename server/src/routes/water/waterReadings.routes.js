@@ -354,7 +354,7 @@ router.post("/bills/preview", ...guard, async (req, res) => {
     }
 
     // Calculate bill using your billing logic
-    const calculation = await calculateWaterBill(consumption, classification, member);
+    const calculation = await calculateWaterBill(consumption, classification, member, meterReadings?.[0]?.meterNumber);
 
     res.json({
       pnNo,
