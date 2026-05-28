@@ -54,8 +54,14 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
 
-// health
-app.get("/api/health", (req, res) => res.json({ ok: true }));
+// root + health (work even when the DB is down — useful for uptime checks)
+app.get("/", (req, res) => res.json({ service: "POWASSCO API", ok: true }));
+app.get("/api/health", (req, res) =>
+  res.json({
+    ok: true,
+    db: mongoose.connection.readyState === 1 ? "connected" : "disconnected",
+  })
+);
 
 // auth/users
 app.use("/api/auth", authRoutes);
@@ -71,31 +77,49 @@ app.use("/api/water/readings", waterReadingsRoutes);
 app.use("/api/public/water", waterInquiryRoutes);
 app.use("/api/water/batches", waterBatchesRoutes);
 
+// JSON 404 for unknown routes
+app.use((req, res) => {
+  res.status(404).json({ message: `Not found: ${req.method} ${req.originalUrl}` });
+});
+
+// Central error handler — returns JSON (with CORS headers) instead of hanging
+app.use((err, req, res, _next) => {
+  console.error("Route error:", err);
+  res.status(err.status || 500).json({ message: err.message || "Server error" });
+});
+
 const PORT = process.env.PORT || 5000;
 
-async function start() {
-  try {
-    await mongoose.connect(process.env.MONGO_URI);
-    console.log("✅ MongoDB connected");
+// Start listening IMMEDIATELY so the platform can route traffic and /api/health
+// responds even while the database is still connecting or unreachable. A DB
+// outage must not take the whole HTTP server down.
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`✅ Server running on port ${PORT}`);
+});
 
-    // Bootstrap admin (idempotent) so deploys without shell access still get one
+// Connect to MongoDB independently, with retry.
+async function connectDB() {
+  if (!process.env.MONGO_URI) {
+    console.error("❌ MONGO_URI is not set. Add it to the host's environment variables.");
+    return;
+  }
+  try {
+    await mongoose.connect(process.env.MONGO_URI, { serverSelectionTimeoutMS: 10000 });
+    console.log("✅ MongoDB connected");
     try {
       await ensureBootstrapAdmin();
     } catch (e) {
       console.error("⚠️  Bootstrap admin seeding failed (continuing):", e.message);
     }
-    
-    // Listen on all network interfaces (0.0.0.0)
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log(`✅ Server running on port ${PORT}`);
-      console.log(`   Local: http://localhost:${PORT}`);
-      console.log(`   Network: http://192.168.1.45:${PORT}`);
-      console.log(`   Network: http://100.100.137.248:${PORT}`);
-    });
   } catch (err) {
-    console.error("❌ Server start error:", err);
-    process.exit(1);
+    console.error("❌ MongoDB connection failed; retrying in 5s:", err.message);
+    setTimeout(connectDB, 5000);
   }
 }
 
-start();
+connectDB();
+
+// Never crash the process on an unhandled async error.
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled promise rejection:", reason);
+});
