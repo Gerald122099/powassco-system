@@ -3,6 +3,9 @@ import mongoose from "mongoose";
 // Singleton: payment mode + the cooperative's QR PH image + online fee.
 const PaymentSettingsSchema = new mongoose.Schema(
   {
+    // Master switch — admin can turn off all online payment (walk-in only).
+    onlineEnabled: { type: Boolean, default: true },
+
     // Switchable: manual QR + verify, or a PSP for realtime auto-confirm.
     mode: { type: String, enum: ["manual", "paymongo", "xendit"], default: "manual" },
 

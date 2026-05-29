@@ -44,6 +44,7 @@ export default function PaymentSettingsPanel() {
         method: "PUT",
         token,
         body: {
+          onlineEnabled: s.onlineEnabled !== false,
           mode: s.mode,
           qrImage: s.qrImage,
           onlineFee: Number(s.onlineFee) || 0,
@@ -80,8 +81,23 @@ export default function PaymentSettingsPanel() {
       {err && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{err}</div>}
       {toast && <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">{toast}</div>}
 
+      {/* Master switch */}
+      <div className="mt-5 flex items-center justify-between rounded-2xl border border-slate-200 p-4">
+        <div>
+          <div className="font-semibold text-slate-800">Accept online payments</div>
+          <div className="text-sm text-slate-500">Turn off to accept walk-in payments only (members can't submit online).</div>
+        </div>
+        <button
+          onClick={() => set("onlineEnabled", !(s.onlineEnabled !== false))}
+          className={`relative h-7 w-12 shrink-0 rounded-full transition ${s.onlineEnabled !== false ? "bg-emerald-500" : "bg-slate-300"}`}
+          aria-pressed={s.onlineEnabled !== false}
+        >
+          <span className={`absolute top-1 h-5 w-5 rounded-full bg-white transition-all ${s.onlineEnabled !== false ? "left-6" : "left-1"}`} />
+        </button>
+      </div>
+
       {/* Mode */}
-      <div className="mt-5">
+      <div className={`mt-5 ${s.onlineEnabled === false ? "pointer-events-none opacity-50" : ""}`}>
         <label className="text-xs font-semibold text-slate-600">Payment Mode</label>
         <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
           {[

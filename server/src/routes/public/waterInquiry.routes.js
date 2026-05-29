@@ -3,6 +3,7 @@ import WaterMember from "../../models/WaterMember.js";
 import WaterBill from "../../models/WaterBill.js";
 import WaterPayment from "../../models/WaterPayment.js";
 import LoanApplication from "../../models/LoanApplication.js";
+import LoanPayment from "../../models/LoanPayment.js";
 
 const router = express.Router();
 
@@ -208,10 +209,22 @@ router.post("/inquiry", rateLimit, async (req, res) => {
       )
       .lean();
 
+    // Attach each loan's payments (for downloadable receipts).
+    const loanIds = loans.map((l) => l.loanId);
+    const loanPayments = loanIds.length
+      ? await LoanPayment.find({ loanId: { $in: loanIds } }).sort({ paidAt: -1 }).select("loanId orNo method amountPaid paidAt").lean()
+      : [];
+    const lpMap = new Map();
+    for (const p of loanPayments) {
+      if (!lpMap.has(p.loanId)) lpMap.set(p.loanId, []);
+      lpMap.get(p.loanId).push(p);
+    }
+    const loansWithPayments = loans.map((l) => ({ ...l, payments: lpMap.get(l.loanId) || [] }));
+
     return res.json({
       member: sanitizedMember,
       bills: billsDecorated,
-      loans,
+      loans: loansWithPayments,
       summary: {
         totalBills: billsDecorated.length,
         paidBills: paidBills.length,

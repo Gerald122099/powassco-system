@@ -17,6 +17,7 @@ async function getSettings() {
 router.get("/info", async (req, res) => {
   const s = await getSettings();
   res.json({
+    onlineEnabled: s.onlineEnabled !== false,
     mode: s.mode,
     realtime: s.mode !== "manual" && s.pspActive,
     qrImage: s.qrImage,
@@ -27,17 +28,34 @@ router.get("/info", async (req, res) => {
 });
 
 // Submit an online payment (becomes pending → officer verifies).
+// Idempotent: the reference is globally unique, so a refresh / double-submit
+// never creates a duplicate or posts twice. Nothing is applied to the bill/
+// loan here — only the officer's verify step posts the payment.
 router.post("/submit", async (req, res) => {
   const b = req.body || {};
   const referenceId = String(b.referenceId || "").trim();
   if (!referenceId) return res.status(400).json({ message: "Reference / transaction ID is required." });
 
-  // Don't allow re-using a reference that's pending/verified.
-  const dup = await OnlinePayment.findOne({ referenceId, status: { $ne: "rejected" } });
-  if (dup) return res.status(409).json({ message: "This reference/transaction ID was already submitted." });
-
   const s = await getSettings();
+  if (s.onlineEnabled === false) {
+    return res.status(403).json({ message: "Online payments are temporarily unavailable. Please pay at the office (walk-in)." });
+  }
+
+  // One record per real transaction. A repeat submit (refresh/double-click)
+  // is recognized and not duplicated.
+  const existing = await OnlinePayment.findOne({ referenceId }).lean();
+  if (existing) {
+    const msg =
+      existing.status === "verified"
+        ? "This payment was already verified and posted. No need to resubmit."
+        : existing.status === "rejected"
+        ? "This reference was reviewed and couldn't be matched. If you made a new payment, submit its new reference number."
+        : "We already received this reference and it's being verified. No need to resubmit.";
+    return res.status(409).json({ message: msg });
+  }
+
   const fee = Number(s.onlineFee) || 0;
+  let doc;
 
   if (b.module === "water") {
     const pnNo = String(b.pnNo || "").toUpperCase().trim();
@@ -47,29 +65,36 @@ router.post("/submit", async (req, res) => {
     if (!bill) return res.status(404).json({ message: "Bill not found for that meter/period." });
     if (bill.status === "paid") return res.status(400).json({ message: "This bill is already paid." });
     const amountDue = ceilPeso(bill.totalDue);
-    await OnlinePayment.create({
+    doc = {
       module: "water", billId: bill._id, pnNo, meterNumber, periodKey, accountName: bill.accountName,
       amountDue, fee, amountToPay: amountDue + fee, referenceId,
       amountPaid: Number(b.amountPaid) || amountDue + fee, payerName: b.payerName || "", payerPhone: b.payerPhone || "",
-    });
-    return res.status(201).json({ ok: true, message: "Payment submitted. It will be verified and posted within 2–3 working days." });
-  }
-
-  if (b.module === "loan") {
+    };
+  } else if (b.module === "loan") {
     const loanId = String(b.loanId || "").trim();
     const loan = await LoanApplication.findOne({ loanId });
     if (!loan) return res.status(404).json({ message: "Loan not found." });
     if ((loan.balance || 0) <= 0) return res.status(400).json({ message: "This loan has no outstanding balance." });
     const amountDue = ceilPeso(Number(b.amountDue || loan.balance || 0));
-    await OnlinePayment.create({
+    doc = {
       module: "loan", applicationId: loan._id, loanId, borrowerName: loan.borrowerName,
       amountDue, fee, amountToPay: amountDue + fee, referenceId,
       amountPaid: Number(b.amountPaid) || amountDue + fee, payerName: b.payerName || "", payerPhone: b.payerPhone || "",
-    });
-    return res.status(201).json({ ok: true, message: "Payment submitted. It will be verified and posted within 2–3 working days." });
+    };
+  } else {
+    return res.status(400).json({ message: "Invalid payment type." });
   }
 
-  return res.status(400).json({ message: "Invalid payment type." });
+  try {
+    await OnlinePayment.create(doc);
+  } catch (e) {
+    if (e?.code === 11000) {
+      // Lost a race with a near-simultaneous submit of the same reference.
+      return res.status(409).json({ message: "We already received this reference. No need to resubmit." });
+    }
+    throw e;
+  }
+  return res.status(201).json({ ok: true, message: "Payment submitted. It will be verified and posted within 2–3 working days." });
 });
 
 export default router;

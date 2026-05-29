@@ -64,6 +64,10 @@ export default function PayOnlineModal({ open, target, onClose }) {
           <p className="mt-1 text-sm text-slate-600">{done}</p>
           <button onClick={onClose} className="mt-4 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700">Done</button>
         </div>
+      ) : info && info.onlineEnabled === false ? (
+        <div className="py-4 text-center text-sm text-slate-600">
+          Online payment is temporarily unavailable. Please pay at the office (walk-in). Thank you!
+        </div>
       ) : realtime ? (
         <div className="py-4 text-center text-sm text-slate-600">
           Realtime online payment is being set up. For now, please pay at the office. Thank you!

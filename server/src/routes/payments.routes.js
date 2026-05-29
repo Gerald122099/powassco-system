@@ -21,7 +21,7 @@ const adminGuard = [requireAuth, requireRole(["admin"])];
 router.get("/settings", ...adminGuard, async (req, res) => res.json(await getSettings()));
 router.put("/settings", ...adminGuard, async (req, res) => {
   const s = await getSettings();
-  const allow = ["mode", "qrImage", "onlineFee", "payeeName", "instructions", "paymongoSecretKey", "paymongoPublicKey", "xenditApiKey", "pspActive"];
+  const allow = ["onlineEnabled", "mode", "qrImage", "onlineFee", "payeeName", "instructions", "paymongoSecretKey", "paymongoPublicKey", "xenditApiKey", "pspActive"];
   for (const k of allow) if (k in req.body) s[k] = req.body[k];
   s.updatedBy = req.user?.fullName || req.user?.employeeId || "";
   await s.save();

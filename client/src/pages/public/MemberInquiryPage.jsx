@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import Navbar from "../../components/Navbar";
 import WaterConsumptionChart from "../../components/WaterConsumptionChart";
 import PayOnlineModal from "../../components/PayOnlineModal";
+import { printWaterReceipt, printLoanReceipt } from "../../lib/paymentReceiptPrint";
 import { apiFetch } from "../../lib/api";
 
 function money(n) {
@@ -438,6 +439,12 @@ export default function MemberInquiryPage() {
                                           <div className="text-sm font-bold text-gray-800">
                                             ₱{money(p.amountPaid)}
                                           </div>
+                                          <button
+                                            onClick={() => printWaterReceipt({ member: data.member, bill: b, payment: p })}
+                                            className="mt-1 rounded-lg border border-emerald-200 px-2 py-0.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50"
+                                          >
+                                            Download Receipt
+                                          </button>
                                         </div>
                                       ))}
                                     </div>
@@ -515,6 +522,14 @@ export default function MemberInquiryPage() {
                                     className="mt-1 block rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700"
                                   >
                                     Pay Online
+                                  </button>
+                                )}
+                                {ln.payments?.length > 0 && (
+                                  <button
+                                    onClick={() => printLoanReceipt({ loan: ln, payment: ln.payments[0] })}
+                                    className="mt-1 block rounded-lg border border-emerald-200 px-2.5 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-50"
+                                  >
+                                    Download Receipt
                                   </button>
                                 )}
                               </td>

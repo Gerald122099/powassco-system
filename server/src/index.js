@@ -3,6 +3,8 @@ import cors from "cors";
 import dotenv from "dotenv";
 import mongoose from "mongoose";
 import rateLimit from "express-rate-limit";
+import helmet from "helmet";
+import mongoSanitize from "express-mongo-sanitize";
 
 import authRoutes from "./routes/auth.routes.js";
 import usersRoutes from "./routes/users.routes.js";
@@ -37,7 +39,12 @@ dotenv.config();
 const app = express();
 // Behind Render's proxy: trust one hop so rate limiting keys on the real client IP.
 app.set("trust proxy", 1);
+// Security headers (HSTS, no-sniff, frameguard, etc.). CSP/CORP disabled so the
+// cross-origin Vercel frontend can still call this API.
+app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: false }));
 app.use(express.json({ limit: "3mb" })); // allow base64 announcement images
+// Strip any $/.-prefixed keys from inputs — defense against NoSQL operator injection.
+app.use(mongoSanitize());
 
 // ✅ CORS - allow configured origins. CLIENT_ORIGIN may be a comma-separated list.
 const envOrigins = (process.env.CLIENT_ORIGIN || "")

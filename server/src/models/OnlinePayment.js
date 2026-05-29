@@ -21,7 +21,7 @@ const OnlinePaymentSchema = new mongoose.Schema(
     fee: { type: Number, default: 0 }, // online convenience fee (payer-shouldered)
     amountToPay: { type: Number, default: 0 }, // amountDue + fee (what the payer transfers)
 
-    referenceId: { type: String, required: true, index: true }, // GCash/Maya/bank ref no.
+    referenceId: { type: String, required: true, unique: true, index: true }, // GCash/Maya/bank ref no. — one record per real transaction
     amountPaid: { type: Number, default: 0 }, // what the payer says they paid
     payerName: { type: String, default: "" },
     payerPhone: { type: String, default: "" },
