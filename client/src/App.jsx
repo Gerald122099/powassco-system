@@ -9,6 +9,7 @@ import MemberInquiryPage from "./pages/public/MemberInquiryPage";
 import TariffCalculatorPage from "./pages/public/TariffCalculatorPage";
 import AboutPage from "./pages/public/AboutPage";
 import { AuthProvider, useAuth } from "./context/AuthContext";
+import InstallPrompt from "./components/InstallPrompt";
 
 function RoleHome() {
   const { user } = useAuth();
@@ -32,6 +33,7 @@ function Protected({ roles, children }) {
 export default function App() {
   return (
     <AuthProvider>
+      <InstallPrompt />
       <Routes>
         {/* PUBLIC PAGES */}
         <Route path="/" element={<HomePage />} />

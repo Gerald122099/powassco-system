@@ -337,6 +337,9 @@ export default function FieldModePanel() {
                     const val = inputs[key] ?? "";
                     const present = val !== "" ? parseFloat(val) : null;
                     const cons = present != null ? (present - prev) * (mt.consumptionMultiplier || 1) : null;
+                    const calc = cons != null && cons >= 0 && settings
+                      ? calculateWaterBillLocal(cons, m.billing?.classification || "residential", m, mt.meterNumber, settings)
+                      : null;
                     return (
                       <div key={key} className="rounded-xl border border-slate-200 bg-white p-2.5">
                         <div className="flex items-center justify-between text-xs">
@@ -362,6 +365,12 @@ export default function FieldModePanel() {
                             </button>
                           )}
                         </div>
+                        {calc && (
+                          <div className="mt-1 flex items-center justify-between text-[11px]">
+                            <span className="text-blue-600">Tier {calc.tariffUsed.tier} @ ₱{fmt(calc.tariffUsed.ratePerCubic)}/m³</span>
+                            <span className="font-bold text-emerald-700">₱{calc.amount.toFixed(2)}</span>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
