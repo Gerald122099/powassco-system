@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import DashboardLayout from "../../components/DashboardLayout";
-import { Users, Settings, BarChart3 } from "lucide-react";
+import { Users, Settings, BarChart3, Banknote } from "lucide-react";
 import Card from "../../components/Card";
 import Modal from "../../components/Modal";
 import { apiFetch } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
 import WaterSettingsPanel from "./WaterSettingsPanel";
 import AnalyticsPanel from "../water/panels/AnalyticsPanel";
+import LoanAnalyticsPanel from "../loan/panels/LoanAnalyticsPanel";
 
 const ROLE_OPTIONS = [
   { value: "admin", label: "Admin" },
@@ -72,7 +73,8 @@ function IconButton({ children, onClick, tone = "default", title }) {
 const adminNavItems = [
   { key: "users", label: "User Management", icon: Users, desc: "Create employees, assign roles, manage accounts" },
   { key: "water", label: "Water Settings", icon: Settings, desc: "Tariffs, due dates, penalties, and discounts" },
-  { key: "analytics", label: "Analytics", icon: BarChart3, desc: "System analytics and summaries" },
+  { key: "analytics", label: "Water Analytics", icon: BarChart3, desc: "Water billing analytics and summaries" },
+  { key: "loans", label: "Loan Analytics", icon: Banknote, desc: "Capital, interest profit, collections, and outstanding" },
 ];
 
 export default function AdminDashboard() {
@@ -359,6 +361,9 @@ export default function AdminDashboard() {
 
         {/* Analytics Tab - ADD THIS */}
         {activeTab === "analytics" && <AnalyticsPanel />}
+
+        {/* Loan Analytics Tab */}
+        {activeTab === "loans" && <LoanAnalyticsPanel />}
       </div>
 
       {/* User Add/Edit Modal */}
