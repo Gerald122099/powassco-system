@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 
 export default function BatchManagementPanel() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const [batches, setBatches] = useState([]);
   const [availableMembers, setAvailableMembers] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -54,11 +54,12 @@ export default function BatchManagementPanel() {
   const [readers, setReaders] = useState([]); // meter-reader users (admin only)
 
   useEffect(() => {
-    // Best-effort: only admins can read /users. Falls back to manual entry.
+    // Only admins can read /users; for others, skip and use manual entry.
+    if (user?.role !== "admin") return;
     apiFetch("/users", { token })
       .then((list) => setReaders((Array.isArray(list) ? list : []).filter((u) => u.role === "meter_reader")))
       .catch(() => setReaders([]));
-  }, [token]);
+  }, [token, user]);
 
   const loadBatches = async () => {
     setLoading(true);

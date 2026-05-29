@@ -5,7 +5,7 @@ import User from "../models/User.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
 const router = express.Router();
-router.use(requireAuth, requireRole("admin"));
+router.use(requireAuth, requireRole(["admin"]));
 
 router.get("/", async (req, res) => {
   const users = await User.find().sort({ createdAt: -1 }).select("-passwordHash");
