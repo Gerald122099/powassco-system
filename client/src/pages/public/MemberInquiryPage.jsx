@@ -2,6 +2,7 @@ import logo from "../../assets/logo.png";
 import { useEffect, useMemo, useState } from "react";
 import Navbar from "../../components/Navbar";
 import WaterConsumptionChart from "../../components/WaterConsumptionChart";
+import PayOnlineModal from "../../components/PayOnlineModal";
 import { apiFetch } from "../../lib/api";
 
 function money(n) {
@@ -25,6 +26,9 @@ export default function MemberInquiryPage() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [data, setData] = useState(null);
+
+  // Online payment
+  const [payTarget, setPayTarget] = useState(null);
 
   // UI toggles
   const [showAccountDetails, setShowAccountDetails] = useState(false);
@@ -109,7 +113,8 @@ export default function MemberInquiryPage() {
   return (
     <>
       <Navbar />
-      
+      <PayOnlineModal open={!!payTarget} target={payTarget} onClose={() => setPayTarget(null)} />
+
       <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-green-100 pt-24 pb-8 px-4 md:px-5">
         <div className="max-w-6xl mx-auto">
           {/* Header */}
@@ -411,6 +416,14 @@ export default function MemberInquiryPage() {
                                   >
                                     {b.status}
                                   </span>
+                                  {b.status !== "paid" && (
+                                    <button
+                                      onClick={() => setPayTarget({ module: "water", label: `${b.periodCovered} • ${b.meterNumber || ""}`, amountDue: b.totalDue, pnNo: data.member?.pnNo, meterNumber: b.meterNumber, periodKey: b.periodCovered })}
+                                      className="mt-1 block rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700"
+                                    >
+                                      Pay Online
+                                    </button>
+                                  )}
                                 </td>
 
                                 <td className="py-3 px-4">
@@ -496,6 +509,14 @@ export default function MemberInquiryPage() {
                                 >
                                   {ln.status}
                                 </span>
+                                {(ln.balance || 0) > 0 && ln.status === "released" && (
+                                  <button
+                                    onClick={() => setPayTarget({ module: "loan", label: ln.loanId, amountDue: ln.balance, loanId: ln.loanId })}
+                                    className="mt-1 block rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700"
+                                  >
+                                    Pay Online
+                                  </button>
+                                )}
                               </td>
                             </tr>
                           );
