@@ -5,6 +5,8 @@ import Card from "../../../components/Card";
 import Modal from "../../../components/Modal";
 import { apiFetch } from "../../../lib/api";
 import { useAuth } from "../../../context/AuthContext";
+import { QrCode } from "lucide-react";
+import MeterQRModal from "../../../components/MeterQRModal";
 
 const PAGE_SIZE = 12;
 
@@ -46,7 +48,8 @@ export default function MembersPanel() {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [viewOpen, setViewOpen] = useState(false);
-  const [metersModalOpen, setMetersModalOpen] = useState(false); 
+  const [metersModalOpen, setMetersModalOpen] = useState(false);
+  const [qrMeter, setQrMeter] = useState(null); // { pnNo, meterNumber, accountName }
 
   const [editing, setEditing] = useState(null);
   const [viewing, setViewing] = useState(null);
@@ -841,12 +844,20 @@ export default function MembersPanel() {
                             Condition: <span className="font-semibold">{meter.meterCondition}</span>
                           </div>
                         </div>
-                        <div className="text-right">
+                        <div className="flex flex-col items-end gap-2">
                           {meter.isBillingActive && (
                             <span className="inline-flex items-center rounded-full bg-blue-100 text-blue-800 px-2 py-1 text-xs font-bold">
                               Billing Active
                             </span>
                           )}
+                          <button
+                            type="button"
+                            onClick={() => setQrMeter({ pnNo: viewing.pnNo, meterNumber: meter.meterNumber, accountName: viewing.accountName })}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                            title="Show / print QR code"
+                          >
+                            <QrCode size={14} /> QR
+                          </button>
                         </div>
                       </div>
                       {meter.location?.description && (
@@ -874,6 +885,15 @@ export default function MembersPanel() {
           </div>
         )}
       </Modal>
+
+      {/* Meter QR code modal */}
+      <MeterQRModal
+        open={!!qrMeter}
+        onClose={() => setQrMeter(null)}
+        pnNo={qrMeter?.pnNo}
+        meterNumber={qrMeter?.meterNumber}
+        accountName={qrMeter?.accountName}
+      />
 
       {/* Add/Edit Modal - Updated for multiple meters */}
       <Modal open={modalOpen} title={editing ? "Edit Member" : "Add Member"} onClose={() => setModalOpen(false)} size="lg">

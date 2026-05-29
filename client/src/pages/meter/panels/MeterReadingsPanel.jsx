@@ -5,7 +5,10 @@ import Modal from "../../../components/Modal";
 import { apiFetch } from "../../../lib/api";
 import { useAuth } from "../../../context/AuthContext";
 import { on, emit } from "../../../lib/events"; // Import event system
+import { parseMeterQR } from "../../../lib/meterQr";
+import QRScannerView from "../../../components/QRScannerView";
 import {
+  QrCode,
   Printer,
   Download,
   FileText,
@@ -107,6 +110,51 @@ export default function MeterReadingsPanel() {
     setToast({ msg, type });
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     toastTimerRef.current = setTimeout(() => setToast(null), 3500);
+  };
+
+  // Scan QR / find-by-PN to jump straight into a meter's encode screen
+  const [findOpen, setFindOpen] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [manualPn, setManualPn] = useState("");
+  const [scanErr, setScanErr] = useState("");
+
+  const resolveMeter = async (pnNo) => {
+    const pn = safeUpper(pnNo);
+    if (!pn) {
+      setScanErr("Enter a PN number.");
+      return;
+    }
+    try {
+      const res = await apiFetch(
+        `/water/readings/members?periodKey=${periodKey}&search=${encodeURIComponent(pn)}&limit=10`,
+        { token }
+      );
+      const item = (res.items || []).find((m) => safeUpper(m.pnNo) === pn) || (res.items || [])[0];
+      if (!item) {
+        setScanErr(`No active account found for ${pn}.`);
+        return;
+      }
+      setFindOpen(false);
+      setScanning(false);
+      setManualPn("");
+      setScanErr("");
+      setInputMember(item);
+      if (item.priorUnsettledPeriods?.length) {
+        showToast(`Heads up: ${pn} has unsettled bill(s) for ${item.priorUnsettledPeriods.join(", ")}.`, "error");
+      }
+    } catch (e) {
+      setScanErr("Lookup failed: " + e.message);
+    }
+  };
+
+  const onScanResult = (text) => {
+    const parsed = parseMeterQR(text);
+    if (!parsed) {
+      setScanErr("Unrecognized QR code. Expected a POWASSCO meter QR.");
+      setScanning(false);
+      return;
+    }
+    resolveMeter(parsed.pnNo);
   };
 
   // Check if user can edit
@@ -1331,6 +1379,13 @@ export default function MeterReadingsPanel() {
                 </div>
               )}
             </div>
+            <button
+              type="button"
+              onClick={() => { setScanErr(""); setScanning(false); setManualPn(""); setFindOpen(true); }}
+              className="mt-2 inline-flex items-center gap-2 rounded-xl bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-700"
+            >
+              <QrCode size={16} /> Scan QR / Find Meter
+            </button>
           </div>
 
           <div>
@@ -1639,6 +1694,57 @@ export default function MeterReadingsPanel() {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* Scan QR / Find Meter Modal */}
+      <Modal
+        open={findOpen}
+        title="Scan QR / Find Meter"
+        subtitle={`Period ${periodKey}`}
+        onClose={() => { setFindOpen(false); setScanning(false); }}
+        size="sm"
+      >
+        <div className="space-y-4">
+          {scanning ? (
+            <div className="space-y-3">
+              <QRScannerView onResult={onScanResult} onError={(m) => { setScanErr(m); setScanning(false); }} />
+              <button
+                onClick={() => setScanning(false)}
+                className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Stop Camera
+              </button>
+            </div>
+          ) : (
+            <>
+              <button
+                onClick={() => { setScanErr(""); setScanning(true); }}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-purple-600 px-4 py-3 text-sm font-semibold text-white hover:bg-purple-700"
+              >
+                <QrCode size={18} /> Scan Meter QR
+              </button>
+
+              <div className="flex items-center gap-3 text-xs text-slate-400">
+                <div className="h-px flex-1 bg-slate-200" /> or enter manually <div className="h-px flex-1 bg-slate-200" />
+              </div>
+
+              <form onSubmit={(e) => { e.preventDefault(); resolveMeter(manualPn); }} className="space-y-2">
+                <label className="text-xs font-semibold text-slate-600">PN Number</label>
+                <input
+                  value={manualPn}
+                  onChange={(e) => setManualPn(e.target.value)}
+                  placeholder="e.g. PN123"
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-purple-300 focus:outline-none focus:ring-2 focus:ring-purple-100"
+                  autoFocus
+                />
+                <button type="submit" className="w-full rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700">
+                  Find Account
+                </button>
+              </form>
+            </>
+          )}
+          {scanErr && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-medium text-red-700">{scanErr}</div>}
+        </div>
       </Modal>
 
       {/* Preview Modal */}
