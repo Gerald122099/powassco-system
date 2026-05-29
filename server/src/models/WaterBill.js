@@ -115,6 +115,9 @@ WaterBillSchema.index({ pnNo: 1, periodKey: 1, meterNumber: 1 }, { unique: true 
 // IF you frequently query by status alone, you might want to keep this one:
 // IF you frequently query by status alone, you might want to keep this one:
 WaterBillSchema.index({ status: 1 }); // Keep this if you often filter by status only
+// Period-wide queries (analytics, reports, period exports) — the unique index
+// above starts with pnNo, so a period-only filter can't use it.
+WaterBillSchema.index({ periodKey: 1, status: 1 });
 
 const WaterBill =
   mongoose.models.WaterBill ||
