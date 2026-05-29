@@ -52,7 +52,7 @@ export default function DashboardLayout({
   return (
     <div className="min-h-screen bg-slate-50">
       {/* Sidebar: collapsed rail that expands on hover */}
-      <aside className="group fixed left-0 top-0 z-30 flex h-screen w-16 flex-col overflow-x-hidden border-r border-slate-200 bg-white transition-[width] duration-200 ease-out hover:w-64 hover:shadow-xl">
+      <aside className="group fixed left-0 top-0 z-30 flex h-screen w-16 flex-col overflow-x-hidden border-r border-slate-200 bg-white transition-[width] duration-200 ease-out supports-[height:100dvh]:h-[100dvh] hover:w-64 hover:shadow-xl">
         <div className="flex items-center gap-3 border-b border-slate-100 px-3 py-4">
           <img src={logo} alt={brand} className="h-9 w-9 shrink-0 rounded-lg object-contain" />
           <div className={`min-w-0 ${reveal}`}>
@@ -61,7 +61,7 @@ export default function DashboardLayout({
           </div>
         </div>
 
-        <nav className="flex-1 space-y-1 overflow-y-auto p-2">
+        <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2">
           {items.map((it) => {
             const Icon = it.icon;
             const on = active === it.key;
@@ -82,7 +82,7 @@ export default function DashboardLayout({
           })}
         </nav>
 
-        <div className="border-t border-slate-100 p-2">
+        <div className="shrink-0 border-t border-slate-100 p-2">
           <div className="mb-2 flex items-center gap-3 px-1">
             <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full font-bold uppercase ${tones.avatar}`}>
               {user?.fullName?.charAt(0) || "U"}
