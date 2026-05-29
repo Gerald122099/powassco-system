@@ -540,7 +540,7 @@ export default function AnalyticsPanel() {
               }
               return (
                 <div style={{ width: "100%", height: 260 }}>
-                  <ResponsiveContainer>
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={260}>
                     <PieChart>
                       <Pie
                         data={statusData}
@@ -584,7 +584,7 @@ export default function AnalyticsPanel() {
                       Total Consumption (m³)
                     </div>
                     <div style={{ width: "100%", height: 260 }}>
-                      <ResponsiveContainer>
+                      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={260}>
                         <BarChart data={chartRows}>
                           <CartesianGrid strokeDasharray="3 3" />
                           <XAxis dataKey="period" />
@@ -603,7 +603,7 @@ export default function AnalyticsPanel() {
                       Total Collected (₱)
                     </div>
                     <div style={{ width: "100%", height: 260 }}>
-                      <ResponsiveContainer>
+                      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={260}>
                         <BarChart data={chartRows}>
                           <CartesianGrid strokeDasharray="3 3" />
                           <XAxis dataKey="period" />
