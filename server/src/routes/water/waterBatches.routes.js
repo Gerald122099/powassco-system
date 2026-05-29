@@ -433,12 +433,32 @@ router.post("/import-readings", ...guard, async (req, res) => {
     });
     
     if (validationErrors.length > 0) {
-      return res.status(400).json({ 
-        error: "Validation failed", 
-        details: validationErrors 
+      return res.status(400).json({
+        error: "Validation failed",
+        details: validationErrors
       });
     }
-    
+
+    // Security: trust the authenticated user, not client-supplied identity.
+    const actor = req.user || {};
+    const actorLabel = actor.fullName || actor.employeeId || "mobile_app";
+    const isPrivileged = ["admin", "water_bill_officer"].includes(actor.role);
+
+    // A meter reader may only import readings for members in THEIR active batch.
+    let allowedPns = null; // null = unrestricted (admin/officer)
+    if (!isPrivileged) {
+      const myBatches = await WaterBatch.find({
+        isActive: true,
+        $or: [
+          { readerId: String(actor.employeeId || " ") },
+          { readerId: String(actor.id || actor._id || " ") },
+          { readerName: actor.fullName || " " },
+        ],
+      }).populate("members", "pnNo");
+      allowedPns = new Set();
+      for (const b of myBatches) for (const m of b.members || []) if (m?.pnNo) allowedPns.add(String(m.pnNo).toUpperCase());
+    }
+
     // Group readings by PN to better handle multiple meters
     const readingsByPn = {};
     readings.forEach(reading => {
@@ -453,6 +473,20 @@ router.post("/import-readings", ...guard, async (req, res) => {
     for (const [pnNo, pnReadings] of Object.entries(readingsByPn)) {
       console.log(`Account ${pnNo} has ${pnReadings.length} meter readings`);
       
+      // Ownership: a non-privileged reader can only submit for their batch.
+      if (allowedPns && !allowedPns.has(String(pnNo).toUpperCase())) {
+        pnReadings.forEach(reading => {
+          results.failed++;
+          results.details.push({
+            pnNo: reading.pnNo,
+            meterNumber: reading.meterNumber,
+            status: "failed",
+            message: `Account ${pnNo} is not in your assigned batch`
+          });
+        });
+        continue;
+      }
+
       // Get member once for all readings of this PN
       const member = await WaterMember.findOne({ pnNo: pnNo });
       if (!member) {
@@ -513,7 +547,7 @@ router.post("/import-readings", ...guard, async (req, res) => {
               existingReading.consumptionMultiplier = reading.consumptionMultiplier || 1;
               existingReading.rawConsumed = Math.max(0, reading.presentReading - reading.previousReading);
               existingReading.consumed = (reading.presentReading - reading.previousReading) * (reading.consumptionMultiplier || 1);
-              existingReading.readBy = readerId || readerName || "mobile_app";
+              existingReading.readBy = actorLabel;
               existingReading.readAt = reading.readDate ? new Date(parseInt(reading.readDate)) : new Date();
               await existingReading.save();
               
@@ -546,7 +580,7 @@ router.post("/import-readings", ...guard, async (req, res) => {
             rawConsumed: Math.max(0, reading.presentReading - reading.previousReading),
             consumptionMultiplier: reading.consumptionMultiplier || 1,
             consumed: (reading.presentReading - reading.previousReading) * (reading.consumptionMultiplier || 1),
-            readBy: readerId || readerName || "mobile_app",
+            readBy: actorLabel,
             readingType: "mobile_app",
             readingStatus: "verified",
             readAt: reading.readDate ? new Date(parseInt(reading.readDate)) : new Date(),

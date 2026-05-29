@@ -75,12 +75,25 @@ export async function saveReadingOffline({ pnNo, meterNumber, periodKey, previou
   return { consumed };
 }
 
-// Push all pending readings to the server. Idempotent: the server upserts by
-// period+PN+meter, and we drop items it accepts (success/skipped).
+let syncing = false; // guard against concurrent syncs (interval + manual + online event)
+
+// Push all pending readings to the server. Idempotent and conservative:
+// the server keys readings by period+PN+meter; we never overwrite an existing
+// server reading (forceUpdate:false), so syncing can't duplicate or clobber.
 export async function syncQueue({ token, user }) {
   if (typeof navigator !== "undefined" && navigator.onLine === false) {
     return { ok: false, offline: true };
   }
+  if (syncing) return { ok: false, busy: true };
+  syncing = true;
+  try {
+    return await runSync({ token, user });
+  } finally {
+    syncing = false;
+  }
+}
+
+async function runSync({ token, user }) {
   const pending = await odb.getPending();
   if (pending.length === 0) return { ok: true, success: 0, nothing: true };
 
@@ -110,7 +123,7 @@ export async function syncQueue({ token, user }) {
         readerName: user?.fullName || "",
         readerId: user?.employeeId || user?._id || "",
         importDate: Date.now(),
-        forceUpdate: true, // we are the source of truth for what we encoded
+        forceUpdate: false, // never overwrite an existing server reading
       },
     });
     // Map server per-row results back to queue ids; accept success + skipped.
