@@ -8,7 +8,8 @@ import * as odb from "../../../lib/offlineDb";
 import { downloadBatch, saveReadingOffline, syncQueue, currentPeriodKey } from "../../../lib/fieldSync";
 import { connectPrinter, printerConnected, printWaterReceipt, thermalSupported } from "../../../lib/thermalPrint";
 import { calculateWaterBillLocal } from "../../../lib/waterBillingLocal";
-import { Wifi, WifiOff, Download, RefreshCw, QrCode, Save, Search, MapPin, CheckCircle, CloudOff, Printer, Bluetooth } from "lucide-react";
+import { printRouteSheet } from "../../../lib/routeSheet";
+import { Wifi, WifiOff, Download, RefreshCw, QrCode, Save, Search, MapPin, CheckCircle, CloudOff, Printer, Bluetooth, FileText, Trash2, AlertTriangle } from "lucide-react";
 
 function fmt(n) {
   return Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 3 });
@@ -157,6 +158,14 @@ export default function FieldModePanel() {
     }
   }
 
+  async function clearData() {
+    if (pending > 0 && !confirm(`You have ${pending} unsynced reading(s). Clearing now will lose them. Continue?`)) return;
+    if (!pending && !confirm("Clear all downloaded accounts from this device?")) return;
+    await odb.clearOffline();
+    await refreshLocal();
+    flash("Offline data cleared.", "success");
+  }
+
   async function connectPrinterUI() {
     try {
       const name = await connectPrinter();
@@ -258,8 +267,27 @@ export default function FieldModePanel() {
               <Bluetooth size={16} /> {printerOn ? "Printer ✓" : "Printer"}
             </button>
           )}
+          {total > 0 && (
+            <button onClick={() => printRouteSheet(filtered, { periodKey, readerName: user?.fullName })} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" title="Print a paper worksheet of these accounts">
+              <FileText size={16} /> Route Sheet
+            </button>
+          )}
+          {total > 0 && (
+            <button onClick={clearData} className="inline-flex items-center gap-2 rounded-xl border border-red-200 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50" title="Clear downloaded data from this device">
+              <Trash2 size={16} />
+            </button>
+          )}
         </div>
       </div>
+
+      {total > 0 && periodKey !== currentPeriodKey() && (
+        <div className="mt-3 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <AlertTriangle size={18} className="mt-0.5 shrink-0" />
+          <div>
+            Cached batch is for <b>{periodKey}</b>, but the current month is <b>{currentPeriodKey()}</b>. Connect and tap <b>Download Batch</b> to refresh before reading.
+          </div>
+        </div>
+      )}
 
       {/* Counters */}
       <div className="mt-4 grid grid-cols-3 gap-3">
@@ -276,6 +304,14 @@ export default function FieldModePanel() {
           <div className="text-xs text-slate-500">Unread</div>
         </div>
       </div>
+      {total > 0 && (
+        <div className="mt-3">
+          <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+            <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${Math.round((readCount / total) * 100)}%` }} />
+          </div>
+          <div className="mt-1 text-center text-xs text-slate-500">{Math.round((readCount / total) * 100)}% read</div>
+        </div>
+      )}
       <div className="mt-1 flex items-center justify-end gap-1 text-xs text-slate-400">
         {pending > 0 ? <CloudOff size={12} /> : null} last sync {ago(lastSyncAt)}
       </div>
