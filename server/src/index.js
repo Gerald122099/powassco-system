@@ -20,6 +20,8 @@ import expensesRoutes from "./routes/admin/expenses.routes.js";
 import employeesRoutes from "./routes/admin/employees.routes.js";
 import payrollRoutes from "./routes/admin/payroll.routes.js";
 import auditRoutes from "./routes/admin/audit.routes.js";
+import publicRequestsRoutes from "./routes/public/requests.routes.js";
+import adminRequestsRoutes from "./routes/admin/requests.routes.js";
 
 import { auditLogger } from "./middleware/auditLogger.js";
 import { ensureBootstrapAdmin } from "./utils/ensureAdmin.js";
@@ -105,6 +107,7 @@ app.use("/api/water/settings", waterSettingsRoutes);
 app.use("/api/water/analytics", waterAnalyticsRoutes);
 app.use("/api/water/readings", waterReadingsRoutes);
 app.use("/api/public/water", waterInquiryRoutes);
+app.use("/api/public/requests", publicRequestsRoutes);
 app.use("/api/water/batches", waterBatchesRoutes);
 
 // ✅ LOAN MODULE
@@ -115,6 +118,7 @@ app.use("/api/expenses", expensesRoutes);
 app.use("/api/employees", employeesRoutes);
 app.use("/api/payroll", payrollRoutes);
 app.use("/api/audit", auditRoutes);
+app.use("/api/requests", adminRequestsRoutes);
 
 // JSON 404 for unknown routes
 app.use((req, res) => {

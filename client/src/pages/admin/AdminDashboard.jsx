@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import DashboardLayout from "../../components/DashboardLayout";
-import { Users, Settings, BarChart3, Banknote, Wallet, FileBarChart, UserCog, Coins, ScrollText, ShieldCheck } from "lucide-react";
+import { Users, Settings, BarChart3, Banknote, Wallet, FileBarChart, UserCog, Coins, ScrollText, ShieldCheck, Inbox } from "lucide-react";
 import Card from "../../components/Card";
 import Modal from "../../components/Modal";
 import { apiFetch } from "../../lib/api";
@@ -14,6 +14,7 @@ import EmployeesPanel from "./EmployeesPanel";
 import PayrollPanel from "./PayrollPanel";
 import AuditLogPanel from "./AuditLogPanel";
 import SecurityPanel from "./SecurityPanel";
+import RequestsPanel from "./RequestsPanel";
 
 const ROLE_OPTIONS = [
   { value: "admin", label: "Admin" },
@@ -86,6 +87,7 @@ const adminNavItems = [
   { key: "payroll", label: "Payroll", icon: Coins, desc: "Payslips with SSS, PhilHealth, Pag-IBIG, and withholding tax" },
   { key: "reports", label: "Reports", icon: FileBarChart, desc: "Financial reports across expenses and loans" },
   { key: "audit", label: "Audit Log", icon: ScrollText, desc: "System activity — who did what, and when" },
+  { key: "requests", label: "Requests", icon: Inbox, desc: "New connection & reconnection requests from the public" },
   { key: "security", label: "Security", icon: ShieldCheck, desc: "Two-factor authentication and access controls" },
 ];
 
@@ -394,6 +396,9 @@ export default function AdminDashboard() {
 
         {/* Security / 2FA Tab */}
         {activeTab === "security" && <SecurityPanel />}
+
+        {/* Service Requests Tab */}
+        {activeTab === "requests" && <RequestsPanel />}
       </div>
 
       {/* User Add/Edit Modal */}

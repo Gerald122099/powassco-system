@@ -15,6 +15,7 @@ const MeterReadingDashboard = lazy(() => import("./pages/meter/MeterReadingDashb
 const MemberInquiryPage = lazy(() => import("./pages/public/MemberInquiryPage"));
 const TariffCalculatorPage = lazy(() => import("./pages/public/TariffCalculatorPage"));
 const AboutPage = lazy(() => import("./pages/public/AboutPage"));
+const ContactPage = lazy(() => import("./pages/public/ContactPage"));
 
 function PageLoader() {
   return (
@@ -55,6 +56,7 @@ export default function App() {
         <Route path="/inquiry" element={<MemberInquiryPage />} />
         <Route path="/calculator" element={<TariffCalculatorPage />} />
         <Route path="/about" element={<AboutPage />} />
+        <Route path="/contact" element={<ContactPage />} />
 
         {/* Role-based home redirect for authenticated users */}
         <Route path="/dashboard" element={<RoleHome />} />

@@ -8,6 +8,7 @@ const links = [
   { to: "/", label: "Home" },
   { to: "/inquiry", label: "Bill Inquiry" },
   { to: "/calculator", label: "Tariff Calculator" },
+  { to: "/contact", label: "Contact Us" },
   { to: "/about", label: "About" },
 ];
 
