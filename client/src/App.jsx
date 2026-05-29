@@ -1,15 +1,27 @@
+import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import LoginPage from "./pages/LoginPage";
 import HomePage from "./pages/public/HomePage";
-import AdminDashboard from "./pages/admin/AdminDashboard";
-import WaterBillingDashboard from "./pages/water/WaterBillingDashboard";
-import LoanDashboard from "./pages/loan/LoanDashboard";
-import MeterReadingDashboard from "./pages/meter/MeterReadingDashboard";
-import MemberInquiryPage from "./pages/public/MemberInquiryPage";
-import TariffCalculatorPage from "./pages/public/TariffCalculatorPage";
-import AboutPage from "./pages/public/AboutPage";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import InstallPrompt from "./components/InstallPrompt";
+
+// Role dashboards + public sub-pages are lazy-loaded so each user only
+// downloads the code they need (much faster startup, esp. on phones).
+const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard"));
+const WaterBillingDashboard = lazy(() => import("./pages/water/WaterBillingDashboard"));
+const LoanDashboard = lazy(() => import("./pages/loan/LoanDashboard"));
+const MeterReadingDashboard = lazy(() => import("./pages/meter/MeterReadingDashboard"));
+const MemberInquiryPage = lazy(() => import("./pages/public/MemberInquiryPage"));
+const TariffCalculatorPage = lazy(() => import("./pages/public/TariffCalculatorPage"));
+const AboutPage = lazy(() => import("./pages/public/AboutPage"));
+
+function PageLoader() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-slate-50 text-sm text-slate-500">
+      Loading…
+    </div>
+  );
+}
 
 function RoleHome() {
   const { user } = useAuth();
@@ -34,6 +46,7 @@ export default function App() {
   return (
     <AuthProvider>
       <InstallPrompt />
+      <Suspense fallback={<PageLoader />}>
       <Routes>
         {/* PUBLIC PAGES */}
         <Route path="/" element={<HomePage />} />
@@ -83,6 +96,7 @@ export default function App() {
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </Suspense>
     </AuthProvider>
   );
 }

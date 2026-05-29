@@ -132,7 +132,7 @@ export async function apiFetch(
     // you can optionally clear on BOTH 401 and 403:
     if (res.status === 401) {
       clearAuthStorage();
-      throw new Error(data?.message || "Unauthorized - Please login again");
+      throw new Error(data?.message || data?.error || "Unauthorized - Please login again");
     }
 
     // Optional: if you want to force logout on 403 only when token is invalid:
@@ -141,7 +141,7 @@ export async function apiFetch(
     //   clearAuthStorage();
     // }
 
-    throw new Error(data?.message || `Request failed (${res.status})`);
+    throw new Error(data?.message || data?.error || `Request failed (${res.status})`);
   }
 
   return data;
