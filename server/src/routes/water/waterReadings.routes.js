@@ -3,6 +3,7 @@ import express from "express";
 import WaterReading from "../../models/WaterReading.js";
 import WaterMember from "../../models/WaterMember.js";
 import WaterBill from "../../models/WaterBill.js";
+import WaterBatch from "../../models/WaterBatch.js";
 import { requireAuth, requireRole } from "../../middleware/auth.js";
 import { upsertWaterBill } from "../../utils/waterBillUpsert.js";
 import { calculateWaterBill } from "../../utils/waterBilling.js";
@@ -40,6 +41,136 @@ async function priorUnpaidPeriods(pnNo, periodKey) {
     .select("periodKey")
     .lean();
   return [...new Set(bills.map((b) => b.periodKey))].sort();
+}
+
+// Enrich a set of member docs with per-period reading/bill status, prior
+// unsettled periods, and each meter's last actual reading. Shared by the
+// paginated /members list and the reader's /my-batch download.
+async function enrichMembersForPeriod(members, periodKey) {
+  const pnNos = members.map((m) => m.pnNo);
+
+  const [readings, bills, priorBills] = await Promise.all([
+    WaterReading.find({ periodKey, pnNo: { $in: pnNos } })
+      .select("pnNo meterNumber presentReading previousReading consumed readAt readBy")
+      .lean(),
+    WaterBill.find({ periodKey, pnNo: { $in: pnNos } })
+      .select("pnNo meterNumber status totalDue baseAmount discount penaltyApplied consumed previousReading presentReading")
+      .lean(),
+    WaterBill.find({ pnNo: { $in: pnNos }, periodKey: { $lt: periodKey }, status: { $in: ["unpaid", "overdue"] } })
+      .select("pnNo periodKey")
+      .lean(),
+  ]);
+
+  const readingsByPn = new Map();
+  const readMetersByPn = new Map();
+  for (const r of readings) {
+    if (!readingsByPn.has(r.pnNo)) {
+      readingsByPn.set(r.pnNo, []);
+      readMetersByPn.set(r.pnNo, new Set());
+    }
+    readingsByPn.get(r.pnNo).push(r);
+    readMetersByPn.get(r.pnNo).add(normMeter(r.meterNumber));
+  }
+
+  const billsByPn = new Map();
+  for (const bill of bills) {
+    if (!billsByPn.has(bill.pnNo)) billsByPn.set(bill.pnNo, new Map());
+    billsByPn.get(bill.pnNo).set(normMeter(bill.meterNumber), {
+      hasBill: true,
+      billId: bill._id,
+      status: bill.status,
+      totalDue: bill.totalDue,
+      baseAmount: bill.baseAmount,
+      discount: bill.discount,
+      penaltyApplied: bill.penaltyApplied,
+      consumed: bill.consumed,
+      previousReading: bill.previousReading,
+      presentReading: bill.presentReading,
+      hasReading: !!(bill.previousReading || bill.presentReading),
+    });
+  }
+
+  const priorUnsettledByPn = new Map();
+  for (const b of priorBills) {
+    if (!priorUnsettledByPn.has(b.pnNo)) priorUnsettledByPn.set(b.pnNo, new Set());
+    priorUnsettledByPn.get(b.pnNo).add(b.periodKey);
+  }
+
+  return Promise.all(
+    members.map(async (m) => {
+      const activeBillingMeters = (m.meters || []).filter((x) => x.meterStatus === "active" && x.isBillingActive === true);
+      const memberReadings = readingsByPn.get(m.pnNo) || [];
+      const readMeterSet = readMetersByPn.get(m.pnNo) || new Set();
+      const memberBills = billsByPn.get(m.pnNo) || new Map();
+
+      const missingMeters = activeBillingMeters
+        .filter((meter) => !readMeterSet.has(normMeter(meter.meterNumber)))
+        .map((meter) => meter.meterNumber);
+      const hasAnyReading = memberReadings.length > 0;
+      const hasReading =
+        activeBillingMeters.length > 0 && activeBillingMeters.every((meter) => readMeterSet.has(normMeter(meter.meterNumber)));
+      const readMeters = activeBillingMeters
+        .filter((meter) => readMeterSet.has(normMeter(meter.meterNumber)))
+        .map((meter) => meter.meterNumber);
+      const metersWithBill = activeBillingMeters
+        .filter((meter) => memberBills.has(normMeter(meter.meterNumber)))
+        .map((meter) => ({
+          meterNumber: meter.meterNumber,
+          billStatus: memberBills.get(normMeter(meter.meterNumber)).status,
+          billId: memberBills.get(normMeter(meter.meterNumber)).billId,
+          totalDue: memberBills.get(normMeter(meter.meterNumber)).totalDue,
+        }));
+
+      const lastActualReadings = {};
+      for (const meter of activeBillingMeters) {
+        const mn = normMeter(meter.meterNumber);
+        const lastReading = await WaterReading.findOne({ pnNo: m.pnNo, meterNumber: mn }).sort({ periodKey: -1 }).lean();
+        if (lastReading) {
+          lastActualReadings[mn] = {
+            presentReading: lastReading.presentReading,
+            previousReading: lastReading.previousReading,
+            consumed: lastReading.consumed,
+            periodKey: lastReading.periodKey,
+            readAt: lastReading.readAt,
+            source: "reading",
+          };
+        } else {
+          const lastBill = await WaterBill.findOne({ pnNo: m.pnNo, meterNumber: mn, status: "paid" }).sort({ periodKey: -1 }).lean();
+          if (lastBill) {
+            lastActualReadings[mn] = {
+              presentReading: lastBill.presentReading,
+              previousReading: lastBill.previousReading,
+              consumed: lastBill.consumed,
+              periodKey: lastBill.periodCovered,
+              readAt: lastBill.readingDate,
+              source: "bill",
+            };
+          }
+        }
+      }
+
+      return {
+        pnNo: m.pnNo,
+        accountName: m.accountName,
+        billing: m.billing,
+        address: m.address,
+        meters: m.meters,
+        personal: m.personal,
+        addressText: buildAddressText(m.address),
+        activeBillingMeters,
+        hasReading,
+        hasAnyReading,
+        readMeters,
+        missingMeters,
+        billsForPeriod: metersWithBill,
+        hasBillForAnyMeter: metersWithBill.length > 0,
+        readingWithoutBill: hasAnyReading && memberBills.size === 0,
+        billWithoutReading: memberBills.size > 0 && readMeterSet.size === 0,
+        lastActualReadings,
+        priorUnsettledPeriods: [...(priorUnsettledByPn.get(m.pnNo) || [])].sort(),
+      };
+    })
+  );
 }
 
 /**
@@ -172,162 +303,7 @@ router.get("/members", ...guard, async (req, res) => {
       .limit(limitNum)
       .lean();
 
-    const pnNos = members.map((m) => m.pnNo);
-
-    // Get readings for the period
-    const readings = await WaterReading.find({ periodKey, pnNo: { $in: pnNos } })
-      .select("pnNo meterNumber presentReading previousReading consumed readAt readBy")
-      .lean();
-
-    // Get bills for the period
-    const bills = await WaterBill.find({ 
-      periodKey, 
-      pnNo: { $in: pnNos } 
-    }).select("pnNo meterNumber status totalDue baseAmount discount penaltyApplied consumed previousReading presentReading").lean();
-
-    const readingsByPn = new Map();
-    const readMetersByPn = new Map();
-    
-    for (const r of readings) {
-      if (!readingsByPn.has(r.pnNo)) {
-        readingsByPn.set(r.pnNo, []);
-        readMetersByPn.set(r.pnNo, new Set());
-      }
-      readingsByPn.get(r.pnNo).push(r);
-      readMetersByPn.get(r.pnNo).add(normMeter(r.meterNumber));
-    }
-
-    // Create bills map
-    const billsByPn = new Map();
-    for (const bill of bills) {
-      if (!billsByPn.has(bill.pnNo)) {
-        billsByPn.set(bill.pnNo, new Map());
-      }
-      billsByPn.get(bill.pnNo).set(normMeter(bill.meterNumber), {
-        hasBill: true,
-        billId: bill._id,
-        status: bill.status,
-        totalDue: bill.totalDue,
-        baseAmount: bill.baseAmount,
-        discount: bill.discount,
-        penaltyApplied: bill.penaltyApplied,
-        consumed: bill.consumed,
-        previousReading: bill.previousReading,
-        presentReading: bill.presentReading,
-        hasReading: !!(bill.previousReading || bill.presentReading)
-      });
-    }
-
-    // Prior-period unsettled bills — used to block new readings until settled.
-    const priorBills = await WaterBill.find({
-      pnNo: { $in: pnNos },
-      periodKey: { $lt: periodKey },
-      status: { $in: ["unpaid", "overdue"] },
-    }).select("pnNo periodKey").lean();
-    const priorUnsettledByPn = new Map();
-    for (const b of priorBills) {
-      if (!priorUnsettledByPn.has(b.pnNo)) priorUnsettledByPn.set(b.pnNo, new Set());
-      priorUnsettledByPn.get(b.pnNo).add(b.periodKey);
-    }
-
-    // Process members with enhanced data
-    const items = await Promise.all(members.map(async (m) => {
-      const activeBillingMeters = (m.meters || []).filter(
-        (x) => x.meterStatus === "active" && x.isBillingActive === true
-      );
-
-      const memberReadings = readingsByPn.get(m.pnNo) || [];
-      const readMeterSet = readMetersByPn.get(m.pnNo) || new Set();
-      const memberBills = billsByPn.get(m.pnNo) || new Map();
-      
-      // Find which meters are missing readings
-      const missingMeters = activeBillingMeters
-        .filter(meter => !readMeterSet.has(normMeter(meter.meterNumber)))
-        .map(meter => meter.meterNumber);
-
-      const hasAnyReading = memberReadings.length > 0;
-      const hasReading = activeBillingMeters.length > 0 &&
-        activeBillingMeters.every((meter) => 
-          readMeterSet.has(normMeter(meter.meterNumber))
-        );
-
-      // Get list of meters that have readings
-      const readMeters = activeBillingMeters
-        .filter(meter => readMeterSet.has(normMeter(meter.meterNumber)))
-        .map(meter => meter.meterNumber);
-
-      // For each active meter, check if it has a bill
-      const metersWithBill = activeBillingMeters
-        .filter(meter => memberBills.has(normMeter(meter.meterNumber)))
-        .map(meter => ({
-          meterNumber: meter.meterNumber,
-          billStatus: memberBills.get(normMeter(meter.meterNumber)).status,
-          billId: memberBills.get(normMeter(meter.meterNumber)).billId,
-          totalDue: memberBills.get(normMeter(meter.meterNumber)).totalDue
-        }));
-
-      // Get last actual reading for each meter (from the most recent period with a reading)
-      const lastActualReadings = {};
-      for (const meter of activeBillingMeters) {
-        const mn = normMeter(meter.meterNumber);
-        
-        // Find the most recent reading for this meter (any period)
-        const lastReading = await WaterReading.findOne({
-          pnNo: m.pnNo,
-          meterNumber: mn
-        }).sort({ periodKey: -1 }).lean();
-        
-        if (lastReading) {
-          lastActualReadings[mn] = {
-            presentReading: lastReading.presentReading,
-            previousReading: lastReading.previousReading,
-            consumed: lastReading.consumed,
-            periodKey: lastReading.periodKey,
-            readAt: lastReading.readAt,
-            source: "reading"
-          };
-        } else {
-          // If no reading, try to find the most recent paid bill
-          const lastBill = await WaterBill.findOne({
-            pnNo: m.pnNo,
-            meterNumber: mn,
-            status: "paid"
-          }).sort({ periodKey: -1 }).lean();
-          
-          if (lastBill) {
-            lastActualReadings[mn] = {
-              presentReading: lastBill.presentReading,
-              previousReading: lastBill.previousReading,
-              consumed: lastBill.consumed,
-              periodKey: lastBill.periodCovered,
-              readAt: lastBill.readingDate,
-              source: "bill"
-            };
-          }
-        }
-      }
-
-      return {
-        pnNo: m.pnNo,
-        accountName: m.accountName,
-        billing: m.billing,
-        address: m.address,
-        meters: m.meters,
-        personal: m.personal,
-        addressText: buildAddressText(m.address),
-        activeBillingMeters,
-        hasReading,
-        hasAnyReading,
-        readMeters,
-        missingMeters,
-        billsForPeriod: metersWithBill,
-        hasBillForAnyMeter: metersWithBill.length > 0,
-        readingWithoutBill: hasAnyReading && memberBills.size === 0,
-        billWithoutReading: memberBills.size > 0 && readMeterSet.size === 0,
-        lastActualReadings, // Add last actual readings data
-        priorUnsettledPeriods: [...(priorUnsettledByPn.get(m.pnNo) || [])].sort(),
-      };
-    }));
+    const items = await enrichMembersForPeriod(members, periodKey);
 
     const total = await WaterMember.countDocuments(searchQuery);
     const completeCount = items.filter((x) => x.hasReading).length;
@@ -345,6 +321,46 @@ router.get("/members", ...guard, async (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Failed to fetch members" });
+  }
+});
+
+/**
+ * GET /water/readings/my-batch?periodKey=YYYY-MM
+ * Returns only the signed-in reader's assigned batch members (enriched for the
+ * period) — efficient offline download instead of paginating all members.
+ */
+router.get("/my-batch", ...guard, async (req, res) => {
+  try {
+    const { periodKey } = req.query;
+    if (!periodKey) return res.status(400).json({ error: "Period key is required" });
+
+    const actor = req.user || {};
+    const batches = await WaterBatch.find({
+      isActive: true,
+      $or: [
+        { readerId: String(actor.employeeId || " ") },
+        { readerId: String(actor.id || actor._id || " ") },
+        { readerName: actor.fullName || " " },
+      ],
+    })
+      .select("members batchNumber batchName area")
+      .lean();
+
+    const memberIds = [...new Set(batches.flatMap((b) => (b.members || []).map((id) => String(id))))];
+    const batchInfo = batches.map((b) => ({ batchNumber: b.batchNumber, batchName: b.batchName, area: b.area }));
+
+    if (memberIds.length === 0) return res.json({ items: [], batches: batchInfo });
+
+    const members = await WaterMember.find({ _id: { $in: memberIds }, accountStatus: "active" })
+      .select("pnNo accountName billing address meters personal")
+      .sort({ pnNo: 1 })
+      .lean();
+
+    const items = await enrichMembersForPeriod(members, periodKey);
+    res.json({ items, batches: batchInfo, periodKey });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to load batch" });
   }
 });
 

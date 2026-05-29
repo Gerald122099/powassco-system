@@ -12,40 +12,16 @@ export function prevPeriodKey(periodKey = currentPeriodKey()) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-function isMyBatch(b, user) {
-  const rid = String(b.readerId || "");
-  return (
-    (user?.employeeId && rid === String(user.employeeId)) ||
-    (user?._id && rid === String(user._id)) ||
-    (user?.id && rid === String(user.id)) ||
-    (b.readerName && user?.fullName && b.readerName === user.fullName)
-  );
-}
+// Downloads the reader's assigned batch members (enriched with previous
+// readings, bill status, prior-unsettled flags) for the period via a single
+// scoped endpoint, and caches them locally.
+export async function downloadBatch({ token, periodKey = currentPeriodKey() }) {
+  const res = await apiFetch(`/water/readings/my-batch?periodKey=${periodKey}`, { token });
+  const items = res.items || [];
+  const batches = res.batches || [];
 
-// Downloads the reader's batch members (enriched with previous readings, bill
-// status, prior-unsettled flags) for the period and caches them locally.
-export async function downloadBatch({ token, user, periodKey = currentPeriodKey() }) {
-  const { batches = [] } = await apiFetch("/water/batches", { token });
-  const mine = batches.filter((b) => isMyBatch(b, user));
-  const myPns = new Set();
-  for (const b of mine) for (const m of b.members || []) if (m?.pnNo) myPns.add(String(m.pnNo).toUpperCase());
-
-  if (myPns.size === 0) {
+  if (batches.length === 0) {
     return { ok: false, message: "No batch is assigned to you. Ask the admin to assign one." };
-  }
-
-  // Pull enriched members for the period (paginated), keep only my batch.
-  const collected = [];
-  let page = 1;
-  const limit = 100;
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    const res = await apiFetch(`/water/readings/members?periodKey=${periodKey}&page=${page}&limit=${limit}`, { token });
-    const items = res.items || [];
-    for (const it of items) if (myPns.has(String(it.pnNo).toUpperCase())) collected.push(it);
-    const totalPages = res.totalPages || 1;
-    if (page >= totalPages || items.length === 0 || page > 100) break;
-    page++;
   }
 
   // Cache tariff settings so the thermal bill can be computed offline.
@@ -56,12 +32,12 @@ export async function downloadBatch({ token, user, periodKey = currentPeriodKey(
     /* keep any previously cached settings */
   }
 
-  await odb.saveMembers(collected);
+  await odb.saveMembers(items);
   await odb.setMeta("periodKey", periodKey);
-  await odb.setMeta("batchInfo", mine.map((b) => ({ batchNumber: b.batchNumber, batchName: b.batchName, area: b.area })));
+  await odb.setMeta("batchInfo", batches);
   await odb.setMeta("downloadedAt", Date.now());
 
-  return { ok: true, count: collected.length, periodKey, batches: mine.length };
+  return { ok: true, count: items.length, periodKey, batches: batches.length };
 }
 
 // Save a reading locally (works fully offline).
