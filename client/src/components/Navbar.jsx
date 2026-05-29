@@ -50,20 +50,13 @@ export default function Navbar() {
               {l.label}
             </Link>
           ))}
-          {user ? (
+          {user && (
             <button
               onClick={logout}
               className="ml-2 inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
             >
               <LogOut size={15} /> Logout
             </button>
-          ) : (
-            <Link
-              to="/login"
-              className="ml-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700"
-            >
-              Login
-            </Link>
           )}
         </div>
 
@@ -92,17 +85,13 @@ export default function Navbar() {
                 {l.label}
               </Link>
             ))}
-            {user ? (
+            {user && (
               <button
                 onClick={logout}
                 className="mt-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white"
               >
                 <LogOut size={15} /> Logout
               </button>
-            ) : (
-              <Link to="/login" className="mt-1 rounded-lg bg-emerald-600 px-3 py-2 text-center text-sm font-semibold text-white">
-                Login
-              </Link>
             )}
           </div>
         </div>

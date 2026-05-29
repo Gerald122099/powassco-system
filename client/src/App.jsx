@@ -25,19 +25,19 @@ function PageLoader() {
 
 function RoleHome() {
   const { user } = useAuth();
-  if (!user) return <Navigate to="/login" replace />;
+  if (!user) return <Navigate to="/employee-login" replace />;
 
   if (user.role === "admin") return <Navigate to="/admin" replace />;
   if (user.role === "water_bill_officer") return <Navigate to="/water" replace />;
   if (user.role === "loan_officer") return <Navigate to="/loan" replace />;
   if (user.role === "meter_reader") return <Navigate to="/meter" replace />;
 
-  return <Navigate to="/login" replace />;
+  return <Navigate to="/employee-login" replace />;
 }
 
 function Protected({ roles, children }) {
   const { user } = useAuth();
-  if (!user) return <Navigate to="/login" replace />;
+  if (!user) return <Navigate to="/employee-login" replace />;
   if (roles && !roles.includes(user.role)) return <Navigate to="/" replace />;
   return children;
 }
@@ -50,7 +50,7 @@ export default function App() {
       <Routes>
         {/* PUBLIC PAGES */}
         <Route path="/" element={<HomePage />} />
-        <Route path="/login" element={<LoginPage />} />
+        <Route path="/employee-login" element={<LoginPage />} />
         <Route path="/inquiry" element={<MemberInquiryPage />} />
         <Route path="/calculator" element={<TariffCalculatorPage />} />
         <Route path="/about" element={<AboutPage />} />
