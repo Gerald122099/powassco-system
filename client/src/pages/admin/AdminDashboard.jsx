@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import DashboardLayout from "../../components/DashboardLayout";
-import { Users, Settings, BarChart3, Banknote } from "lucide-react";
+import { Users, Settings, BarChart3, Banknote, Wallet, FileBarChart } from "lucide-react";
 import Card from "../../components/Card";
 import Modal from "../../components/Modal";
 import { apiFetch } from "../../lib/api";
@@ -8,6 +8,8 @@ import { useAuth } from "../../context/AuthContext";
 import WaterSettingsPanel from "./WaterSettingsPanel";
 import AnalyticsPanel from "../water/panels/AnalyticsPanel";
 import LoanAnalyticsPanel from "../loan/panels/LoanAnalyticsPanel";
+import ExpensesPanel from "./ExpensesPanel";
+import ReportsPanel from "./ReportsPanel";
 
 const ROLE_OPTIONS = [
   { value: "admin", label: "Admin" },
@@ -75,6 +77,8 @@ const adminNavItems = [
   { key: "water", label: "Water Settings", icon: Settings, desc: "Tariffs, due dates, penalties, and discounts" },
   { key: "analytics", label: "Water Analytics", icon: BarChart3, desc: "Water billing analytics and summaries" },
   { key: "loans", label: "Loan Analytics", icon: Banknote, desc: "Capital, interest profit, collections, and outstanding" },
+  { key: "expenses", label: "Expenses", icon: Wallet, desc: "Log pipe repairs, utilities, office costs, and disbursements" },
+  { key: "reports", label: "Reports", icon: FileBarChart, desc: "Financial reports across expenses and loans" },
 ];
 
 export default function AdminDashboard() {
@@ -364,6 +368,12 @@ export default function AdminDashboard() {
 
         {/* Loan Analytics Tab */}
         {activeTab === "loans" && <LoanAnalyticsPanel />}
+
+        {/* Expenses Tab */}
+        {activeTab === "expenses" && <ExpensesPanel />}
+
+        {/* Reports Tab */}
+        {activeTab === "reports" && <ReportsPanel />}
       </div>
 
       {/* User Add/Edit Modal */}
