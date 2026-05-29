@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import DashboardLayout from "../../components/DashboardLayout";
-import { Users, Settings, BarChart3, Banknote, Wallet, FileBarChart, UserCog, Coins, ScrollText, ShieldCheck, Inbox, CalendarClock, Megaphone } from "lucide-react";
+import { Users, Settings, BarChart3, Banknote, Wallet, FileBarChart, UserCog, Coins, ScrollText, ShieldCheck, Inbox, CalendarClock, Megaphone, Boxes } from "lucide-react";
 import Card from "../../components/Card";
 import Modal from "../../components/Modal";
 import { apiFetch } from "../../lib/api";
@@ -17,6 +17,7 @@ import SecurityPanel from "./SecurityPanel";
 import RequestsPanel from "./RequestsPanel";
 import MeetingsPanel from "./MeetingsPanel";
 import AnnouncementsPanel from "./AnnouncementsPanel";
+import AssetsPanel from "./AssetsPanel";
 
 const ROLE_OPTIONS = [
   { value: "admin", label: "Admin" },
@@ -92,6 +93,7 @@ const adminNavItems = [
   { key: "requests", label: "Requests", icon: Inbox, desc: "New connection & reconnection requests from the public" },
   { key: "meetings", label: "Meetings", icon: CalendarClock, desc: "Schedule meetings shown on staff dashboards" },
   { key: "announcements", label: "Announcements", icon: Megaphone, desc: "Post announcements to the public homepage" },
+  { key: "assets", label: "Inventory", icon: Boxes, desc: "Equipment & device inventory with 6-month audits" },
   { key: "security", label: "Security", icon: ShieldCheck, desc: "Two-factor authentication and access controls" },
 ];
 
@@ -409,6 +411,9 @@ export default function AdminDashboard() {
 
         {/* Announcements Tab */}
         {activeTab === "announcements" && <AnnouncementsPanel />}
+
+        {/* Asset Inventory Tab */}
+        {activeTab === "assets" && <AssetsPanel />}
       </div>
 
       {/* User Add/Edit Modal */}
