@@ -8,6 +8,7 @@ const AuditLogSchema = new mongoose.Schema(
     method: { type: String, default: "" },
     path: { type: String, default: "" },
     action: { type: String, default: "" }, // human-friendly label
+    category: { type: String, default: "general", index: true }, // session | security | general
     statusCode: { type: Number, default: 0 },
     ip: { type: String, default: "" },
     meta: { type: Object },

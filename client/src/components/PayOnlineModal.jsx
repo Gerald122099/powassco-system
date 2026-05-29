@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import Modal from "./Modal";
 import { apiFetch } from "../lib/api";
-import { CheckCircle2 } from "lucide-react";
+import { fileToResizedDataUrl } from "../lib/imageResize";
+import { CheckCircle2, ImagePlus } from "lucide-react";
 
 function peso(n) {
   return "₱" + Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -13,16 +14,23 @@ export default function PayOnlineModal({ open, target, onClose }) {
   const [info, setInfo] = useState(null);
   const [referenceId, setReferenceId] = useState("");
   const [payerName, setPayerName] = useState("");
-  const [payerPhone, setPayerPhone] = useState("");
+  const [receiptImage, setReceiptImage] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [done, setDone] = useState("");
 
   useEffect(() => {
     if (!open) return;
-    setErr(""); setDone(""); setReferenceId(""); setPayerName(""); setPayerPhone("");
+    setErr(""); setDone(""); setReferenceId(""); setPayerName(""); setReceiptImage("");
     apiFetch("/public/payments/info").then(setInfo).catch((e) => setErr(e.message));
   }, [open]);
+
+  async function onPickReceipt(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try { setReceiptImage(await fileToResizedDataUrl(file, 1000, 0.7)); }
+    catch (e2) { setErr(e2.message); }
+  }
 
   if (!target) return null;
   const dueRounded = Math.ceil(Number(target.amountDue) || 0);
@@ -33,6 +41,7 @@ export default function PayOnlineModal({ open, target, onClose }) {
   async function submit(e) {
     e.preventDefault();
     if (!referenceId.trim()) return setErr("Enter your payment reference / transaction ID.");
+    if (!receiptImage) return setErr("Please attach a screenshot of your payment receipt.");
     setErr(""); setBusy(true);
     try {
       const body = {
@@ -41,7 +50,7 @@ export default function PayOnlineModal({ open, target, onClose }) {
         amountPaid: totalToPay,
         amountDue: dueRounded,
         payerName,
-        payerPhone,
+        receiptImage,
         ...(target.module === "water"
           ? { pnNo: target.pnNo, meterNumber: target.meterNumber, periodKey: target.periodKey }
           : { loanId: target.loanId }),
@@ -94,9 +103,19 @@ export default function PayOnlineModal({ open, target, onClose }) {
             <label className="text-xs font-semibold text-slate-600">Reference / Transaction ID *</label>
             <input value={referenceId} onChange={(e) => setReferenceId(e.target.value)} placeholder="From your GCash/Maya/bank receipt" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100" />
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <input value={payerName} onChange={(e) => setPayerName(e.target.value)} placeholder="Your name" className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm" />
-            <input value={payerPhone} onChange={(e) => setPayerPhone(e.target.value)} placeholder="Contact no." className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm" />
+          <div>
+            <label className="text-xs font-semibold text-slate-600">Account name of sender</label>
+            <input value={payerName} onChange={(e) => setPayerName(e.target.value)} placeholder="Name on your GCash/Maya/bank account" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100" />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-slate-600">Receipt screenshot *</label>
+            <div className="mt-1 flex items-center gap-3">
+              <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold hover:bg-slate-50">
+                <ImagePlus size={16} /> {receiptImage ? "Change" : "Attach receipt"}
+                <input type="file" accept="image/*" className="hidden" onChange={onPickReceipt} />
+              </label>
+              {receiptImage && <img src={receiptImage} alt="receipt" className="h-14 w-14 rounded-lg border border-slate-200 object-cover" />}
+            </div>
           </div>
 
           {err && <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{err}</div>}

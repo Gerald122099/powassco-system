@@ -6,6 +6,7 @@ import { authenticator } from "otplib";
 import { z } from "zod";
 import User from "../models/User.js";
 import AuthSettings from "../models/AuthSettings.js";
+import AuditLog from "../models/AuditLog.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
 const router = express.Router();
@@ -181,6 +182,112 @@ router.post("/2fa/admin/reset/:userId", requireAuth, requireRole(["admin"]), asy
   u.twoFactorPendingSecret = "";
   u.knownDevices = [];
   await u.save();
+  res.json({ ok: true });
+});
+
+// ---- Recovery (backup) codes ----
+function genRecoveryCodes(n = 10) {
+  const codes = [];
+  for (let i = 0; i < n; i++) {
+    const raw = crypto.randomBytes(4).toString("hex").toUpperCase(); // 8 hex chars
+    codes.push(`${raw.slice(0, 4)}-${raw.slice(4)}`);
+  }
+  return codes;
+}
+const normCode = (c) => String(c || "").toUpperCase().replace(/[\s-]/g, "");
+const hashCode = (c) => sha256(normCode(c));
+
+async function auditSecurity(req, user, action, statusCode = 200) {
+  try {
+    await AuditLog.create({
+      actorId: String(user?._id || ""),
+      actorName: user?.fullName || req.body?.employeeId || "unknown",
+      actorRole: user?.role || "auth",
+      method: req.method,
+      path: (req.originalUrl || req.path).split("?")[0],
+      action,
+      category: "security",
+      statusCode,
+      ip: (req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "").toString().split(",")[0].trim(),
+    });
+  } catch {
+    /* best-effort */
+  }
+}
+
+// Generate fresh codes for the signed-in user (shown once, store securely).
+router.post("/2fa/recovery-codes", requireAuth, async (req, res) => {
+  const codes = genRecoveryCodes();
+  req.user.recoveryCodes = codes.map((c) => ({ codeHash: hashCode(c), used: false }));
+  await req.user.save();
+  res.json({ codes });
+});
+
+// Admin generates codes for any account (incl. admins).
+router.post("/2fa/admin/recovery-codes/:userId", requireAuth, requireRole(["admin"]), async (req, res) => {
+  const u = await User.findById(req.params.userId);
+  if (!u) return res.status(404).json({ message: "User not found." });
+  const codes = genRecoveryCodes();
+  u.recoveryCodes = codes.map((c) => ({ codeHash: hashCode(c), used: false }));
+  await u.save();
+  res.json({ codes, employeeId: u.employeeId, fullName: u.fullName });
+});
+
+// Use a recovery code to reset 2FA (authenticator lost). Public.
+router.post("/recover-2fa", async (req, res) => {
+  const { employeeId, code } = req.body || {};
+  if (!employeeId || !code) return res.status(400).json({ message: "Employee ID and recovery code are required." });
+  const user = await User.findOne({ employeeId: String(employeeId).trim() });
+  if (user) {
+    const h = hashCode(code);
+    const rc = (user.recoveryCodes || []).find((x) => x.codeHash === h && !x.used);
+    if (rc) {
+      rc.used = true;
+      rc.usedAt = new Date();
+      user.twoFactorEnabled = false;
+      user.twoFactorSecret = "";
+      user.twoFactorPendingSecret = "";
+      user.knownDevices = [];
+      await user.save();
+      await auditSecurity(req, user, "2FA reset via recovery code");
+      return res.json({ ok: true, message: "Recovery successful. 2FA has been reset — log in and set it up again." });
+    }
+  }
+  await auditSecurity(req, user, "Failed 2FA recovery attempt", 401);
+  return res.status(401).json({ message: "Invalid employee ID or recovery code." });
+});
+
+// Reset password using a 2FA code or a recovery code. Public (no email needed).
+router.post("/reset-password-2fa", async (req, res) => {
+  const { employeeId, code, newPassword } = req.body || {};
+  if (!employeeId || !code || !newPassword) return res.status(400).json({ message: "All fields are required." });
+  if (String(newPassword).length < 6) return res.status(400).json({ message: "Password must be at least 6 characters." });
+  const user = await User.findOne({ employeeId: String(employeeId).trim() });
+  if (!user || !user.twoFactorEnabled) {
+    return res.status(400).json({ message: "Password self-reset requires 2FA on the account. Please contact the admin." });
+  }
+  let ok = authenticator.verify({ token: String(code).replace(/\s/g, ""), secret: user.twoFactorSecret });
+  if (!ok) {
+    const h = hashCode(code);
+    const rc = (user.recoveryCodes || []).find((x) => x.codeHash === h && !x.used);
+    if (rc) {
+      rc.used = true;
+      rc.usedAt = new Date();
+      ok = true;
+    }
+  }
+  if (!ok) {
+    await auditSecurity(req, user, "Failed password reset (bad 2FA/recovery code)", 401);
+    return res.status(401).json({ message: "Invalid code." });
+  }
+  user.passwordHash = await bcrypt.hash(String(newPassword), 10);
+  await user.save();
+  await auditSecurity(req, user, "Password reset via 2FA", 200);
+  res.json({ ok: true, message: "Password updated. You can now log in." });
+});
+
+// Logout — recorded by the audit logger (session category).
+router.post("/logout", requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 

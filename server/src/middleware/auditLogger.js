@@ -28,9 +28,20 @@ const LABELS = [
 
 function labelFor(method, path) {
   if (/^\/api\/auth\/login/.test(path)) return "Logged in";
+  if (/^\/api\/auth\/logout/.test(path)) return "Logged out";
+  if (/^\/api\/auth\/2fa\/enable/.test(path)) return "Enabled 2FA";
+  if (/^\/api\/auth\/2fa\/disable/.test(path)) return "Disabled 2FA";
+  if (/^\/api\/auth\/2fa\/admin\/reset/.test(path)) return "Admin reset a user's 2FA";
+  if (/^\/api\/auth\/2fa\/recovery-codes|^\/api\/auth\/2fa\/admin\/recovery-codes/.test(path)) return "Generated recovery codes";
   const verb = method === "POST" ? "Create" : method === "DELETE" ? "Delete" : "Update";
   const hit = LABELS.find(([re]) => re.test(path));
   return hit ? `${verb}: ${hit[1]}` : `${verb} ${path}`;
+}
+
+function categoryFor(path) {
+  if (/^\/api\/auth\/(login|logout)/.test(path)) return "session";
+  if (/^\/api\/auth\/2fa|^\/api\/auth\/recover|^\/api\/auth\/reset-password|^\/api\/users/.test(path)) return "security";
+  return "general";
 }
 
 function sanitize(body) {
@@ -63,6 +74,7 @@ export function auditLogger(req, res, next) {
       method: req.method,
       path: (req.originalUrl || req.path).split("?")[0],
       action: labelFor(req.method, req.path),
+      category: categoryFor(req.path),
       statusCode: res.statusCode,
       ip: (req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "").toString().split(",")[0].trim(),
       meta,

@@ -28,6 +28,7 @@ export default function AuditLogPanel() {
   const [q, setQ] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [category, setCategory] = useState("");
   const [page, setPage] = useState(1);
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
@@ -40,7 +41,7 @@ export default function AuditLogPanel() {
     setLoading(true);
     setErr("");
     try {
-      const qs = new URLSearchParams({ q, from, to, page: String(page), limit: String(PAGE_SIZE) });
+      const qs = new URLSearchParams({ q, from, to, category, page: String(page), limit: String(PAGE_SIZE) });
       const data = await apiFetch(`/audit?${qs}`, { token });
       setItems(data.items || []);
       setTotal(data.total || 0);
@@ -52,7 +53,7 @@ export default function AuditLogPanel() {
   }
   useEffect(() => {
     load(); /* eslint-disable-next-line */
-  }, [q, from, to, page]);
+  }, [q, from, to, category, page]);
 
   return (
     <Card>
@@ -62,7 +63,16 @@ export default function AuditLogPanel() {
           <div className="mt-0.5 text-sm text-slate-500">Who did what, and when — across the whole system.</div>
         </div>
         <div className="flex flex-wrap items-end gap-2">
-          <input value={q} onChange={(e) => { setPage(1); setQ(e.target.value); }} placeholder="Search actor / action / path" className="w-full sm:w-64 rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100" />
+          <input value={q} onChange={(e) => { setPage(1); setQ(e.target.value); }} placeholder="Search actor / action / path" className="w-full sm:w-56 rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100" />
+          <div>
+            <label className="block text-xs font-semibold text-slate-600">View</label>
+            <select value={category} onChange={(e) => { setPage(1); setCategory(e.target.value); }} className="rounded-xl border border-slate-200 px-3 py-2 text-sm">
+              <option value="">All activity</option>
+              <option value="session">Logins &amp; Logouts</option>
+              <option value="security">Security events</option>
+              <option value="general">General</option>
+            </select>
+          </div>
           <div>
             <label className="block text-xs font-semibold text-slate-600">From</label>
             <input type="date" value={from} onChange={(e) => { setPage(1); setFrom(e.target.value); }} className="rounded-xl border border-slate-200 px-3 py-2 text-sm" />
@@ -95,7 +105,7 @@ export default function AuditLogPanel() {
               <tr><td colSpan={5} className="py-10 text-center text-slate-500">No activity found.</td></tr>
             ) : (
               items.map((row) => (
-                <tr key={row._id} className="border-t align-top hover:bg-slate-50/60">
+                <tr key={row._id} className={`border-t align-top hover:bg-slate-50/60 ${row.category === "security" ? "bg-red-50/40" : row.category === "session" ? "bg-blue-50/30" : ""}`}>
                   <td className="px-4 py-3 whitespace-nowrap text-slate-600">{when(row.createdAt)}</td>
                   <td className="px-4 py-3">
                     <div className="font-semibold text-slate-800">{row.actorName}</div>

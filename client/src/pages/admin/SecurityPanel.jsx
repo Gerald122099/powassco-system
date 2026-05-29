@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Card from "../../components/Card";
+import Modal from "../../components/Modal";
 import { apiFetch } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
-import { ShieldCheck, RefreshCw, KeyRound } from "lucide-react";
+import { ShieldCheck, RefreshCw, KeyRound, ListChecks, Printer } from "lucide-react";
 
 export default function SecurityPanel() {
   const { token } = useAuth();
@@ -14,6 +15,7 @@ export default function SecurityPanel() {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState("");
   const [err, setErr] = useState("");
+  const [codesModal, setCodesModal] = useState(null); // { fullName, employeeId, codes }
 
   const flash = (m) => {
     setToast(m);
@@ -63,6 +65,34 @@ export default function SecurityPanel() {
     } catch (e) {
       setErr(e.message);
     }
+  }
+
+  async function genCodes(u) {
+    if (!confirm(`Generate new recovery codes for ${u.fullName}? This replaces any previous codes.`)) return;
+    try {
+      const res = await apiFetch(`/auth/2fa/admin/recovery-codes/${u._id}`, { method: "POST", token });
+      setCodesModal({ fullName: u.fullName, employeeId: u.employeeId, codes: res.codes || [] });
+    } catch (e) {
+      setErr(e.message);
+    }
+  }
+
+  function printCodes() {
+    if (!codesModal) return;
+    const w = window.open("", "_blank", "width=520,height=640");
+    if (!w) return alert("Allow pop-ups to print.");
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"/><title>Recovery Codes</title>
+      <style>@page{size:A5;margin:14mm}body{font-family:Arial,sans-serif;color:#0f172a}
+      h1{font-size:16px;color:#166534}.muted{color:#475569;font-size:12px}
+      .code{font-family:monospace;font-size:18px;letter-spacing:1px;border:1px solid #cbd5e1;border-radius:8px;padding:8px 12px;margin:6px 0;text-align:center}
+      .warn{margin-top:12px;font-size:11px;color:#b91c1c}</style></head><body>
+      <h1>POWASSCO — 2FA Recovery Codes</h1>
+      <div class="muted">${codesModal.fullName} (${codesModal.employeeId}) • Generated ${new Date().toLocaleString()}</div>
+      <div style="margin-top:12px">${codesModal.codes.map((c) => `<div class="code">${c}</div>`).join("")}</div>
+      <div class="warn">Each code works ONCE to reset 2FA if the authenticator is lost. Keep this sheet in a secure storage box. Do not share.</div>
+      </body></html>`);
+    w.document.close();
+    setTimeout(() => { w.focus(); w.print(); }, 200);
   }
 
   return (
@@ -125,7 +155,8 @@ export default function SecurityPanel() {
                   <tr key={u._id} className="border-t hover:bg-slate-50/60">
                     <td className="px-4 py-3"><div className="font-semibold text-slate-800">{u.fullName}</div><div className="text-xs text-slate-500">{u.employeeId}</div></td>
                     <td className="px-4 py-3 text-slate-600">{u.role}</td>
-                    <td className="px-4 py-3 text-right">
+                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                      <button onClick={() => genCodes(u)} className="mr-1 inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"><ListChecks size={13} /> Recovery codes</button>
                       <button onClick={() => reset2FA(u)} className="rounded-lg border border-amber-200 px-3 py-1.5 text-xs font-semibold text-amber-700 hover:bg-amber-50">Reset 2FA</button>
                     </td>
                   </tr>
@@ -134,7 +165,31 @@ export default function SecurityPanel() {
             </tbody>
           </table>
         </div>
+
+        <p className="mt-3 text-xs text-slate-400">
+          Recovery codes are shown once — print and store them in a secure box. They let a user reset 2FA if their authenticator is lost.
+        </p>
       </div>
+
+      {/* Recovery codes (shown once) */}
+      <Modal open={!!codesModal} title="Recovery Codes" subtitle={codesModal ? `${codesModal.fullName} (${codesModal.employeeId})` : ""} onClose={() => setCodesModal(null)} size="sm">
+        {codesModal && (
+          <div className="space-y-3">
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              These codes are shown <b>only now</b>. Each works once to reset 2FA. Print and keep them in a secure storage box.
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {codesModal.codes.map((c) => (
+                <div key={c} className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-center font-mono text-sm tracking-wider">{c}</div>
+              ))}
+            </div>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setCodesModal(null)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold">Close</button>
+              <button onClick={printCodes} className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700"><Printer size={16} /> Print</button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </Card>
   );
 }

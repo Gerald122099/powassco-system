@@ -102,10 +102,15 @@ export default function OnlinePaymentsPanel({ module }) {
                     Ref: <span className="font-mono font-semibold">{p.referenceId}</span> • Paid {peso(p.amountToPay)} (due {peso(p.amountDue)} + fee {peso(p.fee)})
                   </div>
                   <div className="text-xs text-slate-400">
-                    {p.payerName || "—"} {p.payerPhone ? `• ${p.payerPhone}` : ""} • submitted {when(p.createdAt)}
+                    Sender: {p.payerName || "—"} • submitted {when(p.createdAt)}
                     {p.orNo ? ` • OR ${p.orNo}` : ""}{p.verifiedBy ? ` • by ${p.verifiedBy}` : ""}
                     {p.rejectionReason ? ` • ${p.rejectionReason}` : ""}
                   </div>
+                  {p.receiptImage && (
+                    <a href={p.receiptImage} target="_blank" rel="noreferrer" className="mt-2 inline-block">
+                      <img src={p.receiptImage} alt="receipt" className="h-20 w-20 rounded-lg border border-slate-200 object-cover hover:opacity-90" title="Open receipt screenshot" />
+                    </a>
+                  )}
                 </div>
                 {p.status === "pending" && (
                   <div className="flex shrink-0 flex-col items-end gap-1.5">

@@ -29,6 +29,17 @@ const UserSchema = new mongoose.Schema(
       ],
       default: [],
     },
+    // Single-use backup/recovery codes (hashed) — used if the authenticator is lost.
+    recoveryCodes: {
+      type: [
+        {
+          codeHash: { type: String },
+          used: { type: Boolean, default: false },
+          usedAt: { type: Date },
+        },
+      ],
+      default: [],
+    },
   },
   { timestamps: true }
 );

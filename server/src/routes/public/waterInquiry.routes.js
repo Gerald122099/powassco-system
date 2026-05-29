@@ -4,6 +4,7 @@ import WaterBill from "../../models/WaterBill.js";
 import WaterPayment from "../../models/WaterPayment.js";
 import LoanApplication from "../../models/LoanApplication.js";
 import LoanPayment from "../../models/LoanPayment.js";
+import OnlinePayment from "../../models/OnlinePayment.js";
 
 const router = express.Router();
 
@@ -220,6 +221,24 @@ router.post("/inquiry", rateLimit, async (req, res) => {
       lpMap.get(p.loanId).push(p);
     }
     const loansWithPayments = loans.map((l) => ({ ...l, payments: lpMap.get(l.loanId) || [] }));
+
+    // Flag bills/loans that already have a pending online payment awaiting review.
+    const pendingOnline = await OnlinePayment.find({
+      status: "pending",
+      $or: [{ pnNo: pn }, { loanId: { $in: loanIds } }],
+    }).select("module meterNumber periodKey loanId").lean();
+    const pendingBillKeys = new Set();
+    const pendingLoanIds = new Set();
+    for (const op of pendingOnline) {
+      if (op.module === "water") pendingBillKeys.add(`${String(op.meterNumber || "").toUpperCase()}|${op.periodKey}`);
+      else if (op.module === "loan") pendingLoanIds.add(op.loanId);
+    }
+    billsDecorated.forEach((b) => {
+      b.onlinePending = pendingBillKeys.has(`${String(b.meterNumber || "").toUpperCase()}|${b.periodCovered}`);
+    });
+    loansWithPayments.forEach((l) => {
+      l.onlinePending = pendingLoanIds.has(l.loanId);
+    });
 
     return res.json({
       member: sanitizedMember,

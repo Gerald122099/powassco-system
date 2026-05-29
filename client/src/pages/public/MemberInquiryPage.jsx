@@ -417,14 +417,17 @@ export default function MemberInquiryPage() {
                                   >
                                     {b.status}
                                   </span>
-                                  {b.status !== "paid" && (
-                                    <button
-                                      onClick={() => setPayTarget({ module: "water", label: `${b.periodCovered} • ${b.meterNumber || ""}`, amountDue: b.totalDue, pnNo: data.member?.pnNo, meterNumber: b.meterNumber, periodKey: b.periodCovered })}
-                                      className="mt-1 block rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700"
-                                    >
-                                      Pay Online
-                                    </button>
-                                  )}
+                                  {b.status !== "paid" &&
+                                    (b.onlinePending ? (
+                                      <span className="mt-1 block rounded-lg bg-blue-50 px-2.5 py-1 text-center text-xs font-semibold text-blue-700">Pending review</span>
+                                    ) : (
+                                      <button
+                                        onClick={() => setPayTarget({ module: "water", label: `${b.periodCovered} • ${b.meterNumber || ""}`, amountDue: b.totalDue, pnNo: data.member?.pnNo, meterNumber: b.meterNumber, periodKey: b.periodCovered })}
+                                        className="mt-1 block rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700"
+                                      >
+                                        Pay Online
+                                      </button>
+                                    ))}
                                 </td>
 
                                 <td className="py-3 px-4">
@@ -516,14 +519,17 @@ export default function MemberInquiryPage() {
                                 >
                                   {ln.status}
                                 </span>
-                                {(ln.balance || 0) > 0 && ln.status === "released" && (
-                                  <button
-                                    onClick={() => setPayTarget({ module: "loan", label: ln.loanId, amountDue: ln.balance, loanId: ln.loanId })}
-                                    className="mt-1 block rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700"
-                                  >
-                                    Pay Online
-                                  </button>
-                                )}
+                                {(ln.balance || 0) > 0 && ln.status === "released" &&
+                                  (ln.onlinePending ? (
+                                    <span className="mt-1 block rounded-lg bg-blue-50 px-2.5 py-1 text-center text-xs font-semibold text-blue-700">Pending review</span>
+                                  ) : (
+                                    <button
+                                      onClick={() => setPayTarget({ module: "loan", label: ln.loanId, amountDue: ln.balance, loanId: ln.loanId })}
+                                      className="mt-1 block rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700"
+                                    >
+                                      Pay Online
+                                    </button>
+                                  ))}
                                 {ln.payments?.length > 0 && (
                                   <button
                                     onClick={() => printLoanReceipt({ loan: ln, payment: ln.payments[0] })}

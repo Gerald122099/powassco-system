@@ -54,6 +54,15 @@ router.post("/submit", async (req, res) => {
     return res.status(409).json({ message: msg });
   }
 
+  // Manual QR requires a receipt screenshot for the officer to verify against.
+  const receiptImage = String(b.receiptImage || "");
+  if (s.mode === "manual" && !receiptImage) {
+    return res.status(400).json({ message: "Please attach a screenshot of your payment receipt." });
+  }
+  if (receiptImage.length > 1500000) {
+    return res.status(413).json({ message: "Receipt image is too large — please use a smaller screenshot." });
+  }
+  const senderName = String(b.payerName || "").trim();
   const fee = Number(s.onlineFee) || 0;
   let doc;
 
@@ -68,7 +77,7 @@ router.post("/submit", async (req, res) => {
     doc = {
       module: "water", billId: bill._id, pnNo, meterNumber, periodKey, accountName: bill.accountName,
       amountDue, fee, amountToPay: amountDue + fee, referenceId,
-      amountPaid: Number(b.amountPaid) || amountDue + fee, payerName: b.payerName || "", payerPhone: b.payerPhone || "",
+      amountPaid: Number(b.amountPaid) || amountDue + fee, payerName: senderName, receiptImage,
     };
   } else if (b.module === "loan") {
     const loanId = String(b.loanId || "").trim();
@@ -79,7 +88,7 @@ router.post("/submit", async (req, res) => {
     doc = {
       module: "loan", applicationId: loan._id, loanId, borrowerName: loan.borrowerName,
       amountDue, fee, amountToPay: amountDue + fee, referenceId,
-      amountPaid: Number(b.amountPaid) || amountDue + fee, payerName: b.payerName || "", payerPhone: b.payerPhone || "",
+      amountPaid: Number(b.amountPaid) || amountDue + fee, payerName: senderName, receiptImage,
     };
   } else {
     return res.status(400).json({ message: "Invalid payment type." });

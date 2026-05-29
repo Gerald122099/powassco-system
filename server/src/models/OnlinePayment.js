@@ -23,8 +23,9 @@ const OnlinePaymentSchema = new mongoose.Schema(
 
     referenceId: { type: String, required: true, unique: true, index: true }, // GCash/Maya/bank ref no. — one record per real transaction
     amountPaid: { type: Number, default: 0 }, // what the payer says they paid
-    payerName: { type: String, default: "" },
+    payerName: { type: String, default: "" }, // account name of the sender
     payerPhone: { type: String, default: "" },
+    receiptImage: { type: String, default: "" }, // base64 screenshot of the payment receipt
 
     status: { type: String, enum: ["pending", "verified", "rejected"], default: "pending", index: true },
     orNo: { type: String, default: "" },

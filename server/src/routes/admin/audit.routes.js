@@ -6,10 +6,11 @@ const router = express.Router();
 const guard = [requireAuth, requireRole(["admin"])];
 
 router.get("/", guard, async (req, res) => {
-  const { q = "", actor = "", action = "", from = "", to = "", page = "1", limit = "25" } = req.query;
+  const { q = "", actor = "", action = "", category = "", from = "", to = "", page = "1", limit = "25" } = req.query;
   const filter = {};
   if (actor) filter.actorName = new RegExp(String(actor).trim(), "i");
   if (action) filter.action = new RegExp(String(action).trim(), "i");
+  if (category) filter.category = category;
   if (q) {
     const rx = new RegExp(String(q).trim(), "i");
     filter.$or = [{ actorName: rx }, { action: rx }, { path: rx }, { actorRole: rx }];

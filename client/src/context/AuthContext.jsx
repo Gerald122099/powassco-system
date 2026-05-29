@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
 
 const AuthCtx = createContext(null);
@@ -54,11 +54,13 @@ export function AuthProvider({ children }) {
 
   // Logout keeps the remembered device so the user isn't re-challenged on their own phone.
   function logout() {
+    // Best-effort audit log of the logout before clearing the session.
+    if (token) apiFetch("/auth/logout", { method: "POST", token }).catch(() => {});
     setToken("");
     setUser(null);
   }
 
-  const value = useMemo(() => ({ token, user, login, logout, verify2FA, storeDeviceToken }), [token, user]);
+  const value = { token, user, login, logout, verify2FA, storeDeviceToken };
 
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
 }
