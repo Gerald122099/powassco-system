@@ -52,6 +52,7 @@ export default function MembersPanel() {
   const [metersModalOpen, setMetersModalOpen] = useState(false);
   const [qrMeter, setQrMeter] = useState(null); // { pnNo, meterNumber, accountName }
   const [genQR, setGenQR] = useState(false);
+  const [manualQR, setManualQR] = useState(null); // { pnNo, meterNumber, accountName }
 
   async function printAllQR() {
     setGenQR(true);
@@ -669,6 +670,14 @@ export default function MembersPanel() {
           </button>
 
           <button
+            onClick={() => { setManualQR({ pnNo: "", meterNumber: "", accountName: "" }); }}
+            className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            title="Generate a QR for a specific (e.g. newly installed) meter"
+          >
+            <QrCode size={16} /> QR by Meter #
+          </button>
+
+          <button
             onClick={openAdd}
             className="rounded-2xl bg-emerald-600 text-white px-4 py-2.5 text-sm font-semibold hover:bg-emerald-700"
           >
@@ -937,6 +946,40 @@ export default function MembersPanel() {
         meterNumber={qrMeter?.meterNumber}
         accountName={qrMeter?.accountName}
       />
+
+      {/* Manual QR by meter # (e.g. newly installed meters) */}
+      <Modal open={!!manualQR} title="Generate Meter QR" subtitle="Enter the account + meter to print its QR" onClose={() => setManualQR(null)} size="sm">
+        {manualQR && (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              const pnNo = manualQR.pnNo.trim().toUpperCase();
+              const meterNumber = manualQR.meterNumber.trim().toUpperCase();
+              if (!pnNo || !meterNumber) return;
+              setQrMeter({ pnNo, meterNumber, accountName: manualQR.accountName.trim() });
+              setManualQR(null);
+            }}
+            className="space-y-3"
+          >
+            <div>
+              <label className="text-xs font-semibold text-slate-600">PN Number</label>
+              <input value={manualQR.pnNo} onChange={(e) => setManualQR((s) => ({ ...s, pnNo: e.target.value }))} placeholder="e.g. PN123" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100" autoFocus />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-600">Meter Number</label>
+              <input value={manualQR.meterNumber} onChange={(e) => setManualQR((s) => ({ ...s, meterNumber: e.target.value }))} placeholder="e.g. MTR456" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100" />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-600">Account Name (optional)</label>
+              <input value={manualQR.accountName} onChange={(e) => setManualQR((s) => ({ ...s, accountName: e.target.value }))} placeholder="Shown on the label" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100" />
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <button type="button" onClick={() => setManualQR(null)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold">Cancel</button>
+              <button type="submit" className="rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700">Generate QR</button>
+            </div>
+          </form>
+        )}
+      </Modal>
 
       {/* Add/Edit Modal - Updated for multiple meters */}
       <Modal open={modalOpen} title={editing ? "Edit Member" : "Add Member"} onClose={() => setModalOpen(false)} size="lg">
