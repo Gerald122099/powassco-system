@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, lazy, Suspense } from "react";
 import Card from "../../../components/Card";
 import Modal from "../../../components/Modal";
-import QRScannerView from "../../../components/QRScannerView";
+const QRScannerView = lazy(() => import("../../../components/QRScannerView"));
 import { useAuth } from "../../../context/AuthContext";
 import { parseMeterQR } from "../../../lib/meterQr";
 import * as odb from "../../../lib/offlineDb";
@@ -425,7 +425,11 @@ export default function FieldModePanel() {
 
       {/* Scanner */}
       <Modal open={scanOpen} title="Scan Meter QR" subtitle="Works offline against your downloaded batch" onClose={() => setScanOpen(false)} size="sm">
-        {scanOpen && <QRScannerView onResult={onScan} onError={(msg) => { setScanErr(msg); setScanOpen(false); }} />}
+        {scanOpen && (
+          <Suspense fallback={<div className="py-6 text-center text-sm text-slate-500">Starting camera…</div>}>
+            <QRScannerView onResult={onScan} onError={(msg) => { setScanErr(msg); setScanOpen(false); }} />
+          </Suspense>
+        )}
         <button onClick={() => setScanOpen(false)} className="mt-3 w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">
           Cancel
         </button>

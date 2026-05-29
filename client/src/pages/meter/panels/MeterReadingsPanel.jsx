@@ -1,12 +1,12 @@
 // MeterReadingsPanel.jsx (COMPLETE with Batch Management Tab and Refresh Events)
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense } from "react";
 import Card from "../../../components/Card";
 import Modal from "../../../components/Modal";
 import { apiFetch } from "../../../lib/api";
 import { useAuth } from "../../../context/AuthContext";
 import { on, emit } from "../../../lib/events"; // Import event system
 import { parseMeterQR } from "../../../lib/meterQr";
-import QRScannerView from "../../../components/QRScannerView";
+const QRScannerView = lazy(() => import("../../../components/QRScannerView"));
 import {
   QrCode,
   Printer,
@@ -1724,7 +1724,9 @@ export default function MeterReadingsPanel() {
         <div className="space-y-4">
           {scanning ? (
             <div className="space-y-3">
-              <QRScannerView onResult={onScanResult} onError={(m) => { setScanErr(m); setScanning(false); }} />
+              <Suspense fallback={<div className="py-6 text-center text-sm text-slate-500">Starting camera…</div>}>
+                <QRScannerView onResult={onScanResult} onError={(m) => { setScanErr(m); setScanning(false); }} />
+              </Suspense>
               <button
                 onClick={() => setScanning(false)}
                 className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
