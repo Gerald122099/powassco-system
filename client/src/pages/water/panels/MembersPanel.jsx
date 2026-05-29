@@ -7,6 +7,7 @@ import { apiFetch } from "../../../lib/api";
 import { useAuth } from "../../../context/AuthContext";
 import { QrCode } from "lucide-react";
 import MeterQRModal from "../../../components/MeterQRModal";
+import { printMeterStickers } from "../../../lib/qrStickerSheet";
 
 const PAGE_SIZE = 12;
 
@@ -50,6 +51,39 @@ export default function MembersPanel() {
   const [viewOpen, setViewOpen] = useState(false);
   const [metersModalOpen, setMetersModalOpen] = useState(false);
   const [qrMeter, setQrMeter] = useState(null); // { pnNo, meterNumber, accountName }
+  const [genQR, setGenQR] = useState(false);
+
+  async function printAllQR() {
+    setGenQR(true);
+    try {
+      const all = [];
+      let pg = 1;
+      let totalCount = Infinity;
+      while (all.length < totalCount && pg <= 200) {
+        const data = await apiFetch(`/water/members?page=${pg}&limit=100`, { token });
+        const batch = data.items || [];
+        all.push(...batch);
+        totalCount = data.total ?? batch.length;
+        if (batch.length === 0) break;
+        pg++;
+      }
+      const meters = [];
+      for (const m of all) {
+        for (const mt of m.meters || []) {
+          if (mt.meterNumber) meters.push({ pnNo: m.pnNo, meterNumber: mt.meterNumber, accountName: m.accountName });
+        }
+      }
+      if (meters.length === 0) {
+        alert("No meters found to generate QR stickers.");
+        return;
+      }
+      await printMeterStickers(meters);
+    } catch (e) {
+      alert("Failed to generate QR stickers: " + e.message);
+    } finally {
+      setGenQR(false);
+    }
+  }
 
   const [editing, setEditing] = useState(null);
   const [viewing, setViewing] = useState(null);
@@ -625,6 +659,15 @@ export default function MembersPanel() {
             <option value="government">Government</option>
           </select>
           
+          <button
+            onClick={printAllQR}
+            disabled={genQR}
+            className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            title="Generate printable QR stickers for every meter"
+          >
+            <QrCode size={16} /> {genQR ? "Generating…" : "QR Stickers"}
+          </button>
+
           <button
             onClick={openAdd}
             className="rounded-2xl bg-emerald-600 text-white px-4 py-2.5 text-sm font-semibold hover:bg-emerald-700"
