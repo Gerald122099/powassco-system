@@ -18,7 +18,7 @@ function MeetingBanner() {
     <div className="mb-4 rounded-2xl border border-blue-200 bg-blue-50 p-4">
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2 text-sm font-bold text-blue-800">
-          <CalendarClock size={16} /> Upcoming Meeting{meetings.length > 1 ? "s" : ""}
+          <CalendarClock size={16} /> Upcoming Schedule
         </div>
         <button onClick={() => setHidden(true)} className="rounded-lg p-1 text-blue-400 hover:bg-blue-100" aria-label="Dismiss">
           <X size={16} />
@@ -27,6 +27,7 @@ function MeetingBanner() {
       <div className="mt-2 space-y-1.5">
         {meetings.map((m) => (
           <div key={m._id} className="text-sm text-slate-700">
+            {m.type && m.type !== "meeting" && <span className="mr-1 rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-blue-700">{m.type}</span>}
             <span className="font-semibold">{new Date(m.datetime).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}</span>
             {" — "}{m.title}
             {m.location ? <span className="text-slate-500"> @ {m.location}</span> : null}

@@ -91,7 +91,7 @@ const adminNavItems = [
   { key: "reports", label: "Reports", icon: FileBarChart, desc: "Financial reports across expenses and loans" },
   { key: "audit", label: "Audit Log", icon: ScrollText, desc: "System activity — who did what, and when" },
   { key: "requests", label: "Requests", icon: Inbox, desc: "New connection & reconnection requests from the public" },
-  { key: "meetings", label: "Meetings", icon: CalendarClock, desc: "Schedule meetings shown on staff dashboards" },
+  { key: "meetings", label: "Calendar & Events", icon: CalendarClock, desc: "Schedule meetings & events shown on staff dashboards" },
   { key: "announcements", label: "Announcements", icon: Megaphone, desc: "Post announcements to the public homepage" },
   { key: "assets", label: "Inventory", icon: Boxes, desc: "Equipment & device inventory with 6-month audits" },
   { key: "security", label: "Security", icon: ShieldCheck, desc: "Two-factor authentication and access controls" },

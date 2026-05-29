@@ -26,10 +26,11 @@ router.get("/", adminGuard, async (req, res) => {
 });
 
 router.post("/", adminGuard, async (req, res) => {
-  const { title, datetime, location, notes, audience } = req.body || {};
+  const { title, type, datetime, location, notes, audience } = req.body || {};
   if (!title || !datetime) return res.status(400).json({ message: "Title and date/time are required." });
   const m = await Meeting.create({
     title: String(title).trim(),
+    type: type || "meeting",
     datetime: new Date(datetime),
     location: location || "",
     notes: notes || "",
@@ -40,7 +41,7 @@ router.post("/", adminGuard, async (req, res) => {
 });
 
 router.put("/:id", adminGuard, async (req, res) => {
-  const allow = ["title", "datetime", "location", "notes", "audience"];
+  const allow = ["title", "type", "datetime", "location", "notes", "audience"];
   const update = {};
   for (const k of allow) if (k in req.body) update[k] = k === "datetime" ? new Date(req.body[k]) : req.body[k];
   const m = await Meeting.findByIdAndUpdate(req.params.id, update, { new: true });

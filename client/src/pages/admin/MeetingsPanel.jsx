@@ -12,7 +12,8 @@ const AUDIENCES = [
   { v: "loan_officer", label: "Loan Officers" },
   { v: "meter_reader", label: "Meter Readers" },
 ];
-const EMPTY = { title: "", datetime: "", location: "", notes: "", audience: "all" };
+const TYPES = ["meeting", "event", "training", "holiday", "deadline", "other"];
+const EMPTY = { title: "", type: "meeting", datetime: "", location: "", notes: "", audience: "all" };
 
 export default function MeetingsPanel() {
   const { token } = useAuth();
@@ -70,8 +71,8 @@ export default function MeetingsPanel() {
     <Card>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2 text-lg font-bold tracking-tight text-slate-900"><CalendarClock size={20} className="text-blue-600" /> Meeting Schedule</div>
-          <div className="mt-0.5 text-sm text-slate-500">Scheduled meetings show on the dashboard of the chosen roles.</div>
+          <div className="flex items-center gap-2 text-lg font-bold tracking-tight text-slate-900"><CalendarClock size={20} className="text-blue-600" /> Calendar &amp; Events</div>
+          <div className="mt-0.5 text-sm text-slate-500">Meetings &amp; events (venue, type, agenda) show on the chosen roles' dashboards.</div>
         </div>
         <button onClick={load} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold hover:bg-slate-50"><RefreshCw size={16} className={loading ? "animate-spin" : ""} /></button>
       </div>
@@ -80,9 +81,15 @@ export default function MeetingsPanel() {
       {toast && <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">{toast}</div>}
 
       <form onSubmit={add} className="mt-5 grid grid-cols-1 gap-3 rounded-2xl border border-slate-200 p-4 sm:grid-cols-2">
-        <div className="sm:col-span-2">
+        <div>
           <label className="text-xs font-semibold text-slate-600">Title</label>
           <input className={inputCls} value={form.title} onChange={(e) => set("title", e.target.value)} placeholder="e.g. General Assembly" />
+        </div>
+        <div>
+          <label className="text-xs font-semibold text-slate-600">Type</label>
+          <select className={inputCls} value={form.type} onChange={(e) => set("type", e.target.value)}>
+            {TYPES.map((t) => <option key={t} value={t} className="capitalize">{t}</option>)}
+          </select>
         </div>
         <div>
           <label className="text-xs font-semibold text-slate-600">Date & Time</label>
@@ -118,7 +125,10 @@ export default function MeetingsPanel() {
             return (
               <div key={m._id} className={`flex items-center justify-between gap-3 rounded-2xl border p-3 ${past ? "border-slate-200 bg-slate-50 opacity-70" : "border-slate-200"}`}>
                 <div>
-                  <div className="font-semibold text-slate-900">{m.title} {past && <span className="text-xs font-normal text-slate-400">(past)</span>}</div>
+                  <div className="font-semibold text-slate-900">
+                    <span className="mr-2 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold capitalize text-blue-700">{m.type || "meeting"}</span>
+                    {m.title} {past && <span className="text-xs font-normal text-slate-400">(past)</span>}
+                  </div>
                   <div className="text-sm text-slate-600">{new Date(m.datetime).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}{m.location ? ` • ${m.location}` : ""}</div>
                   <div className="text-xs text-slate-400">For: {AUDIENCES.find((a) => a.v === m.audience)?.label || m.audience}{m.notes ? ` • ${m.notes}` : ""}</div>
                 </div>
