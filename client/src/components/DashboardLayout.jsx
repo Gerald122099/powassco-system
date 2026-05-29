@@ -1,7 +1,42 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
+import { apiFetch } from "../lib/api";
 import logo from "../assets/logo.png";
-import { LogOut, Eye } from "lucide-react";
+import { LogOut, Eye, CalendarClock, X } from "lucide-react";
+
+function MeetingBanner() {
+  const { token } = useAuth();
+  const [meetings, setMeetings] = useState([]);
+  const [hidden, setHidden] = useState(false);
+
+  useEffect(() => {
+    apiFetch("/meetings/upcoming", { token }).then(setMeetings).catch(() => {});
+  }, [token]);
+
+  if (hidden || meetings.length === 0) return null;
+  return (
+    <div className="mb-4 rounded-2xl border border-blue-200 bg-blue-50 p-4">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-center gap-2 text-sm font-bold text-blue-800">
+          <CalendarClock size={16} /> Upcoming Meeting{meetings.length > 1 ? "s" : ""}
+        </div>
+        <button onClick={() => setHidden(true)} className="rounded-lg p-1 text-blue-400 hover:bg-blue-100" aria-label="Dismiss">
+          <X size={16} />
+        </button>
+      </div>
+      <div className="mt-2 space-y-1.5">
+        {meetings.map((m) => (
+          <div key={m._id} className="text-sm text-slate-700">
+            <span className="font-semibold">{new Date(m.datetime).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}</span>
+            {" — "}{m.title}
+            {m.location ? <span className="text-slate-500"> @ {m.location}</span> : null}
+            {m.notes ? <div className="text-xs text-slate-500">{m.notes}</div> : null}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 const ACCENTS = {
   purple: { active: "bg-purple-600 text-white", avatar: "bg-purple-100 text-purple-700" },
@@ -129,7 +164,10 @@ export default function DashboardLayout({
             </div>
           </div>
         </header>
-        <main className="min-w-0 flex-1 p-4 sm:p-6">{children}</main>
+        <main className="min-w-0 flex-1 p-4 sm:p-6">
+          <MeetingBanner />
+          {children}
+        </main>
       </div>
 
       {/* Eye-comfort screen tint overlay (warm / cool / dim) */}

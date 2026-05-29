@@ -22,6 +22,7 @@ import payrollRoutes from "./routes/admin/payroll.routes.js";
 import auditRoutes from "./routes/admin/audit.routes.js";
 import publicRequestsRoutes from "./routes/public/requests.routes.js";
 import adminRequestsRoutes from "./routes/admin/requests.routes.js";
+import meetingsRoutes from "./routes/meetings.routes.js";
 
 import { auditLogger } from "./middleware/auditLogger.js";
 import { ensureBootstrapAdmin } from "./utils/ensureAdmin.js";
@@ -119,6 +120,7 @@ app.use("/api/employees", employeesRoutes);
 app.use("/api/payroll", payrollRoutes);
 app.use("/api/audit", auditRoutes);
 app.use("/api/requests", adminRequestsRoutes);
+app.use("/api/meetings", meetingsRoutes);
 
 // JSON 404 for unknown routes
 app.use((req, res) => {
