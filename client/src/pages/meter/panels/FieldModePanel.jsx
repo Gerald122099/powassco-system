@@ -6,7 +6,9 @@ import { useAuth } from "../../../context/AuthContext";
 import { parseMeterQR } from "../../../lib/meterQr";
 import * as odb from "../../../lib/offlineDb";
 import { downloadBatch, saveReadingOffline, syncQueue, currentPeriodKey } from "../../../lib/fieldSync";
-import { Wifi, WifiOff, Download, RefreshCw, QrCode, Save, Search, MapPin, CheckCircle, CloudOff } from "lucide-react";
+import { connectPrinter, printerConnected, printWaterReceipt, thermalSupported } from "../../../lib/thermalPrint";
+import { calculateWaterBillLocal } from "../../../lib/waterBillingLocal";
+import { Wifi, WifiOff, Download, RefreshCw, QrCode, Save, Search, MapPin, CheckCircle, CloudOff, Printer, Bluetooth } from "lucide-react";
 
 function fmt(n) {
   return Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 3 });
@@ -39,6 +41,8 @@ export default function FieldModePanel() {
   const [toast, setToast] = useState(null);
   const [scanOpen, setScanOpen] = useState(false);
   const [scanErr, setScanErr] = useState("");
+  const [settings, setSettings] = useState(null);
+  const [printerOn, setPrinterOn] = useState(false);
 
   const flash = (msg, type = "success") => {
     setToast({ msg, type });
@@ -46,13 +50,14 @@ export default function FieldModePanel() {
   };
 
   const refreshLocal = useCallback(async () => {
-    const [m, queue, pk, dAt, sAt, bi] = await Promise.all([
+    const [m, queue, pk, dAt, sAt, bi, st] = await Promise.all([
       odb.getMembers(),
       odb.getQueue(),
       odb.getMeta("periodKey"),
       odb.getMeta("downloadedAt"),
       odb.getMeta("lastSyncAt"),
       odb.getMeta("batchInfo"),
+      odb.getMeta("settings"),
     ]);
     setMembers(m || []);
     setQueueKeys(new Set((queue || []).map((x) => x.id)));
@@ -61,6 +66,7 @@ export default function FieldModePanel() {
     setDownloadedAt(dAt || null);
     setLastSyncAt(sAt || null);
     setBatchInfo(bi || []);
+    setSettings(st || null);
   }, []);
 
   useEffect(() => {
@@ -151,6 +157,42 @@ export default function FieldModePanel() {
     }
   }
 
+  async function connectPrinterUI() {
+    try {
+      const name = await connectPrinter();
+      setPrinterOn(true);
+      flash(`Printer connected: ${name}`, "success");
+    } catch (e) {
+      setPrinterOn(false);
+      flash(e.message, "error");
+    }
+  }
+
+  async function printMeter(member, mt) {
+    const key = `${mnorm(member.pnNo)}__${mnorm(mt.meterNumber)}`;
+    let present = inputs[key];
+    const prev = prevReadingFor(member, mt.meterNumber);
+    if (present === undefined || present === "") {
+      const q = (await odb.getQueue()).find((x) => x.id === key);
+      if (!q) return flash("Enter or save a reading first.", "error");
+      present = q.presentReading;
+    }
+    const pres = parseFloat(present);
+    if (!(pres >= prev)) return flash("Present must be ≥ previous.", "error");
+    const consumed = (pres - prev) * (mt.consumptionMultiplier || 1);
+    const calc = settings
+      ? calculateWaterBillLocal(consumed, member.billing?.classification || "residential", member, mt.meterNumber, settings)
+      : null;
+    try {
+      if (!printerConnected()) await connectPrinter();
+      setPrinterOn(true);
+      await printWaterReceipt({ member, meter: mt, previous: prev, present: pres, consumed, calc, periodKey });
+      flash("Sent to printer.", "success");
+    } catch (e) {
+      flash("Print failed: " + e.message, "error");
+    }
+  }
+
   const onScan = (text) => {
     setScanOpen(false);
     const parsed = parseMeterQR(text);
@@ -211,6 +253,11 @@ export default function FieldModePanel() {
           <button onClick={doSync} disabled={!online || pending === 0} className="inline-flex items-center gap-2 rounded-xl bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-700 disabled:opacity-50">
             {pending > 0 ? <RefreshCw size={16} /> : <CheckCircle size={16} />} {pending > 0 ? `Sync (${pending})` : "Synced"}
           </button>
+          {thermalSupported() && (
+            <button onClick={connectPrinterUI} className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold ${printerOn ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}>
+              <Bluetooth size={16} /> {printerOn ? "Printer ✓" : "Printer"}
+            </button>
+          )}
         </div>
       </div>
 
@@ -304,11 +351,16 @@ export default function FieldModePanel() {
                             value={val}
                             onChange={(e) => setInputs((p) => ({ ...p, [key]: e.target.value }))}
                             placeholder={read ? "encoded" : "present reading"}
-                            className="w-full rounded-lg border border-slate-200 px-2.5 py-2 font-mono text-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+                            className="flex-1 rounded-lg border border-slate-200 px-2.5 py-2 font-mono text-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
                           />
-                          <div className="w-20 shrink-0 text-right text-xs">
+                          <div className="w-16 shrink-0 text-right text-xs">
                             {cons != null ? <span className="font-bold text-purple-700">{fmt(cons)} m³</span> : read ? <CheckCircle size={16} className="ml-auto text-emerald-500" /> : null}
                           </div>
+                          {thermalSupported() && (read || val !== "") && (
+                            <button onClick={() => printMeter(m, mt)} className="shrink-0 rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50" title="Print bill to thermal printer">
+                              <Printer size={14} />
+                            </button>
+                          )}
                         </div>
                       </div>
                     );

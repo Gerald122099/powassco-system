@@ -48,6 +48,14 @@ export async function downloadBatch({ token, user, periodKey = currentPeriodKey(
     page++;
   }
 
+  // Cache tariff settings so the thermal bill can be computed offline.
+  try {
+    const settings = await apiFetch("/water/settings", { token });
+    if (settings) await odb.setMeta("settings", settings);
+  } catch {
+    /* keep any previously cached settings */
+  }
+
   await odb.saveMembers(collected);
   await odb.setMeta("periodKey", periodKey);
   await odb.setMeta("batchInfo", mine.map((b) => ({ batchNumber: b.batchNumber, batchName: b.batchName, area: b.area })));
