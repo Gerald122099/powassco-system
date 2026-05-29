@@ -97,9 +97,17 @@ export default function MeterReadingsPanel() {
   const [validationErrors, setValidationErrors] = useState({});
   const [statusFilter, setStatusFilter] = useState("all");
   const [searchInputValue, setSearchInputValue] = useState("");
+  const [toast, setToast] = useState(null); // { type: "success" | "error", msg }
 
   const receiptRef = useRef();
   const searchTimeoutRef = useRef(null);
+  const toastTimerRef = useRef(null);
+
+  const showToast = (msg, type = "success") => {
+    setToast({ msg, type });
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToast(null), 3500);
+  };
 
   // Check if user can edit
   const canEdit = user?.role === "admin" || user?.role === "water_bill_officer" || user?.role === "meter_reader";
@@ -927,9 +935,9 @@ export default function MeterReadingsPanel() {
       // Emit event to notify BillsPanel to refresh
       emit('readingsImported', { period: periodKey });
       
-      alert(`Saved! ${response.bills?.length || 0} bills generated/updated.`);
+      showToast(`Saved! ${response.bills?.length || 0} bill(s) generated/updated.`, "success");
     } catch (error) {
-      alert("Error saving: " + error.message);
+      showToast("Error saving: " + error.message, "error");
     } finally {
       setLoading(false);
     }
@@ -1014,9 +1022,9 @@ export default function MeterReadingsPanel() {
       emit('readingsImported', { period: periodKey });
       
       setReceiptData(response);
-      alert(`Batch done. Success: ${response.success || 0}, Failed: ${response.failed || 0}`);
+      showToast(`Batch done. Success: ${response.success || 0}, Failed: ${response.failed || 0}`, response.failed ? "error" : "success");
     } catch (e) {
-      alert("Batch error: " + e.message);
+      showToast("Batch error: " + e.message, "error");
     } finally {
       setLoading(false);
     }
@@ -1152,6 +1160,19 @@ export default function MeterReadingsPanel() {
 
   return (
     <Card>
+      {toast && (
+        <div
+          role="status"
+          className={`fixed right-4 top-4 z-[70] flex items-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold shadow-lg animate-modal-pop ${
+            toast.type === "success"
+              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+              : "border-red-200 bg-red-50 text-red-700"
+          }`}
+        >
+          {toast.type === "success" ? <CheckCircle size={18} /> : <AlertCircle size={18} />}
+          {toast.msg}
+        </div>
+      )}
       <div className="mb-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
