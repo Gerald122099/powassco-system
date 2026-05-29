@@ -30,6 +30,7 @@ import adminAnnouncementsRoutes from "./routes/admin/announcements.routes.js";
 import assetsRoutes from "./routes/admin/assets.routes.js";
 import publicPaymentsRoutes from "./routes/public/payments.routes.js";
 import paymentsRoutes from "./routes/payments.routes.js";
+import disconnectionsRoutes from "./routes/disconnections.routes.js";
 
 import { auditLogger } from "./middleware/auditLogger.js";
 import { ensureBootstrapAdmin } from "./utils/ensureAdmin.js";
@@ -138,6 +139,7 @@ app.use("/api/meetings", meetingsRoutes);
 app.use("/api/announcements", adminAnnouncementsRoutes);
 app.use("/api/assets", assetsRoutes);
 app.use("/api/payments", paymentsRoutes);
+app.use("/api/disconnections", disconnectionsRoutes);
 
 // JSON 404 for unknown routes
 app.use((req, res) => {
