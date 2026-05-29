@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 
 export default function BatchManagementPanel() {
-  const { token, user } = useAuth();
+  const { token } = useAuth();
   const [batches, setBatches] = useState([]);
   const [availableMembers, setAvailableMembers] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -51,6 +51,14 @@ export default function BatchManagementPanel() {
     readerId: "",
     area: ""
   });
+  const [readers, setReaders] = useState([]); // meter-reader users (admin only)
+
+  useEffect(() => {
+    // Best-effort: only admins can read /users. Falls back to manual entry.
+    apiFetch("/users", { token })
+      .then((list) => setReaders((Array.isArray(list) ? list : []).filter((u) => u.role === "meter_reader")))
+      .catch(() => setReaders([]));
+  }, [token]);
 
   const loadBatches = async () => {
     setLoading(true);
@@ -542,26 +550,50 @@ export default function BatchManagementPanel() {
               placeholder="e.g., North Area - Juan"
             />
           </div>
-          <div>
-            <label className="text-sm font-semibold text-slate-700">Reader Name *</label>
-            <input
-              type="text"
-              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5"
-              value={newBatch.readerName}
-              onChange={(e) => setNewBatch({ ...newBatch, readerName: e.target.value })}
-              placeholder="e.g., Juan Dela Cruz"
-            />
-          </div>
-          <div>
-            <label className="text-sm font-semibold text-slate-700">Reader ID *</label>
-            <input
-              type="text"
-              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5"
-              value={newBatch.readerId}
-              onChange={(e) => setNewBatch({ ...newBatch, readerId: e.target.value })}
-              placeholder="e.g., RD001"
-            />
-          </div>
+          {readers.length > 0 ? (
+            <div>
+              <label className="text-sm font-semibold text-slate-700">Assign to Reader *</label>
+              <select
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5"
+                value={newBatch.readerId}
+                onChange={(e) => {
+                  const u = readers.find((r) => String(r.employeeId) === e.target.value);
+                  setNewBatch({ ...newBatch, readerId: u?.employeeId || "", readerName: u?.fullName || "" });
+                }}
+              >
+                <option value="">Select meter reader…</option>
+                {readers.map((r) => (
+                  <option key={r._id} value={r.employeeId}>
+                    {r.fullName} ({r.employeeId})
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-slate-500">The reader signs in with this account to download the batch on their phone.</p>
+            </div>
+          ) : (
+            <>
+              <div>
+                <label className="text-sm font-semibold text-slate-700">Reader Name *</label>
+                <input
+                  type="text"
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5"
+                  value={newBatch.readerName}
+                  onChange={(e) => setNewBatch({ ...newBatch, readerName: e.target.value })}
+                  placeholder="e.g., Juan Dela Cruz"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-semibold text-slate-700">Reader ID * (must match the reader's Employee ID)</label>
+                <input
+                  type="text"
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5"
+                  value={newBatch.readerId}
+                  onChange={(e) => setNewBatch({ ...newBatch, readerId: e.target.value })}
+                  placeholder="e.g., RD001"
+                />
+              </div>
+            </>
+          )}
           <div>
             <label className="text-sm font-semibold text-slate-700">Area (Optional)</label>
             <input
