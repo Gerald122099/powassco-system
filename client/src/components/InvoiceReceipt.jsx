@@ -284,8 +284,8 @@ export default function InvoiceReceipt({ bill, payment, onClose, open }) {
           {/* Tariff (if applicable) */}
           {tariffTier && (
             <div className="row">
-              <span>Rate: {tariffTier}</span>
-              <span>@ ₱{tariffRate.toFixed(2)}</span>
+              <span>Tier: {tariffTier}</span>
+              <span>@ ₱{tariffRate.toFixed(2)}/m³</span>
             </div>
           )}
 

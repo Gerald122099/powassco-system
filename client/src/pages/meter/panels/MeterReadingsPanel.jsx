@@ -175,6 +175,15 @@ export default function MeterReadingsPanel() {
     return (member?.meters || []).filter((m) => m?.meterStatus === "active" && m?.isBillingActive === true);
   };
 
+  // Which tariff tier a consumption falls into (mirrors server billing logic).
+  const getTierInfo = (consumption, classification = "residential") => {
+    const tariffs = waterSettings?.tariffs;
+    if (!tariffs || !(consumption > 0)) return null;
+    const arr = classification === "residential" ? tariffs.residential || [] : tariffs.commercial || [];
+    const t = arr.find((x) => x.isActive && consumption >= x.minConsumption && consumption <= x.maxConsumption);
+    return t ? { tier: t.tier, rate: t.ratePerCubic } : null;
+  };
+
   const hasAnyInputForMember = useCallback((member) => {
     const pn = member?.pnNo;
     if (!pn) return false;
@@ -1610,6 +1619,7 @@ export default function MeterReadingsPanel() {
               const consumption = present
                 ? (parseFloat(present) - previousReading) * (meter.consumptionMultiplier || 1)
                 : 0;
+              const tierInfo = getTierInfo(consumption, inputMember.billing?.classification || "residential");
 
               return (
                 <div key={meterKey} className="rounded-2xl border border-slate-200 p-4">
@@ -1668,6 +1678,13 @@ export default function MeterReadingsPanel() {
                       </div>
                     </div>
                   </div>
+
+                  {tierInfo && (
+                    <div className="mt-3 flex items-center justify-between rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs">
+                      <span className="font-semibold text-blue-700">Tariff Tier {tierInfo.tier}</span>
+                      <span className="text-blue-600">₱{formatNumber(tierInfo.rate, 2)}/m³</span>
+                    </div>
+                  )}
                 </div>
               );
             })}
