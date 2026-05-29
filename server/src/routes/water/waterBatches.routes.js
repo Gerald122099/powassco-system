@@ -6,6 +6,7 @@ import WaterMember from "../../models/WaterMember.js";
 import WaterReading from "../../models/WaterReading.js";
 import WaterBill from "../../models/WaterBill.js";
 import { requireAuth, requireRole } from "../../middleware/auth.js";
+import { upsertWaterBill } from "../../utils/waterBillUpsert.js";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from 'url';
@@ -404,7 +405,7 @@ router.get("/:id/export", ...guard, async (req, res) => {
 // IMPORT readings from mobile app (JSON/CSV)
 router.post("/import-readings", ...guard, async (req, res) => {
   try {
-    const { readings, periodKey, readerName, readerId, importDate, forceUpdate = false } = req.body;
+    const { readings, periodKey, readerName, readerId, importDate, forceUpdate = false, generateBill = true } = req.body;
     
     const results = {
       success: 0,
@@ -458,6 +459,31 @@ router.post("/import-readings", ...guard, async (req, res) => {
       allowedPns = new Set();
       for (const b of myBatches) for (const m of b.members || []) if (m?.pnNo) allowedPns.add(String(m.pnNo).toUpperCase());
     }
+
+    // Generate/refresh the official bill from a synced reading (canonical path;
+    // won't overwrite a paid bill). Best-effort: the reading is already saved.
+    const maybeGenerateBill = async (member, reading) => {
+      if (generateBill === false) return;
+      try {
+        await upsertWaterBill({
+          member,
+          periodCovered: periodKey,
+          meterReading: {
+            meterNumber: reading.meterNumber,
+            previousReading: reading.previousReading,
+            presentReading: reading.presentReading,
+            multiplier: reading.consumptionMultiplier || 1,
+          },
+          readingDate: reading.readDate ? new Date(parseInt(reading.readDate)) : new Date(),
+          readerId: actorLabel,
+          remarks: "Field sync",
+          createdBy: actorLabel,
+          forceUpdate: false,
+        });
+      } catch (e) {
+        console.error(`Bill generation failed for ${reading.pnNo}-${reading.meterNumber}:`, e.message);
+      }
+    };
 
     // Group readings by PN to better handle multiple meters
     const readingsByPn = {};
@@ -558,6 +584,7 @@ router.post("/import-readings", ...guard, async (req, res) => {
                 status: "success",
                 message: "Reading updated successfully"
               });
+              await maybeGenerateBill(member, reading);
             } else {
               results.skipped++;
               results.details.push({
@@ -601,6 +628,7 @@ router.post("/import-readings", ...guard, async (req, res) => {
             status: "success",
             message: "Reading imported successfully"
           });
+          await maybeGenerateBill(member, reading);
           
         } catch (error) {
           console.error(`Error importing reading for ${reading.pnNo}-${reading.meterNumber}:`, error);
