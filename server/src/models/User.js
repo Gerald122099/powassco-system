@@ -11,7 +11,24 @@ const UserSchema = new mongoose.Schema(
       default: "water_bill_officer"
     },
     passwordHash: { type: String, required: true },
-    status: { type: String, enum: ["active", "inactive"], default: "active" }
+    status: { type: String, enum: ["active", "inactive"], default: "active" },
+
+    // Two-factor authentication (TOTP / authenticator app)
+    twoFactorEnabled: { type: Boolean, default: false },
+    twoFactorSecret: { type: String, default: "" }, // confirmed base32 secret
+    twoFactorPendingSecret: { type: String, default: "" }, // during setup, before confirm
+    // Remembered devices that have passed 2FA — skip the challenge on these.
+    knownDevices: {
+      type: [
+        {
+          tokenHash: { type: String }, // sha256 of the device token
+          ip: { type: String, default: "" },
+          label: { type: String, default: "" },
+          lastSeen: { type: Date, default: Date.now },
+        },
+      ],
+      default: [],
+    },
   },
   { timestamps: true }
 );

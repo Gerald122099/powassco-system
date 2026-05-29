@@ -18,26 +18,52 @@ export function AuthProvider({ children }) {
     else localStorage.removeItem("pow_user");
   }, [token, user]);
 
+  const getDeviceToken = () => localStorage.getItem("pow_device") || "";
+  const storeDeviceToken = (t) => {
+    if (t) localStorage.setItem("pow_device", t);
+  };
+
+  function applySession(data) {
+    if (data?.token) {
+      setToken(data.token);
+      setUser(data.user);
+    }
+    if (data?.deviceToken) storeDeviceToken(data.deviceToken);
+  }
+
+  // Returns the raw response so the caller can branch on
+  // twoFactorRequired / mustSetup2FA. Only sets the session if a token came back.
   async function login(employeeId, password) {
     const data = await apiFetch("/auth/login", {
       method: "POST",
-      body: { employeeId, password }
+      body: { employeeId, password, deviceToken: getDeviceToken() },
     });
-    setToken(data.token);
-    setUser(data.user);
-    return data.user;
+    if (!data.twoFactorRequired) applySession(data);
+    return data;
   }
 
+  // Completes a new-device login by verifying the authenticator code.
+  async function verify2FA(challengeToken, code, rememberDevice = true) {
+    const data = await apiFetch("/auth/2fa/verify", {
+      method: "POST",
+      body: { challengeToken, code, rememberDevice },
+    });
+    applySession(data);
+    return data;
+  }
+
+  // Logout keeps the remembered device so the user isn't re-challenged on their own phone.
   function logout() {
     setToken("");
     setUser(null);
   }
 
-  const value = useMemo(() => ({ token, user, login, logout }), [token, user]);
+  const value = useMemo(() => ({ token, user, login, logout, verify2FA, storeDeviceToken }), [token, user]);
 
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth() {
   return useContext(AuthCtx);
 }

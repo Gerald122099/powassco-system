@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import LoginPage from "./pages/LoginPage";
 import HomePage from "./pages/public/HomePage";
+import TwoFactorSetup from "./pages/TwoFactorSetup";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import InstallPrompt from "./components/InstallPrompt";
 
@@ -57,6 +58,16 @@ export default function App() {
 
         {/* Role-based home redirect for authenticated users */}
         <Route path="/dashboard" element={<RoleHome />} />
+
+        {/* 2FA enrollment (any logged-in role) */}
+        <Route
+          path="/setup-2fa"
+          element={
+            <Protected>
+              <TwoFactorSetup />
+            </Protected>
+          }
+        />
 
         <Route
           path="/admin"
