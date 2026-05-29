@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import DashboardLayout from "../../components/DashboardLayout";
-import { Users, Settings, BarChart3, Banknote, Wallet, FileBarChart, UserCog, Coins } from "lucide-react";
+import { Users, Settings, BarChart3, Banknote, Wallet, FileBarChart, UserCog, Coins, ScrollText } from "lucide-react";
 import Card from "../../components/Card";
 import Modal from "../../components/Modal";
 import { apiFetch } from "../../lib/api";
@@ -12,6 +12,7 @@ import ExpensesPanel from "./ExpensesPanel";
 import ReportsPanel from "./ReportsPanel";
 import EmployeesPanel from "./EmployeesPanel";
 import PayrollPanel from "./PayrollPanel";
+import AuditLogPanel from "./AuditLogPanel";
 
 const ROLE_OPTIONS = [
   { value: "admin", label: "Admin" },
@@ -83,6 +84,7 @@ const adminNavItems = [
   { key: "employees", label: "Employees", icon: UserCog, desc: "Register staff, profiles, positions, and salary rates" },
   { key: "payroll", label: "Payroll", icon: Coins, desc: "Payslips with SSS, PhilHealth, Pag-IBIG, and withholding tax" },
   { key: "reports", label: "Reports", icon: FileBarChart, desc: "Financial reports across expenses and loans" },
+  { key: "audit", label: "Audit Log", icon: ScrollText, desc: "System activity — who did what, and when" },
 ];
 
 export default function AdminDashboard() {
@@ -384,6 +386,9 @@ export default function AdminDashboard() {
 
         {/* Reports Tab */}
         {activeTab === "reports" && <ReportsPanel />}
+
+        {/* Audit Log Tab */}
+        {activeTab === "audit" && <AuditLogPanel />}
       </div>
 
       {/* User Add/Edit Modal */}

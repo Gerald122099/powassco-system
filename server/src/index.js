@@ -18,7 +18,9 @@ import loanRoutes from "./routes/loan/loans.routes.js";
 import expensesRoutes from "./routes/admin/expenses.routes.js";
 import employeesRoutes from "./routes/admin/employees.routes.js";
 import payrollRoutes from "./routes/admin/payroll.routes.js";
+import auditRoutes from "./routes/admin/audit.routes.js";
 
+import { auditLogger } from "./middleware/auditLogger.js";
 import { ensureBootstrapAdmin } from "./utils/ensureAdmin.js";
 
 dotenv.config();
@@ -67,6 +69,9 @@ app.get("/api/health", (req, res) =>
   })
 );
 
+// Audit every mutating API call (records the authenticated actor on finish)
+app.use(auditLogger);
+
 // auth/users
 app.use("/api/auth", authRoutes);
 app.use("/api/users", usersRoutes);
@@ -84,10 +89,11 @@ app.use("/api/water/batches", waterBatchesRoutes);
 // ✅ LOAN MODULE
 app.use("/api/loan", loanRoutes);
 
-// ✅ ADMIN: EXPENSES / EMPLOYEES / PAYROLL
+// ✅ ADMIN: EXPENSES / EMPLOYEES / PAYROLL / AUDIT
 app.use("/api/expenses", expensesRoutes);
 app.use("/api/employees", employeesRoutes);
 app.use("/api/payroll", payrollRoutes);
+app.use("/api/audit", auditRoutes);
 
 // JSON 404 for unknown routes
 app.use((req, res) => {
