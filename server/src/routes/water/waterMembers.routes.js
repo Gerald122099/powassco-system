@@ -35,7 +35,8 @@ router.get("/", ...guard, async (req, res) => {
       WaterMember.find(filter)
         .sort({ pnNo: 1 })
         .skip(skip)
-        .limit(limit),
+        .limit(limit)
+        .lean(),
       WaterMember.countDocuments(filter),
     ]);
 

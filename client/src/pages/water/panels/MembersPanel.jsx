@@ -37,7 +37,8 @@ function Field({ label, children, required = false }) {
 export default function MembersPanel() {
   const { token } = useAuth();
 
-  const [q, setQ] = useState("");
+  const [q, setQ] = useState(""); // debounced query used for fetching
+  const [searchInput, setSearchInput] = useState(""); // immediate input value
   const [page, setPage] = useState(1);
   const [classificationFilter, setClassificationFilter] = useState("");
 
@@ -195,6 +196,15 @@ export default function MembersPanel() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q, page, classificationFilter]);
+
+  // Debounce search: only fetch ~400ms after the user stops typing.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setPage(1);
+      setQ(searchInput.trim());
+    }, 400);
+    return () => clearTimeout(t);
+  }, [searchInput]);
 
   function openAdd() {
     setEditing(null);
@@ -607,11 +617,6 @@ export default function MembersPanel() {
     }
   }
 
-  function onSearchChange(v) {
-    setPage(1);
-    setQ(v);
-  }
-
   // NEW: Get primary meter number for display
   function getPrimaryMeterNumber(member) {
     if (!member.meters || member.meters.length === 0) return "—";
@@ -639,8 +644,8 @@ export default function MembersPanel() {
 
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <input
-            value={q}
-            onChange={(e) => onSearchChange(e.target.value)}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
             placeholder="Search PN No / Account Name"
             className="w-full sm:w-80 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300"
           />
