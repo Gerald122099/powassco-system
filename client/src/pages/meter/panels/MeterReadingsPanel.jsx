@@ -832,6 +832,12 @@ export default function MeterReadingsPanel() {
   const saveReading = async (member) => {
     const pn = member.pnNo;
 
+    // Block new readings while a previous month's bill is unsettled.
+    if (member.priorUnsettledPeriods?.length) {
+      showToast(`Unsettled bill(s) for ${member.priorUnsettledPeriods.join(", ")}. Settle the previous month before encoding a new reading.`, "error");
+      return;
+    }
+
     // Validate all inputs first
     let hasErrors = false;
     (member.activeBillingMeters || []).forEach((meter) => {
@@ -1527,6 +1533,16 @@ export default function MeterReadingsPanel() {
               Period <span className="font-semibold text-slate-700">{periodKey}</span> • Enter the present reading for each meter.
             </div>
 
+            {inputMember.priorUnsettledPeriods?.length > 0 && (
+              <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                <AlertCircle size={18} className="mt-0.5 shrink-0" />
+                <div>
+                  <div className="font-semibold">Previous bill not settled</div>
+                  <div>This account has unpaid bill(s) for {inputMember.priorUnsettledPeriods.join(", ")}. Settle the previous month before encoding a new reading.</div>
+                </div>
+              </div>
+            )}
+
             {(inputMember.activeBillingMeters || getActiveBillingMeters(inputMember)).map((meter) => {
               const pn = inputMember.pnNo;
               const meterKey = safeUpper(meter.meterNumber);
@@ -1614,7 +1630,7 @@ export default function MeterReadingsPanel() {
                   await saveReading(m);
                   setInputMember(null);
                 }}
-                disabled={!canEdit}
+                disabled={!canEdit || inputMember.priorUnsettledPeriods?.length > 0}
                 className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
               >
                 <Save size={16} />

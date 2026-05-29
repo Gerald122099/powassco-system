@@ -28,6 +28,20 @@ function buildAddressText(addr = {}) {
     .join(", ");
 }
 
+// Block a new reading when the account still has unsettled bills from an
+// EARLIER period — the previous month(s) must be paid first. periodKeys are
+// "YYYY-MM" strings, so a lexical $lt comparison is chronological.
+async function priorUnpaidPeriods(pnNo, periodKey) {
+  const bills = await WaterBill.find({
+    pnNo: normPN(pnNo),
+    periodKey: { $lt: periodKey },
+    status: { $in: ["unpaid", "overdue"] },
+  })
+    .select("periodKey")
+    .lean();
+  return [...new Set(bills.map((b) => b.periodKey))].sort();
+}
+
 /**
  * GET /water/readings - Get all readings for a period
  */
@@ -204,6 +218,18 @@ router.get("/members", ...guard, async (req, res) => {
       });
     }
 
+    // Prior-period unsettled bills — used to block new readings until settled.
+    const priorBills = await WaterBill.find({
+      pnNo: { $in: pnNos },
+      periodKey: { $lt: periodKey },
+      status: { $in: ["unpaid", "overdue"] },
+    }).select("pnNo periodKey").lean();
+    const priorUnsettledByPn = new Map();
+    for (const b of priorBills) {
+      if (!priorUnsettledByPn.has(b.pnNo)) priorUnsettledByPn.set(b.pnNo, new Set());
+      priorUnsettledByPn.get(b.pnNo).add(b.periodKey);
+    }
+
     // Process members with enhanced data
     const items = await Promise.all(members.map(async (m) => {
       const activeBillingMeters = (m.meters || []).filter(
@@ -298,7 +324,8 @@ router.get("/members", ...guard, async (req, res) => {
         hasBillForAnyMeter: metersWithBill.length > 0,
         readingWithoutBill: hasAnyReading && memberBills.size === 0,
         billWithoutReading: memberBills.size > 0 && readMeterSet.size === 0,
-        lastActualReadings // Add last actual readings data
+        lastActualReadings, // Add last actual readings data
+        priorUnsettledPeriods: [...(priorUnsettledByPn.get(m.pnNo) || [])].sort(),
       };
     }));
 
@@ -391,6 +418,13 @@ router.post("/", ...readerGuard, async (req, res) => {
 
     const member = await WaterMember.findOne({ pnNo: normPN(pnNo), accountStatus: "active" });
     if (!member) return res.status(404).json({ error: "Member not found or inactive" });
+
+    // Enforce settlement of previous month(s) before encoding a new reading.
+    const unsettled = await priorUnpaidPeriods(member.pnNo, periodKey);
+    if (unsettled.length) {
+      const msg = `Unsettled bill(s) for ${unsettled.join(", ")}. Please settle the previous month's bill before encoding a new reading.`;
+      return res.status(409).json({ message: msg, error: msg, code: "PRIOR_UNPAID", periods: unsettled });
+    }
 
     const billingMeters = (member.meters || []).filter((m) => m.meterStatus === "active" && m.isBillingActive === true);
     const billingSet = new Set(billingMeters.map((m) => normMeter(m.meterNumber)));
@@ -684,6 +718,13 @@ router.post("/batch", ...readerGuard, async (req, res) => {
         if (!member) {
           results.failed++;
           results.details.push({ pnNo, success: false, message: "Member not found" });
+          continue;
+        }
+
+        const unsettled = await priorUnpaidPeriods(member.pnNo, periodKey);
+        if (unsettled.length) {
+          results.failed++;
+          results.details.push({ pnNo, success: false, message: `Unsettled bill(s) for ${unsettled.join(", ")} — settle previous month first` });
           continue;
         }
 
