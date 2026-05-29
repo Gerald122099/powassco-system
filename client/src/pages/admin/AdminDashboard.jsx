@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import DashboardLayout from "../../components/DashboardLayout";
-import { Users, Settings, BarChart3, Banknote, Wallet, FileBarChart } from "lucide-react";
+import { Users, Settings, BarChart3, Banknote, Wallet, FileBarChart, UserCog, Coins } from "lucide-react";
 import Card from "../../components/Card";
 import Modal from "../../components/Modal";
 import { apiFetch } from "../../lib/api";
@@ -10,6 +10,8 @@ import AnalyticsPanel from "../water/panels/AnalyticsPanel";
 import LoanAnalyticsPanel from "../loan/panels/LoanAnalyticsPanel";
 import ExpensesPanel from "./ExpensesPanel";
 import ReportsPanel from "./ReportsPanel";
+import EmployeesPanel from "./EmployeesPanel";
+import PayrollPanel from "./PayrollPanel";
 
 const ROLE_OPTIONS = [
   { value: "admin", label: "Admin" },
@@ -78,6 +80,8 @@ const adminNavItems = [
   { key: "analytics", label: "Water Analytics", icon: BarChart3, desc: "Water billing analytics and summaries" },
   { key: "loans", label: "Loan Analytics", icon: Banknote, desc: "Capital, interest profit, collections, and outstanding" },
   { key: "expenses", label: "Expenses", icon: Wallet, desc: "Log pipe repairs, utilities, office costs, and disbursements" },
+  { key: "employees", label: "Employees", icon: UserCog, desc: "Register staff, profiles, positions, and salary rates" },
+  { key: "payroll", label: "Payroll", icon: Coins, desc: "Payslips with SSS, PhilHealth, Pag-IBIG, and withholding tax" },
   { key: "reports", label: "Reports", icon: FileBarChart, desc: "Financial reports across expenses and loans" },
 ];
 
@@ -371,6 +375,12 @@ export default function AdminDashboard() {
 
         {/* Expenses Tab */}
         {activeTab === "expenses" && <ExpensesPanel />}
+
+        {/* Employees Tab */}
+        {activeTab === "employees" && <EmployeesPanel />}
+
+        {/* Payroll Tab */}
+        {activeTab === "payroll" && <PayrollPanel />}
 
         {/* Reports Tab */}
         {activeTab === "reports" && <ReportsPanel />}
