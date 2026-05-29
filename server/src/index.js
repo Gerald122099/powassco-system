@@ -2,6 +2,7 @@
 import cors from "cors";
 import dotenv from "dotenv";
 import mongoose from "mongoose";
+import rateLimit from "express-rate-limit";
 
 import authRoutes from "./routes/auth.routes.js";
 import usersRoutes from "./routes/users.routes.js";
@@ -26,6 +27,8 @@ import { ensureBootstrapAdmin } from "./utils/ensureAdmin.js";
 dotenv.config();
 
 const app = express();
+// Behind Render's proxy: trust one hop so rate limiting keys on the real client IP.
+app.set("trust proxy", 1);
 app.use(express.json());
 
 // ✅ CORS - allow configured origins. CLIENT_ORIGIN may be a comma-separated list.
@@ -68,6 +71,24 @@ app.get("/api/health", (req, res) =>
     db: mongoose.connection.readyState === 1 ? "connected" : "disconnected",
   })
 );
+
+// ---- Rate limiting (DDoS / brute-force protection) ----
+// Health route above is already matched, so it is never throttled.
+const limiterOpts = {
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many requests. Please slow down and try again shortly." },
+};
+// Strictest on the PUBLIC (unauthenticated) endpoints — the most exposed surface.
+const publicLimiter = rateLimit({ windowMs: 60 * 1000, limit: 40, ...limiterOpts });
+// Brute-force protection on login.
+const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 40, ...limiterOpts });
+// Generous cap on everything else (normal authenticated app usage).
+const generalLimiter = rateLimit({ windowMs: 60 * 1000, limit: 240, ...limiterOpts });
+
+app.use("/api/public", publicLimiter);
+app.use("/api/auth", authLimiter);
+app.use("/api", generalLimiter);
 
 // Audit every mutating API call (records the authenticated actor on finish)
 app.use(auditLogger);
