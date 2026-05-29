@@ -3,6 +3,7 @@ import { useAuth } from "../context/AuthContext";
 import { useState, useEffect } from "react";
 import logo from "../assets/logo.png";
 import { Menu, X, LogOut } from "lucide-react";
+import AnnouncementsBell from "./AnnouncementsBell";
 
 const links = [
   { to: "/", label: "Home" },
@@ -51,6 +52,7 @@ export default function Navbar() {
               {l.label}
             </Link>
           ))}
+          <AnnouncementsBell />
           {user && (
             <button
               onClick={logout}

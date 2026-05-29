@@ -1,4 +1,6 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { apiFetch } from "../../lib/api";
 import Navbar from "../../components/Navbar";
 import logo from "../../assets/logo.png";
 import bg from "../../assets/bg.jpg";
@@ -30,6 +32,34 @@ const trust = [
   { icon: Clock, t: "Anytime access", d: "Inquire and estimate online, 24/7." },
   { icon: Users, t: "Member-owned", d: "A cooperative serving its own community." },
 ];
+
+function HomeAnnouncements() {
+  const [items, setItems] = useState([]);
+  useEffect(() => {
+    apiFetch("/public/announcements").then(setItems).catch(() => {});
+  }, []);
+  if (items.length === 0) return null;
+  return (
+    <section className="mx-auto max-w-6xl px-5 pt-16">
+      <div className="mb-6 text-center">
+        <h2 className="text-2xl font-bold tracking-tight text-slate-900">Announcements</h2>
+        <p className="mt-2 text-slate-500">Latest news and notices from the cooperative.</p>
+      </div>
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        {items.slice(0, 6).map((a) => (
+          <div key={a._id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            {a.image && <img src={a.image} alt="" className="h-40 w-full object-cover" />}
+            <div className="p-4">
+              <div className="font-bold text-slate-900">{a.title}</div>
+              {a.body && <p className="mt-1 text-sm text-slate-600">{a.body}</p>}
+              <div className="mt-2 text-xs text-slate-400">{new Date(a.createdAt).toLocaleDateString()}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
 
 export default function HomePage() {
   return (
@@ -78,6 +108,8 @@ export default function HomePage() {
           ))}
         </div>
       </section>
+
+      <HomeAnnouncements />
 
       {/* Services */}
       <section className="mx-auto max-w-6xl px-5 py-16">

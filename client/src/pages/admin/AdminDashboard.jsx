@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import DashboardLayout from "../../components/DashboardLayout";
-import { Users, Settings, BarChart3, Banknote, Wallet, FileBarChart, UserCog, Coins, ScrollText, ShieldCheck, Inbox, CalendarClock } from "lucide-react";
+import { Users, Settings, BarChart3, Banknote, Wallet, FileBarChart, UserCog, Coins, ScrollText, ShieldCheck, Inbox, CalendarClock, Megaphone } from "lucide-react";
 import Card from "../../components/Card";
 import Modal from "../../components/Modal";
 import { apiFetch } from "../../lib/api";
@@ -16,6 +16,7 @@ import AuditLogPanel from "./AuditLogPanel";
 import SecurityPanel from "./SecurityPanel";
 import RequestsPanel from "./RequestsPanel";
 import MeetingsPanel from "./MeetingsPanel";
+import AnnouncementsPanel from "./AnnouncementsPanel";
 
 const ROLE_OPTIONS = [
   { value: "admin", label: "Admin" },
@@ -90,6 +91,7 @@ const adminNavItems = [
   { key: "audit", label: "Audit Log", icon: ScrollText, desc: "System activity — who did what, and when" },
   { key: "requests", label: "Requests", icon: Inbox, desc: "New connection & reconnection requests from the public" },
   { key: "meetings", label: "Meetings", icon: CalendarClock, desc: "Schedule meetings shown on staff dashboards" },
+  { key: "announcements", label: "Announcements", icon: Megaphone, desc: "Post announcements to the public homepage" },
   { key: "security", label: "Security", icon: ShieldCheck, desc: "Two-factor authentication and access controls" },
 ];
 
@@ -404,6 +406,9 @@ export default function AdminDashboard() {
 
         {/* Meetings Tab */}
         {activeTab === "meetings" && <MeetingsPanel />}
+
+        {/* Announcements Tab */}
+        {activeTab === "announcements" && <AnnouncementsPanel />}
       </div>
 
       {/* User Add/Edit Modal */}

@@ -23,6 +23,8 @@ import auditRoutes from "./routes/admin/audit.routes.js";
 import publicRequestsRoutes from "./routes/public/requests.routes.js";
 import adminRequestsRoutes from "./routes/admin/requests.routes.js";
 import meetingsRoutes from "./routes/meetings.routes.js";
+import publicAnnouncementsRoutes from "./routes/public/announcements.routes.js";
+import adminAnnouncementsRoutes from "./routes/admin/announcements.routes.js";
 
 import { auditLogger } from "./middleware/auditLogger.js";
 import { ensureBootstrapAdmin } from "./utils/ensureAdmin.js";
@@ -32,7 +34,7 @@ dotenv.config();
 const app = express();
 // Behind Render's proxy: trust one hop so rate limiting keys on the real client IP.
 app.set("trust proxy", 1);
-app.use(express.json());
+app.use(express.json({ limit: "3mb" })); // allow base64 announcement images
 
 // ✅ CORS - allow configured origins. CLIENT_ORIGIN may be a comma-separated list.
 const envOrigins = (process.env.CLIENT_ORIGIN || "")
@@ -109,6 +111,7 @@ app.use("/api/water/analytics", waterAnalyticsRoutes);
 app.use("/api/water/readings", waterReadingsRoutes);
 app.use("/api/public/water", waterInquiryRoutes);
 app.use("/api/public/requests", publicRequestsRoutes);
+app.use("/api/public/announcements", publicAnnouncementsRoutes);
 app.use("/api/water/batches", waterBatchesRoutes);
 
 // ✅ LOAN MODULE
@@ -121,6 +124,7 @@ app.use("/api/payroll", payrollRoutes);
 app.use("/api/audit", auditRoutes);
 app.use("/api/requests", adminRequestsRoutes);
 app.use("/api/meetings", meetingsRoutes);
+app.use("/api/announcements", adminAnnouncementsRoutes);
 
 // JSON 404 for unknown routes
 app.use((req, res) => {
