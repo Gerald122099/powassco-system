@@ -47,7 +47,6 @@ export default function MembersPanel() {
   const [total, setTotal] = useState(0);
 
   const [loading, setLoading] = useState(true);
-  const [toast, setToast] = useState("");
 
   const [modalOpen, setModalOpen] = useState(false);
   const [viewOpen, setViewOpen] = useState(false);
@@ -689,12 +688,6 @@ export default function MembersPanel() {
           </button>
         </div>
       </div>
-
-      {toast && (
-        <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
-          {toast}
-        </div>
-      )}
 
       {err && (
         <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">

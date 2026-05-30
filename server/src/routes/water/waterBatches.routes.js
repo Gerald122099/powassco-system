@@ -154,8 +154,14 @@ router.get("/", ...guard, async (req, res) => {
     const batches = await WaterBatch.find({ isActive: true })
       .populate("members", "pnNo accountName meters address billing personal")
       .sort({ batchNumber: 1 });
-    
-    const assignedMemberIds = batches.flatMap(b => b.members.map(m => m._id));
+
+    // Populate returns null for member ids that no longer exist (deleted
+    // accounts still referenced by old batches). Filter so the dashboard
+    // never 500s on a stale reference.
+    for (const b of batches) {
+      b.members = (b.members || []).filter(Boolean);
+    }
+    const assignedMemberIds = batches.flatMap(b => (b.members || []).map(m => m._id));
     const availableMembers = await WaterMember.find({
       _id: { $nin: assignedMemberIds },
       accountStatus: "active"
