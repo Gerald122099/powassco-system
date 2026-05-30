@@ -179,6 +179,22 @@ const MeterSchema = new mongoose.Schema(
       enum: ["active", "inactive", "removed", "under_maintenance", "disconnected"],
       default: "active"
     },
+
+    // Disconnection workflow signals (set by /api/disconnections endpoints).
+    // - disconnectionRemarks  : reason text ("Unpaid water bills", "Unpaid loans", …)
+    // - disconnectedAt / By   : who flipped the meter to disconnected
+    // - reconnectionRequested : set when the account is reactivated after
+    //                           settlement; the meter then appears in the
+    //                           plumber/officer Reconnection queue until a
+    //                           field user marks it physically reconnected.
+    disconnectionRemarks: { type: String, default: "" },
+    disconnectedAt: { type: Date, default: null },
+    disconnectedBy: { type: String, default: "" },
+    reconnectionRequested: { type: Boolean, default: false },
+    reconnectionRequestedAt: { type: Date, default: null },
+    reconnectionRequestedBy: { type: String, default: "" },
+    reconnectedAt: { type: Date, default: null },
+    reconnectedBy: { type: String, default: "" },
     
     // FIXED: Detailed location information
     location: {

@@ -20,10 +20,14 @@ export default function WaterSettingsPanel() {
   // BASIC SETTINGS STATE
   const [penaltyType, setPenaltyType] = useState("flat");
   const [penaltyValue, setPenaltyValue] = useState(0);
-  const [dueDayOfMonth, setDueDayOfMonth] = useState(15);
+  const [dueDayOfMonth, setDueDayOfMonth] = useState(17);
   const [graceDays, setGraceDays] = useState(0);
   const [readingStartDayOfMonth, setReadingStartDayOfMonth] = useState(1);
   const [readingWindowDays, setReadingWindowDays] = useState(7);
+  // NEW: daily-flat penalty engine (Sundays skipped during grace).
+  const [penaltyDailyAmount, setPenaltyDailyAmount] = useState(10);
+  const [penaltyGraceDays, setPenaltyGraceDays] = useState(5);
+  const [penaltyAfterGraceAmount, setPenaltyAfterGraceAmount] = useState(200);
 
   // TARIFF SETTINGS STATE
   const [tariffs, setTariffs] = useState({
@@ -58,6 +62,9 @@ export default function WaterSettingsPanel() {
       graceDays: clamp(graceDays, 0, 60),
       readingStartDayOfMonth: clamp(readingStartDayOfMonth, 1, 31),
       readingWindowDays: clamp(readingWindowDays, 1, 31),
+      penaltyDailyAmount: Math.max(0, Number(penaltyDailyAmount) || 0),
+      penaltyGraceDays: clamp(penaltyGraceDays, 0, 30),
+      penaltyAfterGraceAmount: Math.max(0, Number(penaltyAfterGraceAmount) || 0),
     };
   }, [
     penaltyType,
@@ -66,6 +73,9 @@ export default function WaterSettingsPanel() {
     graceDays,
     readingStartDayOfMonth,
     readingWindowDays,
+    penaltyDailyAmount,
+    penaltyGraceDays,
+    penaltyAfterGraceAmount,
   ]);
 
   // Tariff payload
@@ -142,10 +152,13 @@ export default function WaterSettingsPanel() {
       // Basic settings
       setPenaltyType(data.penaltyType || "flat");
       setPenaltyValue(data.penaltyValue || 0);
-      setDueDayOfMonth(data.dueDayOfMonth ?? 15);
+      setDueDayOfMonth(data.dueDayOfMonth ?? 17);
       setGraceDays(data.graceDays ?? 0);
       setReadingStartDayOfMonth(data.readingStartDayOfMonth ?? 1);
       setReadingWindowDays(data.readingWindowDays ?? 7);
+      setPenaltyDailyAmount(data.penaltyDailyAmount ?? 10);
+      setPenaltyGraceDays(data.penaltyGraceDays ?? 5);
+      setPenaltyAfterGraceAmount(data.penaltyAfterGraceAmount ?? 200);
       
       // Tariff settings with ensured fields
       setTariffs({
@@ -162,10 +175,13 @@ export default function WaterSettingsPanel() {
       setInitial({
         penaltyType: data.penaltyType || "flat",
         penaltyValue: data.penaltyValue || 0,
-        dueDayOfMonth: data.dueDayOfMonth ?? 15,
+        dueDayOfMonth: data.dueDayOfMonth ?? 17,
         graceDays: data.graceDays ?? 0,
         readingStartDayOfMonth: data.readingStartDayOfMonth ?? 1,
         readingWindowDays: data.readingWindowDays ?? 7,
+        penaltyDailyAmount: data.penaltyDailyAmount ?? 10,
+        penaltyGraceDays: data.penaltyGraceDays ?? 5,
+        penaltyAfterGraceAmount: data.penaltyAfterGraceAmount ?? 200,
       });
       
       setTariffInitial({
@@ -517,6 +533,56 @@ export default function WaterSettingsPanel() {
                 <div className="mt-1 text-[11px] text-slate-500">
                   Reading window = Start day + window days
                 </div>
+              </div>
+            </div>
+
+            {/* Daily-flat penalty engine (Sundays skipped during grace) */}
+            <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+              <div className="text-sm font-bold text-amber-900">Disconnection Penalty Schedule</div>
+              <div className="text-xs text-amber-800 mt-0.5">
+                After the due date, ₱<b>{penaltyDailyAmount || 0}</b> is added every working day (Sundays are skipped — the coop is closed). After <b>{penaltyGraceDays || 0}</b> working days, a one-shot ₱<b>{penaltyAfterGraceAmount || 0}</b> is added and the meter is queued for disconnection.
+              </div>
+              <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-slate-700">Daily Penalty (₱)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 bg-white"
+                    value={penaltyDailyAmount}
+                    onChange={(e) => setPenaltyDailyAmount(e.target.value)}
+                  />
+                  <div className="mt-0.5 text-[10px] text-slate-500">Added each working day past due</div>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-700">Grace (working days)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={30}
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 bg-white"
+                    value={penaltyGraceDays}
+                    onChange={(e) => setPenaltyGraceDays(e.target.value)}
+                  />
+                  <div className="mt-0.5 text-[10px] text-slate-500">Sundays not counted</div>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-700">Post-Grace One-Shot (₱)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 bg-white"
+                    value={penaltyAfterGraceAmount}
+                    onChange={(e) => setPenaltyAfterGraceAmount(e.target.value)}
+                  />
+                  <div className="mt-0.5 text-[10px] text-slate-500">Added once grace expires; meter then subject for disconnection</div>
+                </div>
+              </div>
+              <div className="mt-3 text-[11px] text-amber-900">
+                Example with current values — due day 17, daily ₱{penaltyDailyAmount}, grace {penaltyGraceDays} days, post-grace ₱{penaltyAfterGraceAmount}:
+                day-18 = ₱{penaltyDailyAmount}, day-19 = ₱{(penaltyDailyAmount || 0) * 2}, … day-{17 + (penaltyGraceDays || 0)} = ₱{(penaltyDailyAmount || 0) * (penaltyGraceDays || 0)}, then day-{17 + (penaltyGraceDays || 0) + 1} = ₱{(penaltyDailyAmount || 0) * (penaltyGraceDays || 0) + (penaltyAfterGraceAmount || 0)} + queued for disconnection.
               </div>
             </div>
 

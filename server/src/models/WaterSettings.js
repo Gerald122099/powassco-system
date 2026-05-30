@@ -34,12 +34,22 @@ const SeniorDiscountSchema = new mongoose.Schema(
 
 const WaterSettingsSchema = new mongoose.Schema(
   {
-    // BASIC BILLING SETTINGS
+    // Legacy penalty (kept for backwards compatibility; the new engine below
+    // takes precedence when penaltyDailyAmount > 0).
     penaltyType: { type: String, enum: ["flat", "percent"], default: "flat" },
     penaltyValue: { type: Number, required: true, default: 0 },
 
-    // DUE DATE SETTINGS
-    dueDayOfMonth: { type: Number, default: 15, min: 1, max: 31 },
+    // NEW: daily-flat penalty engine. See utils/penalty.js for the rule.
+    //   • penaltyDailyAmount  — per-day flat (₱) added each working day past due
+    //   • penaltyGraceDays    — working days of grace (Sundays excluded)
+    //   • penaltyAfterGraceAmount — one-shot amount after grace; account is
+    //                               then flagged for disconnection.
+    penaltyDailyAmount: { type: Number, default: 10, min: 0 },
+    penaltyGraceDays: { type: Number, default: 5, min: 0, max: 30 },
+    penaltyAfterGraceAmount: { type: Number, default: 200, min: 0 },
+
+    // DUE DATE SETTINGS — default to the 17th per coop policy.
+    dueDayOfMonth: { type: Number, default: 17, min: 1, max: 31 },
     graceDays: { type: Number, default: 0, min: 0, max: 60 },
 
     // METER READING SCHEDULE

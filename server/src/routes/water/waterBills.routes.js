@@ -13,6 +13,7 @@ import WaterSettings from "../../models/WaterSettings.js";
 import { requireAuth, requireRole } from "../../middleware/auth.js";
 import { isPastDue } from "../../utils/waterPeriod.js";
 import { calculateWaterBill } from "../../utils/waterBilling.js";
+import { computeDailyPenalty } from "../../utils/penalty.js";
 
 const router = express.Router();
 const guard = [requireAuth, requireRole(["admin", "water_bill_officer", "meter_reader"])];
@@ -21,19 +22,23 @@ function toMoney(n) {
   return Number((Number(n || 0)).toFixed(2));
 }
 
-function computePenalty(amount, penaltyTypeUsed, penaltyValueUsed) {
+// Legacy single-shot penalty (kept for older bills that didn't carry the
+// daily-flat fields). Used only when penaltyDailyAmount is not configured.
+function computeLegacyPenalty(amount, penaltyTypeUsed, penaltyValueUsed) {
   const base = Number(amount || 0);
   const type = penaltyTypeUsed || "flat";
   const val = Number(penaltyValueUsed || 0);
-
   let p = 0;
   if (type === "percent") p = base * (val / 100);
   else p = val;
-
   return toMoney(Math.max(0, p));
 }
 
-async function ensureOverdueAndPenalty(bill, now = new Date()) {
+// Lazy ensure: flips unpaid→overdue past the due date, recomputes the daily
+// penalty (Sundays skipped), and flags the bill for disconnection when the
+// grace runs out. `subjectForDisconnection` is the read-side signal the
+// /api/disconnections endpoint joins on.
+async function ensureOverdueAndPenalty(bill, now = new Date(), settingsArg = null) {
   if (!bill) return bill;
   if (bill.status === "paid") return bill;
 
@@ -42,16 +47,37 @@ async function ensureOverdueAndPenalty(bill, now = new Date()) {
 
   if (bill.status === "unpaid") bill.status = "overdue";
 
-  const penaltyShouldBe = computePenalty(bill.amount, bill.penaltyTypeUsed, bill.penaltyValueUsed);
-  const totalShouldBe = toMoney(Number(bill.amount || 0) + penaltyShouldBe);
+  const settings = settingsArg || (await WaterSettings.findOne()) || {};
+  const useDaily = Number(settings.penaltyDailyAmount ?? 0) > 0;
 
-  if (Number(bill.penaltyApplied || 0) !== penaltyShouldBe || Number(bill.totalDue || 0) !== totalShouldBe) {
-    bill.penaltyApplied = penaltyShouldBe;
-    bill.totalDue = totalShouldBe;
-    bill.penaltyComputedAt = new Date();
+  let penaltyShouldBe = 0;
+  let subjectForDisconnection = false;
+  let daysOverdue = 0;
+
+  if (useDaily) {
+    const result = computeDailyPenalty(bill.dueDate, settings, now);
+    penaltyShouldBe = toMoney(result.penalty);
+    subjectForDisconnection = result.subjectForDisconnection;
+    daysOverdue = result.daysOverdue;
+  } else {
+    penaltyShouldBe = computeLegacyPenalty(bill.amount, bill.penaltyTypeUsed, bill.penaltyValueUsed);
   }
 
-  await bill.save();
+  const totalShouldBe = toMoney(Number(bill.amount || 0) + penaltyShouldBe);
+  const changed =
+    Number(bill.penaltyApplied || 0) !== penaltyShouldBe ||
+    Number(bill.totalDue || 0) !== totalShouldBe ||
+    !!bill.subjectForDisconnection !== subjectForDisconnection ||
+    Number(bill.daysOverdue || 0) !== daysOverdue;
+
+  if (changed) {
+    bill.penaltyApplied = penaltyShouldBe;
+    bill.totalDue = totalShouldBe;
+    bill.subjectForDisconnection = subjectForDisconnection;
+    bill.daysOverdue = daysOverdue;
+    bill.penaltyComputedAt = new Date();
+    await bill.save();
+  }
   return bill;
 }
 

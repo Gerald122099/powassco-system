@@ -89,6 +89,11 @@ const WaterBillSchema = new mongoose.Schema(
     totalDue: { type: Number, default: 0 },
     dueDate: { type: Date, default: null },
 
+    // Disconnection signals — set by ensureOverdueAndPenalty when grace runs
+    // out so the disconnection queue can join on them.
+    daysOverdue: { type: Number, default: 0 },
+    subjectForDisconnection: { type: Boolean, default: false, index: true },
+
     // ✅ IMPORTANT: include overdue
     status: { type: String, enum: ["unpaid", "overdue", "paid"], default: "unpaid" },
 
