@@ -67,7 +67,10 @@ export default function LoginPage() {
     if (role === "admin") nav("/admin");
     else if (role === "water_bill_officer") nav("/water");
     else if (role === "loan_officer") nav("/loan");
-    else nav("/meter");
+    else if (role === "meter_reader") nav("/meter");
+    else if (role === "plumber") nav("/plumber");
+    else if (role === "cashier") nav("/cashier");
+    else nav("/dashboard");
   }
 
   async function onSubmit(e) {

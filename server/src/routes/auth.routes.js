@@ -24,13 +24,20 @@ function sha256(s) {
 function clientIp(req) {
   return (req.ip || req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "").toString().split(",")[0].trim();
 }
+// Long JWT lifetime so a tab/PWA reopen never lands on the login page during
+// normal use. The actual *security* boundary is the 2-hour device-inactivity
+// window enforced at login time (a stolen-token attacker still needs to clear
+// the 2FA challenge if the device hasn't been used recently).
 function sessionToken(user) {
   return jwt.sign(
     { id: user._id.toString(), employeeId: user.employeeId, role: user.role, fullName: user.fullName },
     process.env.JWT_SECRET,
-    { expiresIn: "8h" }
+    { expiresIn: "30d" }
   );
 }
+// Window during which a remembered device skips the authenticator challenge.
+// Beyond this, the user re-verifies even on a known device.
+const DEVICE_TRUST_WINDOW_MS = 2 * 60 * 60 * 1000; // 2 hours
 function challengeToken(user) {
   return jwt.sign({ id: user._id.toString(), purpose: "2fa" }, process.env.JWT_SECRET, { expiresIn: "5m" });
 }
@@ -74,13 +81,14 @@ router.post("/login", async (req, res) => {
 
   if (user.twoFactorEnabled) {
     const known = deviceKnown(user, deviceToken);
-    if (known) {
+    const recentlyActive = known && (Date.now() - new Date(known.lastSeen || 0).getTime()) < DEVICE_TRUST_WINDOW_MS;
+    if (recentlyActive) {
       known.lastSeen = new Date();
       known.ip = clientIp(req);
       await user.save();
       return res.json({ token: sessionToken(user), user: publicUser(user) });
     }
-    // New device → require the authenticator code.
+    // New device, or trusted device idle > 2h → require the authenticator code.
     return res.json({ twoFactorRequired: true, challengeToken: challengeToken(user) });
   }
 

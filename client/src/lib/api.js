@@ -102,9 +102,15 @@ export async function apiFetch(
   // Keep memory synced
   if (finalToken && finalToken !== globalToken) globalToken = finalToken;
 
+  // The device token lets the server freshen this device's lastSeen on every
+  // authenticated request — keeps users inside the 2-hour 2FA-skip window
+  // while they're actively using the app.
+  const deviceToken = localStorage.getItem("pow_device") || "";
+
   const headers = {
     ...(body ? { "Content-Type": "application/json" } : {}),
     ...(finalToken ? { Authorization: `Bearer ${finalToken}` } : {}),
+    ...(deviceToken ? { "X-Device-Token": deviceToken } : {}),
     ...(extraHeaders || {}),
   };
 
