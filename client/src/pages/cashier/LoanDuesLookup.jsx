@@ -1,0 +1,169 @@
+import { useState } from "react";
+import Card from "../../components/Card";
+import { apiFetch } from "../../lib/api";
+import { useAuth } from "../../context/AuthContext";
+import { Search, Banknote, Printer, Hourglass, CheckCircle } from "lucide-react";
+
+const peso = (n) => "₱" + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtDate = (d) => (d ? new Date(d).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "—");
+
+export default function LoanDuesLookup() {
+  const { token, user } = useAuth();
+  const [q, setQ] = useState("");
+  const [data, setData] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  async function lookup(e) {
+    e?.preventDefault?.();
+    if (!q.trim()) return;
+    setBusy(true);
+    setErr("");
+    setData(null);
+    try {
+      const res = await apiFetch(`/cashier/loan?q=${encodeURIComponent(q.trim())}`, { token });
+      setData(res);
+    } catch (e2) {
+      setErr(e2.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function printSlip(loan) {
+    const w = window.open("", "_blank", "width=520,height=720");
+    if (!w) return alert("Allow pop-ups to print.");
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"/><title>Loan Dues — ${loan.loanId}</title>
+      <style>@page{size:A6;margin:8mm}body{font-family:Arial,sans-serif;color:#0f172a;font-size:12px}
+      h1{font-size:14px;color:#0f766e;margin:0 0 4px}.row{display:flex;justify-content:space-between;margin:2px 0}
+      .total{margin-top:8px;text-align:right;font-weight:bold;font-size:13px}
+      .muted{color:#64748b;font-size:10px}.warn{color:#b91c1c;font-size:10px;margin-top:6px}
+      </style></head><body>
+      <h1>POWASSCO — Loan Dues Slip</h1>
+      <div class="muted">Generated ${new Date().toLocaleString()} by ${user?.fullName || user?.employeeId || ""}</div>
+      <div class="row"><span>Loan ID:</span><b>${loan.loanId}</b></div>
+      ${loan.referenceCode ? `<div class="row"><span>Reference:</span><b>${loan.referenceCode}</b></div>` : ""}
+      <div class="row"><span>Borrower:</span><b>${loan.borrowerName}</b></div>
+      <div class="row"><span>Principal:</span><span>${peso(loan.principal)}</span></div>
+      <div class="row"><span>Monthly:</span><span>${peso(loan.monthlyPayment)}</span></div>
+      <div class="row"><span>Total Paid:</span><span>${peso(loan.totalPaid)}</span></div>
+      <div class="total">OUTSTANDING: ${peso(loan.balance)}</div>
+      <div class="warn">Hand-write the OR number on the official paper receipt. Consumer must bring the OR to the Loan Officer to post the payment.</div>
+      </body></html>`);
+    w.document.close();
+    setTimeout(() => { w.focus(); w.print(); }, 250);
+  }
+
+  return (
+    <Card>
+      <div className="flex items-center gap-2 text-lg font-bold tracking-tight text-slate-900">
+        <Banknote size={20} className="text-emerald-600" /> Loan Dues Lookup
+      </div>
+      <p className="mt-0.5 text-sm text-slate-500">
+        Search by <b>Loan ID</b>, <b>reference code</b>, <b>borrower name</b>, or <b>PN No</b>. Read-only — collect cash, write a paper OR, then send the consumer to the Loan Officer to post it.
+      </p>
+
+      <form onSubmit={lookup} className="mt-4 flex flex-wrap items-stretch gap-2">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="e.g. LN-0042 / REF12345 / Juan Dela Cruz / AST123"
+            className="w-full rounded-xl border border-slate-200 pl-9 pr-3 py-2.5 text-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+          />
+        </div>
+        <button disabled={busy} className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">
+          {busy ? "Searching…" : "Look up"}
+        </button>
+      </form>
+
+      {err && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{err}</div>}
+
+      {data && (
+        <div className="mt-5 space-y-4">
+          {data.loans.map((loan) => {
+            const pendingForThis = (data.pendingOnline || []).filter((o) => o.loanId === loan.loanId);
+            const paymentsForThis = (data.recentPayments || []).filter((p) => p.loanId === loan.loanId);
+            return (
+              <div key={loan.loanId} className="rounded-2xl border border-slate-200 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-base font-bold text-slate-900">{loan.borrowerName}</div>
+                    <div className="text-xs text-slate-500">
+                      <span className="font-mono font-semibold">{loan.loanId}</span>
+                      {loan.referenceCode ? <> • ref <span className="font-mono">{loan.referenceCode}</span></> : null}
+                      {loan.borrowerPnNo ? <> • PN <span className="font-mono">{loan.borrowerPnNo}</span></> : null}
+                    </div>
+                    <div className="mt-1 grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs text-slate-600 sm:grid-cols-4">
+                      <div>Principal: <b className="text-slate-800">{peso(loan.principal)}</b></div>
+                      <div>Monthly: <b className="text-slate-800">{peso(loan.monthlyPayment)}</b></div>
+                      <div>Term: <b className="text-slate-800">{loan.termMonths} mo</b></div>
+                      <div>Interest: <b className="text-slate-800">{loan.interestRatePerMonth}%/mo</b></div>
+                      <div>Released: <b className="text-slate-800">{fmtDate(loan.releasedAt)}</b></div>
+                      <div>Maturity: <b className="text-slate-800">{fmtDate(loan.maturityDate)}</b></div>
+                      <div>Total paid: <b className="text-emerald-700">{peso(loan.totalPaid)}</b></div>
+                      <div>Status: <b className={loan.status === "fully_paid" ? "text-emerald-700" : "text-slate-800"}>{loan.status}</b></div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs text-slate-500">Outstanding balance</div>
+                    <div className="text-2xl font-extrabold text-red-600">{peso(loan.balance)}</div>
+                    <button onClick={() => printSlip(loan)} className="mt-2 inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                      <Printer size={13} /> Print dues slip
+                    </button>
+                  </div>
+                </div>
+
+                {pendingForThis.length > 0 && (
+                  <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    <div className="flex items-center gap-2 font-semibold"><Hourglass size={14}/> Online payment(s) pending review</div>
+                    <ul className="mt-1 list-disc pl-5">
+                      {pendingForThis.map((o) => (
+                        <li key={o.referenceId}>Ref <b>{o.referenceId}</b> — {peso(o.amountToPay)}</li>
+                      ))}
+                    </ul>
+                    <p className="mt-1">Confirm with the Loan Officer before accepting another payment to avoid duplicates.</p>
+                  </div>
+                )}
+
+                {paymentsForThis.length > 0 && (
+                  <div className="mt-3 overflow-auto rounded-xl border border-slate-100">
+                    <table className="w-full text-sm">
+                      <thead className="bg-slate-50 text-left text-xs text-slate-500">
+                        <tr>
+                          <th className="px-3 py-2">Date</th>
+                          <th className="px-3 py-2">OR No</th>
+                          <th className="px-3 py-2 text-right">Amount</th>
+                          <th className="px-3 py-2">Method</th>
+                          <th className="px-3 py-2">Received By</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {paymentsForThis.map((p) => (
+                          <tr key={p._id} className="border-t">
+                            <td className="px-3 py-2 text-xs">{fmtDate(p.paidAt)}</td>
+                            <td className="px-3 py-2 font-mono text-xs">{p.orNo}</td>
+                            <td className="px-3 py-2 text-right">{peso(p.amountPaid)}</td>
+                            <td className="px-3 py-2 text-xs">{p.method || "cash"}</td>
+                            <td className="px-3 py-2 text-xs text-slate-600">{p.receivedBy || "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {loan.status === "fully_paid" && (
+                  <div className="mt-3 inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-1 text-xs font-bold text-emerald-700">
+                    <CheckCircle size={12} /> FULLY PAID
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Card>
+  );
+}

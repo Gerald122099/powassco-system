@@ -1,6 +1,7 @@
 import express from "express";
 import WaterPayment from "../../models/WaterPayment.js";
 import WaterBill from "../../models/WaterBill.js";
+import WaterMember from "../../models/WaterMember.js";
 import { requireAuth, requireRole } from "../../middleware/auth.js";
 
 const router = express.Router();
@@ -18,13 +19,22 @@ router.get("/", ...guard, async (req, res) => {
 
     const filter = {};
     
-    // Search filter
+    // Search filter — PN, OR, classification, meter number, OR account name
+    // (resolved via the members collection to a list of matching pnNos).
     if (q) {
-      filter.$or = [
+      const or = [
         { pnNo: { $regex: q, $options: "i" } },
         { orNo: { $regex: q, $options: "i" } },
+        { meterNumber: { $regex: q, $options: "i" } },
         { "classification": { $regex: q, $options: "i" } },
       ];
+      // Names live on WaterMember, not WaterPayment — resolve them to pnNos.
+      const namedMembers = await WaterMember.find({ accountName: { $regex: q, $options: "i" } })
+        .select("pnNo")
+        .limit(200)
+        .lean();
+      if (namedMembers.length > 0) or.push({ pnNo: { $in: namedMembers.map((m) => m.pnNo) } });
+      filter.$or = or;
     }
 
     // Period filter: find bills for that period and match payment billIds

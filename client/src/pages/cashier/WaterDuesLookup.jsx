@@ -1,0 +1,309 @@
+import { useMemo, useState } from "react";
+import Card from "../../components/Card";
+import { apiFetch } from "../../lib/api";
+import { useAuth } from "../../context/AuthContext";
+import { Search, Droplets, Printer, AlertTriangle, MapPin, CheckCircle, Hourglass, Gauge } from "lucide-react";
+
+const peso = (n) => "₱" + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtDate = (d) => (d ? new Date(d).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "—");
+
+export default function WaterDuesLookup() {
+  const { token, user } = useAuth();
+  const [q, setQ] = useState("");
+  const [data, setData] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  async function lookup(e, override) {
+    e?.preventDefault?.();
+    const term = (override ?? q).trim();
+    if (!term) return;
+    setBusy(true);
+    setErr("");
+    setData(null);
+    try {
+      const res = await apiFetch(`/cashier/water?q=${encodeURIComponent(term)}`, { token });
+      setData(res);
+    } catch (e2) {
+      setErr(e2.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function printSlip(filterMeter = null) {
+    if (!data) return;
+    const w = window.open("", "_blank", "width=520,height=720");
+    if (!w) return alert("Allow pop-ups to print.");
+    const unpaid = (data.bills || []).filter((b) => b.status !== "paid" && (!filterMeter || String(b.meterNumber).toUpperCase() === String(filterMeter).toUpperCase()));
+    const slipTotal = unpaid.reduce((s, b) => s + (Number(b.totalDue) || 0), 0);
+    const rows = unpaid
+      .map(
+        (b) =>
+          `<tr><td>${b.periodCovered || b.periodKey || ""}</td><td>${b.meterNumber || ""}</td><td>${b.status}</td><td style="text-align:right">${peso(b.totalDue)}</td></tr>`
+      )
+      .join("");
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"/><title>Dues Slip — ${data.member.pnNo}</title>
+      <style>@page{size:A6;margin:8mm}body{font-family:Arial,sans-serif;color:#0f172a;font-size:12px}
+      h1{font-size:14px;color:#0f766e;margin:0 0 4px}.row{display:flex;justify-content:space-between;margin:2px 0}
+      table{width:100%;border-collapse:collapse;margin-top:6px;font-size:11px}
+      th,td{border-bottom:1px solid #e2e8f0;padding:4px 6px;text-align:left}
+      .total{margin-top:8px;text-align:right;font-weight:bold;font-size:13px}
+      .muted{color:#64748b;font-size:10px}.warn{color:#b91c1c;font-size:10px;margin-top:6px}
+      </style></head><body>
+      <h1>POWASSCO — Water Dues Slip${filterMeter ? ` (Meter ${filterMeter})` : ""}</h1>
+      <div class="muted">Generated ${new Date().toLocaleString()} by ${user?.fullName || user?.employeeId || ""}</div>
+      <div class="row"><span>PN No:</span><b>${data.member.pnNo}</b></div>
+      <div class="row"><span>Account:</span><b>${data.member.accountName}</b></div>
+      <div class="row"><span>Address:</span><span>${data.member.address || "—"}</span></div>
+      <table><thead><tr><th>Period</th><th>Meter</th><th>Status</th><th style="text-align:right">Amount</th></tr></thead><tbody>${rows || `<tr><td colspan="4" style="text-align:center;color:#64748b">No outstanding dues</td></tr>`}</tbody></table>
+      <div class="total">TOTAL DUE: ${peso(slipTotal)}</div>
+      <div class="warn">Hand-write the OR number on the official paper receipt. Consumer must bring the OR to the Water Bill Officer to post the payment.</div>
+      </body></html>`);
+    w.document.close();
+    setTimeout(() => { w.focus(); w.print(); }, 250);
+  }
+
+  return (
+    <Card>
+      <div className="flex items-center gap-2 text-lg font-bold tracking-tight text-slate-900">
+        <Droplets size={20} className="text-emerald-600" /> Water Dues Lookup
+      </div>
+      <p className="mt-0.5 text-sm text-slate-500">
+        Search by <b>PN No</b>, <b>meter number</b>, or <b>account name</b>. Read-only — collect cash, write a paper OR, then send the consumer to the Water Bill Officer to post it.
+      </p>
+
+      <form onSubmit={lookup} className="mt-4 flex flex-wrap items-stretch gap-2">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="e.g. AST123, meter 0009876, or Juan Dela Cruz"
+            className="w-full rounded-xl border border-slate-200 pl-9 pr-3 py-2.5 text-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+          />
+        </div>
+        <button disabled={busy} className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">
+          {busy ? "Searching…" : "Look up"}
+        </button>
+      </form>
+
+      {err && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{err}</div>}
+
+      {/* Candidate list — shown when the name search matches >1 member. */}
+      {data?.candidates && (
+        <div className="mt-5">
+          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Multiple matches ({data.candidates.length}) — pick the correct account
+          </div>
+          <div className="divide-y rounded-2xl border border-slate-200">
+            {data.candidates.map((c) => (
+              <button
+                key={c.pnNo}
+                onClick={() => { setQ(c.pnNo); lookup(null, c.pnNo); }}
+                className="flex w-full flex-wrap items-start justify-between gap-2 px-4 py-3 text-left hover:bg-slate-50"
+              >
+                <div className="min-w-0">
+                  <div className="font-bold text-slate-900">{c.accountName}</div>
+                  <div className="text-xs text-slate-500">
+                    <span className="font-mono">{c.pnNo}</span>
+                    {c.address ? <> • {c.address}</> : null}
+                  </div>
+                  {c.meters?.length > 0 && (
+                    <div className="mt-1 flex flex-wrap gap-1 text-[11px]">
+                      {c.meters.map((mn) => (
+                        <span key={mn} className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-slate-600">{mn}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${c.accountStatus === "active" ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"}`}>{c.accountStatus}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {data && !data.candidates && (
+        <div className="mt-5 space-y-4">
+          {/* Member card */}
+          <div className="rounded-2xl border border-slate-200 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-base font-bold text-slate-900">{data.member.accountName}</div>
+                <div className="font-mono text-xs text-slate-500">{data.member.pnNo}</div>
+                {data.member.address && (
+                  <div className="mt-1 flex items-start gap-1 text-xs text-slate-600">
+                    <MapPin size={12} className="mt-0.5 shrink-0 text-emerald-500" />
+                    <span>{data.member.address}</span>
+                  </div>
+                )}
+                <div className="mt-1 text-xs text-slate-500">
+                  Classification: <b className="text-slate-700">{data.member.classification || "—"}</b> • Status: <b className={data.member.accountStatus === "active" ? "text-emerald-700" : "text-red-600"}>{data.member.accountStatus}</b>
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-xs text-slate-500">Total amount due</div>
+                <div className="text-2xl font-extrabold text-red-600">{peso(data.totalDue)}</div>
+                <div className="text-xs text-slate-500">{data.unpaidCount} unpaid bill(s)</div>
+                <button onClick={printSlip} className="mt-2 inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                  <Printer size={13} /> Print dues slip
+                </button>
+              </div>
+            </div>
+            {data.member.meters?.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                {data.member.meters.map((m) => (
+                  <span key={m.meterNumber} className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 font-mono">
+                    {m.meterNumber}{m.meterBrand ? ` • ${m.meterBrand}` : ""}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Pending online payments warning */}
+          {data.pendingOnline?.length > 0 && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              <div className="flex items-center gap-2 font-semibold"><Hourglass size={16}/> Online payment(s) still pending review</div>
+              <ul className="mt-1 list-disc pl-6 text-xs">
+                {data.pendingOnline.map((o) => (
+                  <li key={o.referenceId}>Ref <b>{o.referenceId}</b> — {peso(o.amountToPay)} • meter {o.meterNumber} • {o.periodKey}</li>
+                ))}
+              </ul>
+              <p className="mt-1 text-xs">Confirm with the Water Bill Officer before accepting another payment to avoid duplicates.</p>
+            </div>
+          )}
+
+          {/* Bills grouped per meter — so a multi-meter account shows each
+              meter separately and the cashier can issue an OR against a
+              specific meter. */}
+          <MeterGroups data={data} printSlip={printSlip} />
+
+          {data.recentPayments?.length > 0 && (
+            <div className="rounded-2xl border border-slate-200 overflow-hidden">
+              <div className="bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-600">Recent payments posted (last 20)</div>
+              <div className="overflow-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-white text-left text-xs text-slate-500">
+                    <tr>
+                      <th className="px-3 py-2">Date</th>
+                      <th className="px-3 py-2">OR No</th>
+                      <th className="px-3 py-2">Meter</th>
+                      <th className="px-3 py-2 text-right">Amount</th>
+                      <th className="px-3 py-2">Method</th>
+                      <th className="px-3 py-2">Received By</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.recentPayments.map((p) => (
+                      <tr key={p._id} className="border-t">
+                        <td className="px-3 py-2 text-xs text-slate-600">{fmtDate(p.paidAt)}</td>
+                        <td className="px-3 py-2 font-mono text-xs">{p.orNo}</td>
+                        <td className="px-3 py-2 font-mono text-xs">{p.meterNumber}</td>
+                        <td className="px-3 py-2 text-right">{peso(p.amountPaid)}</td>
+                        <td className="px-3 py-2 text-xs">{p.method || "cash"}</td>
+                        <td className="px-3 py-2 text-xs text-slate-600">{p.receivedBy || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function MeterGroups({ data, printSlip }) {
+  const groups = useMemo(() => {
+    const map = new Map();
+    // Seed with active meters from the member so meters with zero bills still appear.
+    for (const m of data.member.meters || []) {
+      map.set(String(m.meterNumber).toUpperCase(), { meterNumber: m.meterNumber, meterBrand: m.meterBrand, lastReading: m.lastReading, bills: [], unpaidTotal: 0, unpaidCount: 0 });
+    }
+    for (const b of data.bills || []) {
+      const k = String(b.meterNumber || "").toUpperCase();
+      if (!map.has(k)) map.set(k, { meterNumber: b.meterNumber, bills: [], unpaidTotal: 0, unpaidCount: 0 });
+      const g = map.get(k);
+      g.bills.push(b);
+      if (b.status !== "paid") { g.unpaidTotal += Number(b.totalDue) || 0; g.unpaidCount += 1; }
+    }
+    return [...map.values()];
+  }, [data]);
+
+  if (groups.length === 0) return null;
+
+  return (
+    <div className="space-y-3">
+      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        Meters on this account ({groups.length})
+      </div>
+      {groups.map((g) => (
+        <div key={g.meterNumber} className={`rounded-2xl border overflow-hidden ${g.unpaidCount > 0 ? "border-red-200" : "border-emerald-200"}`}>
+          <div className={`flex flex-wrap items-center justify-between gap-2 px-4 py-3 ${g.unpaidCount > 0 ? "bg-red-50" : "bg-emerald-50"}`}>
+            <div className="flex items-center gap-2">
+              <Gauge size={18} className={g.unpaidCount > 0 ? "text-red-600" : "text-emerald-600"} />
+              <div>
+                <div className="font-bold text-slate-900 font-mono">{g.meterNumber}</div>
+                <div className="text-[11px] text-slate-500">{g.meterBrand || ""} {g.lastReading != null ? `• last reading ${g.lastReading}` : ""}</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="text-right">
+                <div className="text-[10px] uppercase tracking-wide text-slate-500">Owes</div>
+                <div className={`text-lg font-extrabold ${g.unpaidCount > 0 ? "text-red-600" : "text-emerald-700"}`}>{peso(g.unpaidTotal)}</div>
+                <div className="text-[11px] text-slate-500">{g.unpaidCount} unpaid bill(s)</div>
+              </div>
+              {g.unpaidCount > 0 && (
+                <button onClick={() => printSlip(g.meterNumber)} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                  <Printer size={12}/> Slip for this meter
+                </button>
+              )}
+            </div>
+          </div>
+          {g.bills.length === 0 ? (
+            <div className="px-4 py-3 text-xs text-slate-500">No bills on record yet for this meter.</div>
+          ) : (
+            <div className="overflow-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-white text-left text-xs text-slate-500">
+                  <tr>
+                    <th className="px-3 py-2">Period</th>
+                    <th className="px-3 py-2">Consumed</th>
+                    <th className="px-3 py-2 text-right">Total Due</th>
+                    <th className="px-3 py-2 text-center">Status</th>
+                    <th className="px-3 py-2">Due Date</th>
+                    <th className="px-3 py-2">OR No</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {g.bills.map((b) => (
+                    <tr key={b._id} className={`border-t ${b.status !== "paid" ? "bg-red-50/30" : ""}`}>
+                      <td className="px-3 py-2 font-mono">{b.periodCovered || b.periodKey}</td>
+                      <td className="px-3 py-2 text-xs">{Number(b.consumed || 0).toFixed(2)} m³</td>
+                      <td className="px-3 py-2 text-right font-bold text-slate-800">{peso(b.totalDue)}</td>
+                      <td className="px-3 py-2 text-center">
+                        {b.status === "paid" ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700"><CheckCircle size={10}/> PAID</span>
+                        ) : b.status === "overdue" ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700"><AlertTriangle size={10}/> OVERDUE</span>
+                        ) : (
+                          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">UNPAID</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-xs text-slate-600">{fmtDate(b.dueDate)}</td>
+                      <td className="px-3 py-2 font-mono text-xs text-slate-600">{b.orNo || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}

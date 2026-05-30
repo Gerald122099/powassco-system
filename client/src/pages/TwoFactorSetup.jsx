@@ -7,8 +7,9 @@ import logo from "../assets/logo.png";
 import { ShieldCheck } from "lucide-react";
 
 export default function TwoFactorSetup() {
-  const { token, storeDeviceToken } = useAuth();
+  const { token, storeDeviceToken, user } = useAuth();
   const nav = useNavigate();
+  const isAdmin = user?.role === "admin";
 
   const [enabled, setEnabled] = useState(false);
   const [enforced, setEnforced] = useState(false);
@@ -43,6 +44,22 @@ export default function TwoFactorSetup() {
       .catch((e) => setErr(e.message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function selfReset() {
+    if (!window.confirm("Reset your 2FA?\n\nYour current authenticator will stop working and known devices will be forgotten. You'll set up 2FA again now.")) return;
+    setErr(""); setMsg(""); setBusy(true);
+    try {
+      await apiFetch("/auth/2fa/self-reset", { method: "POST", token });
+      setEnabled(false);
+      setCode("");
+      await startSetup();
+      setMsg("2FA cleared. Scan the new QR to re-enroll.");
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function enable(e) {
     e.preventDefault();
@@ -86,6 +103,21 @@ export default function TwoFactorSetup() {
             <button onClick={() => nav("/dashboard")} className="w-full rounded-2xl bg-green-600 py-3 font-semibold text-white hover:bg-green-700">
               Continue
             </button>
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={selfReset}
+                disabled={busy}
+                className="w-full rounded-2xl border border-amber-300 bg-amber-50 py-3 text-sm font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-60"
+              >
+                Reset &amp; re-setup my 2FA
+              </button>
+            )}
+            {isAdmin && (
+              <p className="text-xs text-slate-500">
+                Lost your authenticator? Use this to clear your 2FA and set it up again. This action is recorded in the security audit log.
+              </p>
+            )}
           </div>
         ) : (
           <form onSubmit={enable} className="space-y-4">

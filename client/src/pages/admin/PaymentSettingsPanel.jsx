@@ -3,9 +3,18 @@ import Card from "../../components/Card";
 import { apiFetch } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
 import { fileToResizedDataUrl } from "../../lib/imageResize";
-import { CreditCard, ImagePlus, Save, RefreshCw, Info } from "lucide-react";
+import { CreditCard, ImagePlus, Save, RefreshCw, Info, ShieldCheck } from "lucide-react";
 
 const inputCls = "mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100";
+const lockedCls = "mt-1 w-full rounded-xl border border-emerald-200 bg-emerald-50/60 px-3 py-2.5 text-sm font-mono text-emerald-800";
+
+function EnvLockLabel({ children }) {
+  return (
+    <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
+      <ShieldCheck size={11} /> {children || "managed by host env"}
+    </span>
+  );
+}
 
 export default function PaymentSettingsPanel() {
   const { token } = useAuth();
@@ -152,16 +161,51 @@ export default function PaymentSettingsPanel() {
             <div className="font-semibold text-slate-700">Webhook URL — paste this into your {s.mode === "paymongo" ? "PayMongo" : "Xendit"} dashboard:</div>
             <div className="mt-1 break-all font-mono text-[11px] text-slate-700">{`${(typeof window !== "undefined" && window.location.origin) || ""}/api/webhooks/${s.mode}`.replace("https://powassco.site/api", "https://powassco-system.onrender.com/api")}</div>
           </div>
+          {(() => {
+            const env = s.envOverrides || {};
+            const anyEnv = Object.values(env).some(Boolean);
+            return anyEnv && (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+                <ShieldCheck size={14} className="-mt-0.5 mr-1 inline" />
+                Some credentials are loaded from the host environment (production secrets). Those fields are read-only here and cannot be changed from the database.
+              </div>
+            );
+          })()}
           {s.mode === "paymongo" ? (
             <>
-              <div><label className="text-xs font-semibold text-slate-600">PayMongo Secret Key</label><input value={s.paymongoSecretKey || ""} onChange={(e) => set("paymongoSecretKey", e.target.value)} placeholder="sk_live_…" className={inputCls} /></div>
-              <div><label className="text-xs font-semibold text-slate-600">PayMongo Public Key</label><input value={s.paymongoPublicKey || ""} onChange={(e) => set("paymongoPublicKey", e.target.value)} placeholder="pk_live_…" className={inputCls} /></div>
-              <div><label className="text-xs font-semibold text-slate-600">PayMongo Webhook Secret</label><input value={s.paymongoWebhookSecret || ""} onChange={(e) => set("paymongoWebhookSecret", e.target.value)} placeholder="whsec_…" className={inputCls} /></div>
+              <div>
+                <label className="text-xs font-semibold text-slate-600">PayMongo Secret Key{s.envOverrides?.paymongoSecretKey && <EnvLockLabel />}</label>
+                {s.envOverrides?.paymongoSecretKey
+                  ? <div className={lockedCls}>•••••••••• (set via host env)</div>
+                  : <input value={s.paymongoSecretKey || ""} onChange={(e) => set("paymongoSecretKey", e.target.value)} placeholder="sk_live_…" className={inputCls} />}
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-600">PayMongo Public Key{s.envOverrides?.paymongoPublicKey && <EnvLockLabel />}</label>
+                {s.envOverrides?.paymongoPublicKey
+                  ? <div className={lockedCls}>•••••••••• (set via host env)</div>
+                  : <input value={s.paymongoPublicKey || ""} onChange={(e) => set("paymongoPublicKey", e.target.value)} placeholder="pk_live_…" className={inputCls} />}
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-600">PayMongo Webhook Secret{s.envOverrides?.paymongoWebhookSecret && <EnvLockLabel />}</label>
+                {s.envOverrides?.paymongoWebhookSecret
+                  ? <div className={lockedCls}>•••••••••• (set via host env)</div>
+                  : <input value={s.paymongoWebhookSecret || ""} onChange={(e) => set("paymongoWebhookSecret", e.target.value)} placeholder="whsec_…" className={inputCls} />}
+              </div>
             </>
           ) : (
             <>
-              <div><label className="text-xs font-semibold text-slate-600">Xendit API Key</label><input value={s.xenditApiKey || ""} onChange={(e) => set("xenditApiKey", e.target.value)} placeholder="xnd_…" className={inputCls} /></div>
-              <div><label className="text-xs font-semibold text-slate-600">Xendit Callback Token</label><input value={s.xenditCallbackToken || ""} onChange={(e) => set("xenditCallbackToken", e.target.value)} placeholder="from Xendit dashboard" className={inputCls} /></div>
+              <div>
+                <label className="text-xs font-semibold text-slate-600">Xendit API Key{s.envOverrides?.xenditApiKey && <EnvLockLabel />}</label>
+                {s.envOverrides?.xenditApiKey
+                  ? <div className={lockedCls}>•••••••••• (set via host env)</div>
+                  : <input value={s.xenditApiKey || ""} onChange={(e) => set("xenditApiKey", e.target.value)} placeholder="xnd_…" className={inputCls} />}
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-600">Xendit Callback Token{s.envOverrides?.xenditCallbackToken && <EnvLockLabel />}</label>
+                {s.envOverrides?.xenditCallbackToken
+                  ? <div className={lockedCls}>•••••••••• (set via host env)</div>
+                  : <input value={s.xenditCallbackToken || ""} onChange={(e) => set("xenditCallbackToken", e.target.value)} placeholder="from Xendit dashboard" className={inputCls} />}
+              </div>
             </>
           )}
           <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">

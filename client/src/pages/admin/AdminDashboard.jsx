@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import DashboardLayout from "../../components/DashboardLayout";
-import { Users, Settings, BarChart3, Banknote, Wallet, FileBarChart, UserCog, Coins, ScrollText, ShieldCheck, Inbox, CalendarClock, Megaphone, Boxes, CreditCard } from "lucide-react";
+import { Users, Settings, BarChart3, Banknote, Wallet, FileBarChart, UserCog, Coins, ScrollText, ShieldCheck, Inbox, CalendarClock, Megaphone, Boxes, CreditCard, ReceiptText } from "lucide-react";
+import CollectionTodayPanel from "../../components/CollectionTodayPanel";
 import Card from "../../components/Card";
 import Modal from "../../components/Modal";
 import { apiFetch } from "../../lib/api";
@@ -24,7 +25,9 @@ const ROLE_OPTIONS = [
   { value: "admin", label: "Admin" },
   { value: "water_bill_officer", label: "Water Bill Officer" },
   { value: "loan_officer", label: "Loan Officer" },
-  { value: "meter_reader", label: "Meter Reader" },
+  { value: "meter_reader", label: "Meter Reader (office)" },
+  { value: "plumber", label: "Plumber (field reader)" },
+  { value: "cashier", label: "Cashier (dues lookup)" },
 ];
 
 function roleLabel(role) {
@@ -86,6 +89,7 @@ const adminNavItems = [
   { key: "water", label: "Water Settings", icon: Settings, desc: "Tariffs, due dates, penalties, and discounts" },
   { key: "analytics", label: "Water Analytics", icon: BarChart3, desc: "Water billing analytics and summaries" },
   { key: "loans", label: "Loan Analytics", icon: Banknote, desc: "Capital, interest profit, collections, and outstanding" },
+  { key: "collections", label: "Overall Collections", icon: ReceiptText, desc: "Combined water + loan daily collection — per-collector audit" },
   { key: "expenses", label: "Expenses", icon: Wallet, desc: "Log pipe repairs, utilities, office costs, and disbursements" },
   { key: "employees", label: "Employees", icon: UserCog, desc: "Register staff, profiles, positions, and salary rates" },
   { key: "payroll", label: "Payroll", icon: Coins, desc: "Payslips with SSS, PhilHealth, Pag-IBIG, and withholding tax" },
@@ -386,6 +390,9 @@ export default function AdminDashboard() {
 
         {/* Loan Analytics Tab */}
         {activeTab === "loans" && <LoanAnalyticsPanel />}
+
+        {/* Overall Collections Tab — combined water + loan daily total */}
+        {activeTab === "collections" && <CollectionTodayPanel module="all" />}
 
         {/* Expenses Tab */}
         {activeTab === "expenses" && <ExpensesPanel />}

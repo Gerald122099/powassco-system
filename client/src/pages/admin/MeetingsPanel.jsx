@@ -11,6 +11,8 @@ const AUDIENCES = [
   { v: "water_bill_officer", label: "Water Bill Officers" },
   { v: "loan_officer", label: "Loan Officers" },
   { v: "meter_reader", label: "Meter Readers" },
+  { v: "plumber", label: "Plumbers" },
+  { v: "cashier", label: "Cashiers" },
 ];
 const TYPES = ["meeting", "event", "training", "holiday", "deadline", "other"];
 const EMPTY = { title: "", type: "meeting", datetime: "", location: "", notes: "", audience: "all" };

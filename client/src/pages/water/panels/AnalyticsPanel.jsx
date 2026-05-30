@@ -1,6 +1,7 @@
 // AnalyticsPanel.jsx (FIXED PDF generation)
 import { useEffect, useMemo, useState } from "react";
 import Card from "../../../components/Card";
+import CollectionTodayPanel from "../../../components/CollectionTodayPanel";
 import { apiFetch } from "../../../lib/api";
 import { useAuth } from "../../../context/AuthContext";
 
@@ -431,6 +432,8 @@ export default function AnalyticsPanel() {
   }, [data]);
 
   return (
+    <div className="space-y-4">
+      <CollectionTodayPanel module="water" />
     <Card>
       {/* Top controls */}
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -763,5 +766,6 @@ export default function AnalyticsPanel() {
         </div>
       )}
     </Card>
+    </div>
   );
 }

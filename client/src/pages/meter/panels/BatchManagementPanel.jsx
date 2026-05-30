@@ -51,13 +51,13 @@ export default function BatchManagementPanel() {
     readerId: "",
     area: ""
   });
-  const [readers, setReaders] = useState([]); // meter-reader users (admin only)
+  const [readers, setReaders] = useState([]); // plumber + meter-reader users (admin only)
 
   useEffect(() => {
     // Only admins can read /users; for others, skip and use manual entry.
     if (user?.role !== "admin") return;
     apiFetch("/users", { token })
-      .then((list) => setReaders((Array.isArray(list) ? list : []).filter((u) => u.role === "meter_reader")))
+      .then((list) => setReaders((Array.isArray(list) ? list : []).filter((u) => u.role === "plumber" || u.role === "meter_reader")))
       .catch(() => setReaders([]));
   }, [token, user]);
 
@@ -553,7 +553,7 @@ export default function BatchManagementPanel() {
           </div>
           {readers.length > 0 ? (
             <div>
-              <label className="text-sm font-semibold text-slate-700">Assign to Reader *</label>
+              <label className="text-sm font-semibold text-slate-700">Assign to Field Plumber / Reader *</label>
               <select
                 className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5"
                 value={newBatch.readerId}
@@ -562,14 +562,14 @@ export default function BatchManagementPanel() {
                   setNewBatch({ ...newBatch, readerId: u?.employeeId || "", readerName: u?.fullName || "" });
                 }}
               >
-                <option value="">Select meter reader…</option>
+                <option value="">Select plumber / meter reader…</option>
                 {readers.map((r) => (
                   <option key={r._id} value={r.employeeId}>
-                    {r.fullName} ({r.employeeId})
+                    {r.fullName} ({r.employeeId}) — {r.role === "plumber" ? "Plumber" : "Meter Reader"}
                   </option>
                 ))}
               </select>
-              <p className="mt-1 text-xs text-slate-500">The reader signs in with this account to download the batch on their phone.</p>
+              <p className="mt-1 text-xs text-slate-500">The assigned user signs in with this account on their phone to download only THEIR assigned meters.</p>
             </div>
           ) : (
             <>

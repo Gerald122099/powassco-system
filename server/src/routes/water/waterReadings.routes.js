@@ -11,7 +11,7 @@ import { calculateWaterBill } from "../../utils/waterBilling.js";
 const router = express.Router();
 
 // guards
-const guard = [requireAuth, requireRole(["admin", "water_bill_officer", "meter_reader", "reader"])];
+const guard = [requireAuth, requireRole(["admin", "water_bill_officer", "meter_reader", "reader", "plumber"])];
 const adminGuard = [requireAuth, requireRole(["admin"])];
 const readerGuard = [requireAuth, requireRole(["admin", "meter_reader"])];
 

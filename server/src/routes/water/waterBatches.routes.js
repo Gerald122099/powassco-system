@@ -15,7 +15,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const router = express.Router();
-const guard = [requireAuth, requireRole(["admin", "water_bill_officer","meter_reader"])];
+const guard = [requireAuth, requireRole(["admin", "water_bill_officer", "meter_reader", "plumber"])];
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({

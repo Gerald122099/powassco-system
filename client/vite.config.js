@@ -33,6 +33,10 @@ export default defineConfig({
         // Never let the SW intercept cross-origin API calls.
         navigateFallbackDenylist: [/^\/api/],
         cleanupOutdatedCaches: true,
+        // Activate a new service worker immediately so users see the latest
+        // build on the next page load instead of after a manual reload.
+        skipWaiting: true,
+        clientsClaim: true,
       },
     }),
   ],

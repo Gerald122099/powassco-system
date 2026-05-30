@@ -8,7 +8,7 @@ const LoanPaymentSchema = new mongoose.Schema(
     borrowerPnNo: { type: String, required: true, index: true },
 
     orNo: { type: String, required: true, unique: true, index: true },
-    method: { type: String, enum: ["cash", "gcash", "bank", "other"], default: "cash" },
+    method: { type: String, enum: ["cash", "gcash", "bank", "online", "other"], default: "cash" },
     amountPaid: { type: Number, required: true, min: 0 },
 
     paidAt: { type: Date, default: Date.now },

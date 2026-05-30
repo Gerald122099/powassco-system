@@ -10,7 +10,7 @@ const MeetingSchema = new mongoose.Schema(
     // Who should see it on their dashboard. "all" = every role.
     audience: {
       type: String,
-      enum: ["all", "admin", "water_bill_officer", "loan_officer", "meter_reader"],
+      enum: ["all", "admin", "water_bill_officer", "loan_officer", "meter_reader", "plumber", "cashier"],
       default: "all",
     },
     createdBy: { type: String, default: "" },

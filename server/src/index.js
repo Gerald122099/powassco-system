@@ -32,6 +32,8 @@ import publicPaymentsRoutes from "./routes/public/payments.routes.js";
 import paymentsRoutes from "./routes/payments.routes.js";
 import disconnectionsRoutes from "./routes/disconnections.routes.js";
 import webhooksRoutes from "./routes/webhooks.routes.js";
+import cashierRoutes from "./routes/cashier.routes.js";
+import collectionsRoutes from "./routes/collections.routes.js";
 
 import { auditLogger } from "./middleware/auditLogger.js";
 import { ensureBootstrapAdmin } from "./utils/ensureAdmin.js";
@@ -144,6 +146,8 @@ app.use("/api/assets", assetsRoutes);
 app.use("/api/payments", paymentsRoutes);
 app.use("/api/disconnections", disconnectionsRoutes);
 app.use("/api/webhooks", webhooksRoutes);
+app.use("/api/cashier", cashierRoutes);
+app.use("/api/collections", collectionsRoutes);
 
 // JSON 404 for unknown routes
 app.use((req, res) => {

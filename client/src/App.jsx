@@ -12,6 +12,8 @@ const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard"));
 const WaterBillingDashboard = lazy(() => import("./pages/water/WaterBillingDashboard"));
 const LoanDashboard = lazy(() => import("./pages/loan/LoanDashboard"));
 const MeterReadingDashboard = lazy(() => import("./pages/meter/MeterReadingDashboard"));
+const PlumberDashboard = lazy(() => import("./pages/plumber/PlumberDashboard"));
+const CashierDashboard = lazy(() => import("./pages/cashier/CashierDashboard"));
 const MemberInquiryPage = lazy(() => import("./pages/public/MemberInquiryPage"));
 const TariffCalculatorPage = lazy(() => import("./pages/public/TariffCalculatorPage"));
 const AboutPage = lazy(() => import("./pages/public/AboutPage"));
@@ -33,6 +35,8 @@ function RoleHome() {
   if (user.role === "water_bill_officer") return <Navigate to="/water" replace />;
   if (user.role === "loan_officer") return <Navigate to="/loan" replace />;
   if (user.role === "meter_reader") return <Navigate to="/meter" replace />;
+  if (user.role === "plumber") return <Navigate to="/plumber" replace />;
+  if (user.role === "cashier") return <Navigate to="/cashier" replace />;
 
   return <Navigate to="/employee-login" replace />;
 }
@@ -103,6 +107,24 @@ export default function App() {
           element={
             <Protected roles={["admin", "meter_reader"]}>
               <MeterReadingDashboard />
+            </Protected>
+          }
+        />
+
+        <Route
+          path="/plumber"
+          element={
+            <Protected roles={["plumber"]}>
+              <PlumberDashboard />
+            </Protected>
+          }
+        />
+
+        <Route
+          path="/cashier"
+          element={
+            <Protected roles={["admin", "cashier"]}>
+              <CashierDashboard />
             </Protected>
           }
         />

@@ -161,6 +161,21 @@ router.post("/2fa/disable", requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
+// ---- Admin self-reset: clear own 2FA so they can re-setup ----
+// Admins lose authenticator devices too. This lets a signed-in admin clear
+// their own 2FA (on a session opened from a remembered device, or right after
+// an admin peer reset them) and walk through enrollment again. Audited.
+router.post("/2fa/self-reset", requireAuth, requireRole(["admin"]), async (req, res) => {
+  const u = req.user;
+  u.twoFactorEnabled = false;
+  u.twoFactorSecret = "";
+  u.twoFactorPendingSecret = "";
+  u.knownDevices = [];
+  await u.save();
+  await auditSecurity(req, u, "Admin self-reset of own 2FA", 200);
+  res.json({ ok: true, message: "2FA cleared. Set it up again to re-enable." });
+});
+
 // ---- Admin: enforce toggle ----
 router.get("/2fa/admin/settings", requireAuth, requireRole(["admin"]), async (req, res) => {
   res.json(await getAuthSettings());

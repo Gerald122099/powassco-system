@@ -3,6 +3,7 @@ import PaymentSettings from "../models/PaymentSettings.js";
 import OnlinePayment from "../models/OnlinePayment.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { postOnlinePayment } from "../utils/postOnlinePayment.js";
+import { envOverrides } from "../utils/pspCreds.js";
 
 const router = express.Router();
 
@@ -14,14 +15,20 @@ async function getSettings() {
 
 // ---- Admin: QR + fee settings ----
 const adminGuard = [requireAuth, requireRole(["admin"])];
-router.get("/settings", ...adminGuard, async (req, res) => res.json(await getSettings()));
+router.get("/settings", ...adminGuard, async (req, res) => {
+  const s = await getSettings();
+  // Tell the UI which credentials are managed by host env vars (read-only).
+  res.json({ ...s.toObject(), envOverrides: envOverrides() });
+});
 router.put("/settings", ...adminGuard, async (req, res) => {
   const s = await getSettings();
-  const allow = ["onlineEnabled", "mode", "qrImage", "onlineFee", "payeeName", "instructions", "paymongoSecretKey", "paymongoPublicKey", "xenditApiKey", "pspActive"];
-  for (const k of allow) if (k in req.body) s[k] = req.body[k];
+  const allow = ["onlineEnabled", "mode", "qrImage", "onlineFee", "payeeName", "instructions", "paymongoSecretKey", "paymongoPublicKey", "paymongoWebhookSecret", "xenditApiKey", "xenditCallbackToken", "pspActive"];
+  // Never let DB values overwrite host-env values (env wins).
+  const env = envOverrides();
+  for (const k of allow) if (k in req.body && !env[k]) s[k] = req.body[k];
   s.updatedBy = req.user?.fullName || req.user?.employeeId || "";
   await s.save();
-  res.json(s);
+  res.json({ ...s.toObject(), envOverrides: env });
 });
 
 // ---- Officers: pending online payments to verify ----

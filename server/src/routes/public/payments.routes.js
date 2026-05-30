@@ -4,6 +4,7 @@ import OnlinePayment from "../../models/OnlinePayment.js";
 import WaterBill from "../../models/WaterBill.js";
 import LoanApplication from "../../models/LoanApplication.js";
 import { createPaymongoCheckout, createXenditInvoice } from "../../utils/paymentProviders.js";
+import { pspCreds } from "../../utils/pspCreds.js";
 
 const router = express.Router();
 const ceilPeso = (n) => Math.ceil(Number(n) || 0);
@@ -153,9 +154,10 @@ router.post("/create-checkout", async (req, res) => {
 
   const amountToPay = amountDue + fee;
   try {
+    const creds = pspCreds(s);
     const { url, providerRef } = s.mode === "paymongo"
-      ? await createPaymongoCheckout({ secretKey: s.paymongoSecretKey, amountPhp: amountToPay, description, referenceNumber: externalId, successUrl: successUrl() })
-      : await createXenditInvoice({ apiKey: s.xenditApiKey, amountPhp: amountToPay, description, externalId, successUrl: successUrl() });
+      ? await createPaymongoCheckout({ secretKey: creds.paymongoSecretKey, amountPhp: amountToPay, description, referenceNumber: externalId, successUrl: successUrl() })
+      : await createXenditInvoice({ apiKey: creds.xenditApiKey, amountPhp: amountToPay, description, externalId, successUrl: successUrl() });
 
     await OnlinePayment.create({
       ...identity,

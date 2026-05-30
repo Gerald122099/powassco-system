@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback, lazy, Suspense } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef, lazy, Suspense } from "react";
 import Card from "../../../components/Card";
 import Modal from "../../../components/Modal";
 const QRScannerView = lazy(() => import("../../../components/QRScannerView"));
@@ -9,7 +9,7 @@ import { downloadBatch, saveReadingOffline, syncQueue, currentPeriodKey } from "
 import { connectPrinter, printerConnected, printWaterReceipt, thermalSupported } from "../../../lib/thermalPrint";
 import { calculateWaterBillLocal } from "../../../lib/waterBillingLocal";
 import { printRouteSheet } from "../../../lib/routeSheet";
-import { Wifi, WifiOff, Download, RefreshCw, QrCode, Save, Search, MapPin, CheckCircle, CloudOff, Printer, Bluetooth, FileText, Trash2, AlertTriangle } from "lucide-react";
+import { Wifi, WifiOff, Download, RefreshCw, QrCode, Save, Search, MapPin, CheckCircle, CloudOff, Printer, Bluetooth, FileText, Trash2, AlertTriangle, Ban, UploadCloud } from "lucide-react";
 
 function fmt(n) {
   return Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 3 });
@@ -36,19 +36,27 @@ export default function FieldModePanel() {
   const [batchInfo, setBatchInfo] = useState([]);
 
   const [q, setQ] = useState("");
-  const [unreadOnly, setUnreadOnly] = useState(false);
-  const [inputs, setInputs] = useState({}); // pnNo__meter -> present value
+  // filter: "all" | "unread" | "blocked"
+  const [filter, setFilter] = useState("all");
+  const [inputs, setInputs] = useState({});
   const [busy, setBusy] = useState("");
+  // { msg, type, sticky? } — sticky toasts stay until dismissed (used for sync failures)
   const [toast, setToast] = useState(null);
   const [scanOpen, setScanOpen] = useState(false);
   const [scanErr, setScanErr] = useState("");
   const [settings, setSettings] = useState(null);
   const [printerOn, setPrinterOn] = useState(false);
 
-  const flash = (msg, type = "success") => {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 3000);
-  };
+  // Visual progress for long-running operations.
+  // phase: "" | "download" | "sync"
+  const [progress, setProgress] = useState({ phase: "", label: "", current: 0, total: 0 });
+  const [lastSyncReport, setLastSyncReport] = useState(null); // { success, failed, at }
+  const retryTimer = useRef(null);
+
+  const flash = useCallback((msg, type = "success", sticky = false) => {
+    setToast({ msg, type, sticky });
+    if (!sticky) setTimeout(() => setToast(null), 3500);
+  }, []);
 
   const refreshLocal = useCallback(async () => {
     const [m, queue, pk, dAt, sAt, bi, st] = await Promise.all([
@@ -84,34 +92,68 @@ export default function FieldModePanel() {
 
   const doSync = useCallback(async () => {
     if (!navigator.onLine) return;
-    const res = await syncQueue({ token, user }).catch(() => null);
-    if (res?.ok && (res.success || res.failed)) {
-      flash(`Synced ${res.success} reading(s)${res.failed ? `, ${res.failed} pending` : ""}.`, res.failed ? "error" : "success");
+    if (busy === "sync") return; // already syncing
+    setBusy("sync");
+    const queue = await odb.getQueue();
+    const total = (queue || []).filter((x) => !x.synced).length;
+    if (total === 0) {
+      setBusy("");
+      return;
+    }
+    setProgress({ phase: "sync", label: "Sending readings…", current: 0, total });
+    const res = await syncQueue({ token, user }).catch((e) => ({ ok: false, error: e?.message || "Network error" }));
+    setProgress({ phase: "", label: "", current: 0, total: 0 });
+    setBusy("");
+
+    if (res?.ok) {
+      const { success = 0, failed = 0 } = res;
+      setLastSyncReport({ success, failed, at: Date.now() });
+      if (failed === 0 && success > 0) {
+        flash(`✓ Synced ${success} reading(s) to the server.`, "success");
+      } else if (failed > 0) {
+        // Auto-retry once after 5s; persistent banner stays until success.
+        flash(`Synced ${success}, ${failed} still pending — auto-retry in 5s…`, "error", true);
+        if (retryTimer.current) clearTimeout(retryTimer.current);
+        retryTimer.current = setTimeout(() => {
+          if (navigator.onLine) doSync();
+        }, 5000);
+      }
+    } else if (!res?.ok && !res?.busy && !res?.offline && !res?.nothing) {
+      flash(`Sync failed: ${res?.error || "network error"}. Will retry automatically.`, "error", true);
+      if (retryTimer.current) clearTimeout(retryTimer.current);
+      retryTimer.current = setTimeout(() => {
+        if (navigator.onLine) doSync();
+      }, 5000);
     }
     await refreshLocal();
-  }, [token, user, refreshLocal]);
+  }, [token, user, refreshLocal, busy, flash]);
 
-  // Auto-sync when back online and on a slow interval.
+  // Auto-sync when back online + periodic background check.
   useEffect(() => {
-    if (online && pending > 0) doSync();
+    if (online && pending > 0 && busy !== "sync") doSync();
     const id = setInterval(() => {
       if (navigator.onLine && pending > 0) doSync();
     }, 30000);
-    return () => clearInterval(id);
-  }, [online, pending, doSync]);
+    return () => {
+      clearInterval(id);
+      if (retryTimer.current) clearTimeout(retryTimer.current);
+    };
+  }, [online, pending, doSync, busy]);
 
   async function handleDownload() {
-    if (!navigator.onLine) return flash("You are offline. Connect to download your batch.", "error");
+    if (!navigator.onLine) return flash("You are offline. Connect to download your assigned meters.", "error");
     setBusy("download");
+    setProgress({ phase: "download", label: "Downloading your assigned meters…", current: 0, total: 0 });
     try {
       const res = await downloadBatch({ token, user, periodKey: currentPeriodKey() });
       if (!res.ok) flash(res.message || "Nothing to download.", "error");
-      else flash(`Downloaded ${res.count} account(s) for ${res.periodKey}.`, "success");
+      else flash(`✓ Downloaded ${res.count} account(s) for ${res.periodKey}.`, "success");
       await refreshLocal();
     } catch (e) {
       flash("Download failed: " + e.message, "error");
     } finally {
       setBusy("");
+      setProgress({ phase: "", label: "", current: 0, total: 0 });
     }
   }
 
@@ -119,10 +161,13 @@ export default function FieldModePanel() {
     const la = member.lastActualReadings?.[mnorm(meterNo)];
     return la?.presentReading ?? 0;
   }
-  function isRead(member, meterNo) {
-    if (queueKeys.has(`${mnorm(member.pnNo)}__${mnorm(meterNo)}`)) return true;
-    return (member.readMeters || []).map(mnorm).includes(mnorm(meterNo));
-  }
+  const isRead = useCallback(
+    (member, meterNo) => {
+      if (queueKeys.has(`${mnorm(member.pnNo)}__${mnorm(meterNo)}`)) return true;
+      return (member.readMeters || []).map(mnorm).includes(mnorm(meterNo));
+    },
+    [queueKeys]
+  );
 
   async function saveMember(member) {
     const meters = member.activeBillingMeters || [];
@@ -145,7 +190,7 @@ export default function FieldModePanel() {
           consumptionMultiplier: mt.consumptionMultiplier || 1,
         });
       }
-      flash(`Saved ${toSave.length} reading(s) offline.`, "success");
+      flash(`✓ Saved ${toSave.length} reading(s)${navigator.onLine ? " — syncing…" : " offline (will sync when online)."}`, "success");
       setInputs((p) => {
         const next = { ...p };
         for (const { mt } of toSave) delete next[`${mnorm(member.pnNo)}__${mnorm(mt.meterNumber)}`];
@@ -207,38 +252,56 @@ export default function FieldModePanel() {
     const parsed = parseMeterQR(text);
     if (!parsed) return setScanErr("Unrecognized QR code.");
     setQ(parsed.pnNo);
-    setUnreadOnly(false);
+    setFilter("all");
     setScanErr("");
   };
+
+  // Counts driven by the cached batch + the local queue.
+  const counts = useMemo(() => {
+    let total = 0, read = 0, unread = 0, blocked = 0;
+    for (const m of members) {
+      total++;
+      const meters = m.activeBillingMeters || [];
+      const isBlocked = (m.priorUnsettledPeriods || []).length > 0;
+      if (isBlocked) blocked++;
+      const allRead = meters.length > 0 && meters.every((mt) => isRead(m, mt.meterNumber));
+      if (allRead) read++;
+      else unread++;
+    }
+    return { total, read, unread, blocked };
+  }, [members, isRead]);
 
   const filtered = useMemo(() => {
     const t = q.trim().toLowerCase();
     return members.filter((m) => {
-      if (unreadOnly) {
-        const allRead = (m.activeBillingMeters || []).every((mt) => isRead(m, mt.meterNumber));
-        if (allRead && (m.activeBillingMeters || []).length > 0) return false;
-      }
+      const meters = m.activeBillingMeters || [];
+      const allRead = meters.length > 0 && meters.every((mt) => isRead(m, mt.meterNumber));
+      const isBlocked = (m.priorUnsettledPeriods || []).length > 0;
+      if (filter === "unread" && allRead) return false;
+      if (filter === "blocked" && !isBlocked) return false;
       if (!t) return true;
-      const hay = [m.pnNo, m.accountName, m.addressText, ...(m.activeBillingMeters || []).map((x) => x.meterNumber)]
-        .join(" ")
-        .toLowerCase();
+      const hay = [m.pnNo, m.accountName, m.addressText, ...meters.map((x) => x.meterNumber)].join(" ").toLowerCase();
       return hay.includes(t);
     });
-  }, [members, q, unreadOnly, queueKeys]);
+  }, [members, q, filter, isRead]);
 
-  const total = members.length;
-  const readCount = members.filter((m) => (m.activeBillingMeters || []).length > 0 && (m.activeBillingMeters || []).every((mt) => isRead(m, mt.meterNumber))).length;
+  const total = counts.total;
+  const readCount = counts.read;
+  const pct = total > 0 ? Math.round((readCount / total) * 100) : 0;
 
   return (
     <Card>
       {toast && (
         <div
           role="status"
-          className={`fixed right-4 top-4 z-[70] flex items-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold shadow-lg ${
+          className={`fixed right-4 top-4 z-[70] flex items-start gap-2 rounded-xl border px-4 py-3 text-sm font-semibold shadow-lg max-w-xs ${
             toast.type === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-red-200 bg-red-50 text-red-700"
           }`}
         >
-          {toast.msg}
+          <span className="flex-1">{toast.msg}</span>
+          {toast.sticky && (
+            <button onClick={() => setToast(null)} className="ml-1 text-xs font-bold opacity-60 hover:opacity-100" aria-label="Dismiss">✕</button>
+          )}
         </div>
       )}
 
@@ -252,15 +315,15 @@ export default function FieldModePanel() {
             </span>
           </div>
           <div className="mt-0.5 text-sm text-slate-500">
-            Period {periodKey} • {batchInfo.map((b) => b.batchName).join(", ") || "no batch"} • downloaded {ago(downloadedAt)}
+            {user?.fullName ? <b>{user.fullName}</b> : "—"} • Period {periodKey} • {batchInfo.map((b) => b.batchName).join(", ") || "no batch"} • downloaded {ago(downloadedAt)}
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
           <button onClick={handleDownload} disabled={busy === "download" || !online} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50">
             <Download size={16} className={busy === "download" ? "animate-pulse" : ""} /> {busy === "download" ? "Downloading…" : "Download Batch"}
           </button>
-          <button onClick={doSync} disabled={!online || pending === 0} className="inline-flex items-center gap-2 rounded-xl bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-700 disabled:opacity-50">
-            {pending > 0 ? <RefreshCw size={16} /> : <CheckCircle size={16} />} {pending > 0 ? `Sync (${pending})` : "Synced"}
+          <button onClick={doSync} disabled={!online || pending === 0 || busy === "sync"} className="inline-flex items-center gap-2 rounded-xl bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-700 disabled:opacity-50">
+            {busy === "sync" ? <UploadCloud size={16} className="animate-pulse" /> : pending > 0 ? <RefreshCw size={16} /> : <CheckCircle size={16} />} {busy === "sync" ? "Syncing…" : pending > 0 ? `Sync (${pending})` : "Synced"}
           </button>
           {thermalSupported() && (
             <button onClick={connectPrinterUI} className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold ${printerOn ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}>
@@ -289,31 +352,55 @@ export default function FieldModePanel() {
         </div>
       )}
 
-      {/* Counters */}
-      <div className="mt-4 grid grid-cols-3 gap-3">
+      {/* Progress bar for download/sync */}
+      {progress.phase && (
+        <div className="mt-3 rounded-xl border border-purple-200 bg-purple-50 px-4 py-3">
+          <div className="flex items-center justify-between text-xs font-semibold text-purple-800">
+            <span>{progress.label}</span>
+            {progress.total > 0 && <span>{progress.current} / {progress.total}</span>}
+          </div>
+          <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-purple-100">
+            <div className={`h-full rounded-full bg-purple-500 ${progress.total > 0 ? "" : "animate-pulse"}`} style={{ width: progress.total > 0 ? `${Math.round((progress.current / progress.total) * 100)}%` : "60%" }} />
+          </div>
+        </div>
+      )}
+
+      {/* Counters: total, read, unread, disconnections, unsynced */}
+      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
         <div className="rounded-2xl border border-slate-200 bg-white p-3 text-center">
           <div className="text-xl font-bold text-slate-900">{total}</div>
-          <div className="text-xs text-slate-500">Accounts</div>
+          <div className="text-xs text-slate-500">Assigned</div>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-emerald-50 p-3 text-center">
           <div className="text-xl font-bold text-emerald-700">{readCount}</div>
           <div className="text-xs text-slate-500">Read</div>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-amber-50 p-3 text-center">
-          <div className="text-xl font-bold text-amber-700">{total - readCount}</div>
+          <div className="text-xl font-bold text-amber-700">{counts.unread}</div>
           <div className="text-xs text-slate-500">Unread</div>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-red-50 p-3 text-center">
+          <div className="text-xl font-bold text-red-700">{counts.blocked}</div>
+          <div className="text-xs text-slate-500">Disconnections</div>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-blue-50 p-3 text-center">
+          <div className="text-xl font-bold text-blue-700">{pending}</div>
+          <div className="text-xs text-slate-500">Unsynced</div>
         </div>
       </div>
       {total > 0 && (
         <div className="mt-3">
           <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
-            <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${Math.round((readCount / total) * 100)}%` }} />
+            <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} />
           </div>
-          <div className="mt-1 text-center text-xs text-slate-500">{Math.round((readCount / total) * 100)}% read</div>
+          <div className="mt-1 text-center text-xs text-slate-500">{pct}% read</div>
         </div>
       )}
       <div className="mt-1 flex items-center justify-end gap-1 text-xs text-slate-400">
         {pending > 0 ? <CloudOff size={12} /> : null} last sync {ago(lastSyncAt)}
+        {lastSyncReport && lastSyncReport.failed === 0 && lastSyncReport.success > 0 && (
+          <span className="ml-2 text-emerald-600">• last batch: {lastSyncReport.success} ok</span>
+        )}
       </div>
 
       {/* Controls */}
@@ -325,9 +412,19 @@ export default function FieldModePanel() {
         <button onClick={() => { setScanErr(""); setScanOpen(true); }} className="inline-flex items-center gap-2 rounded-xl bg-purple-600 px-3 py-2 text-sm font-semibold text-white hover:bg-purple-700">
           <QrCode size={16} /> Scan
         </button>
-        <button onClick={() => setUnreadOnly((v) => !v)} className={`rounded-xl border px-3 py-2 text-sm font-semibold ${unreadOnly ? "border-amber-300 bg-amber-50 text-amber-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-          {unreadOnly ? "Unread only" : "All"}
-        </button>
+        {[
+          { v: "all", label: "All" },
+          { v: "unread", label: "Unread" },
+          { v: "blocked", label: "Blocked" },
+        ].map((b) => (
+          <button
+            key={b.v}
+            onClick={() => setFilter(b.v)}
+            className={`rounded-xl border px-3 py-2 text-sm font-semibold ${filter === b.v ? "border-purple-300 bg-purple-50 text-purple-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+          >
+            {b.label}
+          </button>
+        ))}
       </div>
       {scanErr && <div className="mt-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{scanErr}</div>}
 
@@ -335,7 +432,7 @@ export default function FieldModePanel() {
       <div className="mt-4 space-y-3">
         {total === 0 ? (
           <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">
-            No accounts cached. {online ? "Tap “Download Batch” to load your assigned accounts for offline use." : "Connect to the internet and download your batch."}
+            No meters assigned yet. {online ? "Tap “Download Batch” to load only YOUR assigned meters for offline reading." : "Connect to the internet and download your batch."}
           </div>
         ) : filtered.length === 0 ? (
           <div className="p-6 text-center text-sm text-slate-500">No matching accounts.</div>
@@ -343,25 +440,29 @@ export default function FieldModePanel() {
           filtered.slice(0, 100).map((m) => {
             const meters = m.activeBillingMeters || [];
             const allRead = meters.length > 0 && meters.every((mt) => isRead(m, mt.meterNumber));
-            const blocked = m.priorUnsettledPeriods?.length > 0;
+            const blocked = (m.priorUnsettledPeriods || []).length > 0;
             return (
-              <div key={m.pnNo} className={`rounded-2xl border p-4 ${allRead ? "border-emerald-200 bg-emerald-50/40" : "border-slate-200"}`}>
+              <div key={m.pnNo} className={`rounded-2xl border p-4 ${blocked ? "border-red-200 bg-red-50/30" : allRead ? "border-emerald-200 bg-emerald-50/40" : "border-slate-200"}`}>
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <div className="font-bold text-slate-900">{m.accountName}</div>
                     <div className="font-mono text-xs text-slate-500">{m.pnNo}</div>
                     {m.addressText && (
-                      <div className="mt-1 flex items-start gap-1 text-xs text-slate-500">
-                        <MapPin size={12} className="mt-0.5 shrink-0" /> {m.addressText}
+                      <div className="mt-1 flex items-start gap-1 text-xs text-slate-600">
+                        <MapPin size={12} className="mt-0.5 shrink-0 text-purple-500" />
+                        <span className="font-medium">{m.addressText}</span>
                       </div>
                     )}
                   </div>
-                  {allRead && <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">READ</span>}
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    {blocked && <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700"><Ban size={10}/> BLOCKED</span>}
+                    {allRead && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">READ</span>}
+                  </div>
                 </div>
 
                 {blocked && (
                   <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-[11px] font-medium text-red-700">
-                    Unsettled bill(s): {m.priorUnsettledPeriods.join(", ")} — settle before billing.
+                    Unsettled bill(s): {m.priorUnsettledPeriods.join(", ")} — for disconnection notice.
                   </div>
                 )}
 

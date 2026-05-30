@@ -106,7 +106,7 @@ export default function SecurityPanel() {
         </div>
         <div className="flex gap-2">
           <button onClick={() => nav("/setup-2fa")} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold hover:bg-slate-50">
-            <KeyRound size={16} /> Set up my 2FA
+            <KeyRound size={16} /> My 2FA (set up / reset)
           </button>
           <button onClick={load} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold hover:bg-slate-50">
             <RefreshCw size={16} className={loading ? "animate-spin" : ""} />

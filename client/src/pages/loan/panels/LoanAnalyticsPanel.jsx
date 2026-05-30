@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import Card from "../../../components/Card";
+import CollectionTodayPanel from "../../../components/CollectionTodayPanel";
 import { apiFetch } from "../../../lib/api";
 import { useAuth } from "../../../context/AuthContext";
 import { RefreshCw, Banknote, TrendingUp, Wallet, AlertCircle, Receipt, PiggyBank } from "lucide-react";
@@ -63,6 +64,8 @@ export default function LoanAnalyticsPanel() {
   }, []);
 
   return (
+    <div className="space-y-4">
+      <CollectionTodayPanel module="loan" />
     <Card>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
@@ -113,5 +116,6 @@ export default function LoanAnalyticsPanel() {
         </div>
       )}
     </Card>
+    </div>
   );
 }
