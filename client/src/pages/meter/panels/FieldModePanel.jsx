@@ -251,9 +251,20 @@ export default function FieldModePanel() {
     setScanOpen(false);
     const parsed = parseMeterQR(text);
     if (!parsed) return setScanErr("Unrecognized QR code.");
+    // Resolve against the cached batch so the plumber sees who/what they
+    // just scanned — account name, PN no, and meter number — before they
+    // even start typing the reading. Works fully offline.
+    const member = members.find((m) => mnorm(m.pnNo) === mnorm(parsed.pnNo));
     setQ(parsed.pnNo);
     setFilter("all");
     setScanErr("");
+    if (!member) {
+      flash(`Scanned ${parsed.pnNo} — not in your downloaded batch.`, "error", true);
+      return;
+    }
+    const meter = (member.activeBillingMeters || []).find((mt) => mnorm(mt.meterNumber) === mnorm(parsed.meterNumber));
+    const meterLabel = parsed.meterNumber || meter?.meterNumber || "—";
+    flash(`${member.accountName} • ${member.pnNo} • Meter ${meterLabel}${meter ? "" : " (not on this account)"}`, meter ? "success" : "error", !meter);
   };
 
   // Counts driven by the cached batch + the local queue.

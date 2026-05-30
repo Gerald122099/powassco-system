@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { apiFetch } from "../lib/api";
@@ -6,8 +6,23 @@ import Navbar from "../components/Navbar";
 import logo from "../assets/logo.png";
 
 export default function LoginPage() {
-  const { login, verify2FA } = useAuth();
+  const { login, verify2FA, user, token } = useAuth();
   const nav = useNavigate();
+
+  // Already signed in? Skip the form entirely (handles cold-start of the
+  // installed PWA when start_url is /employee-login, and any refresh of
+  // /employee-login during an active session).
+  useEffect(() => {
+    if (!token || !user) return;
+    const role = user.role;
+    if (role === "admin") nav("/admin", { replace: true });
+    else if (role === "water_bill_officer") nav("/water", { replace: true });
+    else if (role === "loan_officer") nav("/loan", { replace: true });
+    else if (role === "meter_reader") nav("/meter", { replace: true });
+    else if (role === "plumber") nav("/plumber", { replace: true });
+    else if (role === "cashier") nav("/cashier", { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, user]);
 
   const [step, setStep] = useState("login"); // "login" | "2fa" | "recover" | "forgot"
   const [employeeId, setEmployeeId] = useState("");

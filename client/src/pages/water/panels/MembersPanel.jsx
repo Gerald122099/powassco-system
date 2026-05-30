@@ -8,6 +8,7 @@ import { useAuth } from "../../../context/AuthContext";
 import { QrCode } from "lucide-react";
 import MeterQRModal from "../../../components/MeterQRModal";
 import { printMeterStickers } from "../../../lib/qrStickerSheet";
+import { toast } from "../../../components/Toast";
 
 const PAGE_SIZE = 12;
 
@@ -571,23 +572,22 @@ export default function MembersPanel() {
 
     if (!editing) {
       await apiFetch("/water/members", {
-        method: "POST", 
-        token, 
-        body: payload 
+        method: "POST",
+        token,
+        body: payload
       });
-      setToast("✅ Member added successfully");
+      toast.success("Successfully saved");
     } else {
       await apiFetch(`/water/members/${editing._id}`, {
         method: "PUT",
         token,
         body: payload,
       });
-      setToast("✅ Member updated successfully");
+      toast.success("Member updated");
     }
 
     setModalOpen(false);
     await load();
-    setTimeout(() => setToast(""), 2000);
   } catch (e) {
     console.error("Save error:", e);
     
@@ -609,11 +609,10 @@ export default function MembersPanel() {
 
     try {
       await apiFetch(`/water/members/${m._id}`, { method: "DELETE", token });
-      setToast("🗑️ Member deleted");
+      toast.success("Member deleted");
       await load();
-      setTimeout(() => setToast(""), 2000);
     } catch (e) {
-      alert(e.message);
+      toast.error(e.message);
     }
   }
 
