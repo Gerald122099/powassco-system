@@ -52,7 +52,9 @@ export default function PaymentSettingsPanel() {
           instructions: s.instructions,
           paymongoSecretKey: s.paymongoSecretKey,
           paymongoPublicKey: s.paymongoPublicKey,
+          paymongoWebhookSecret: s.paymongoWebhookSecret,
           xenditApiKey: s.xenditApiKey,
+          xenditCallbackToken: s.xenditCallbackToken,
           pspActive: s.pspActive,
         },
       });
@@ -144,15 +146,23 @@ export default function PaymentSettingsPanel() {
       ) : (
         <div className="mt-5 space-y-3 rounded-2xl border border-slate-200 p-4">
           <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
-            <Info size={16} className="mt-0.5 shrink-0" /> Enter your {s.mode === "paymongo" ? "PayMongo" : "Xendit"} keys and activate. Realtime auto-confirm is wired on the server side once your merchant account is live; until then, keep mode on <b>Manual</b> so members can still pay.
+            <Info size={16} className="mt-0.5 shrink-0" /> Enter your {s.mode === "paymongo" ? "PayMongo" : "Xendit"} keys, paste the webhook secret/token, then tick <b>Activate realtime</b>. The system will auto-confirm payments from the provider; if anything goes wrong, switch back to <b>Manual</b>.
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+            <div className="font-semibold text-slate-700">Webhook URL — paste this into your {s.mode === "paymongo" ? "PayMongo" : "Xendit"} dashboard:</div>
+            <div className="mt-1 break-all font-mono text-[11px] text-slate-700">{`${(typeof window !== "undefined" && window.location.origin) || ""}/api/webhooks/${s.mode}`.replace("https://powassco.site/api", "https://powassco-system.onrender.com/api")}</div>
           </div>
           {s.mode === "paymongo" ? (
             <>
               <div><label className="text-xs font-semibold text-slate-600">PayMongo Secret Key</label><input value={s.paymongoSecretKey || ""} onChange={(e) => set("paymongoSecretKey", e.target.value)} placeholder="sk_live_…" className={inputCls} /></div>
               <div><label className="text-xs font-semibold text-slate-600">PayMongo Public Key</label><input value={s.paymongoPublicKey || ""} onChange={(e) => set("paymongoPublicKey", e.target.value)} placeholder="pk_live_…" className={inputCls} /></div>
+              <div><label className="text-xs font-semibold text-slate-600">PayMongo Webhook Secret</label><input value={s.paymongoWebhookSecret || ""} onChange={(e) => set("paymongoWebhookSecret", e.target.value)} placeholder="whsec_…" className={inputCls} /></div>
             </>
           ) : (
-            <div><label className="text-xs font-semibold text-slate-600">Xendit API Key</label><input value={s.xenditApiKey || ""} onChange={(e) => set("xenditApiKey", e.target.value)} placeholder="xnd_…" className={inputCls} /></div>
+            <>
+              <div><label className="text-xs font-semibold text-slate-600">Xendit API Key</label><input value={s.xenditApiKey || ""} onChange={(e) => set("xenditApiKey", e.target.value)} placeholder="xnd_…" className={inputCls} /></div>
+              <div><label className="text-xs font-semibold text-slate-600">Xendit Callback Token</label><input value={s.xenditCallbackToken || ""} onChange={(e) => set("xenditCallbackToken", e.target.value)} placeholder="from Xendit dashboard" className={inputCls} /></div>
+            </>
           )}
           <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
             <input type="checkbox" checked={!!s.pspActive} onChange={(e) => set("pspActive", e.target.checked)} />

@@ -27,6 +27,11 @@ const OnlinePaymentSchema = new mongoose.Schema(
     payerPhone: { type: String, default: "" },
     receiptImage: { type: String, default: "" }, // base64 screenshot of the payment receipt
 
+    // PSP (realtime) — set when a checkout was created with PayMongo/Xendit.
+    provider: { type: String, enum: ["", "manual", "paymongo", "xendit"], default: "manual" },
+    providerRef: { type: String, default: "", index: true }, // checkout/invoice id
+    checkoutUrl: { type: String, default: "" },
+
     status: { type: String, enum: ["pending", "verified", "rejected"], default: "pending", index: true },
     orNo: { type: String, default: "" },
     verifiedBy: { type: String, default: "" },

@@ -78,8 +78,39 @@ export default function PayOnlineModal({ open, target, onClose }) {
           Online payment is temporarily unavailable. Please pay at the office (walk-in). Thank you!
         </div>
       ) : realtime ? (
-        <div className="py-4 text-center text-sm text-slate-600">
-          Realtime online payment is being set up. For now, please pay at the office. Thank you!
+        <div className="space-y-3">
+          <div className="rounded-xl bg-slate-50 p-3 text-sm">
+            <div className="flex justify-between"><span className="text-slate-500">Amount due (rounded up)</span><span className="font-semibold">{peso(dueRounded)}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">Online fee</span><span className="font-semibold">{peso(fee)}</span></div>
+            <div className="mt-1 flex justify-between border-t border-slate-200 pt-1"><span className="font-bold text-slate-800">Total</span><span className="font-extrabold text-emerald-700">{peso(totalToPay)}</span></div>
+          </div>
+          <p className="text-xs text-slate-500">You'll be redirected to {info?.payeeName || "the payment provider"} to pay via GCash, Maya, QR PH, or card. Your bill is marked paid automatically once payment is confirmed.</p>
+          <div>
+            <label className="text-xs font-semibold text-slate-600">Account name of sender</label>
+            <input value={payerName} onChange={(e) => setPayerName(e.target.value)} placeholder="Optional" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100" />
+          </div>
+          {err && <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{err}</div>}
+          <button
+            disabled={busy}
+            onClick={async () => {
+              setErr(""); setBusy(true);
+              try {
+                const body = {
+                  module: target.module,
+                  payerName,
+                  ...(target.module === "water"
+                    ? { pnNo: target.pnNo, meterNumber: target.meterNumber, periodKey: target.periodKey }
+                    : { loanId: target.loanId, amountDue: dueRounded }),
+                };
+                const res = await apiFetch("/public/payments/create-checkout", { method: "POST", body });
+                if (res?.url) window.location.href = res.url;
+                else throw new Error("Could not start checkout.");
+              } catch (e2) { setErr(e2.message); setBusy(false); }
+            }}
+            className="w-full rounded-2xl bg-emerald-600 py-3 font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+          >
+            {busy ? "Starting…" : "Pay Now"}
+          </button>
         </div>
       ) : (
         <form onSubmit={submit} className="space-y-3">

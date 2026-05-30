@@ -18,7 +18,9 @@ const PaymentSettingsSchema = new mongoose.Schema(
     // PSP credentials (used once the realtime integration is wired + activated)
     paymongoSecretKey: { type: String, default: "" },
     paymongoPublicKey: { type: String, default: "" },
+    paymongoWebhookSecret: { type: String, default: "" }, // for HMAC verification of incoming events
     xenditApiKey: { type: String, default: "" },
+    xenditCallbackToken: { type: String, default: "" }, // sent as X-CALLBACK-TOKEN on each event
     pspActive: { type: Boolean, default: false }, // admin must explicitly activate realtime
 
     updatedBy: { type: String, default: "" },

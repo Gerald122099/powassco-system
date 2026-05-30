@@ -31,6 +31,7 @@ import assetsRoutes from "./routes/admin/assets.routes.js";
 import publicPaymentsRoutes from "./routes/public/payments.routes.js";
 import paymentsRoutes from "./routes/payments.routes.js";
 import disconnectionsRoutes from "./routes/disconnections.routes.js";
+import webhooksRoutes from "./routes/webhooks.routes.js";
 
 import { auditLogger } from "./middleware/auditLogger.js";
 import { ensureBootstrapAdmin } from "./utils/ensureAdmin.js";
@@ -43,7 +44,9 @@ app.set("trust proxy", 1);
 // Security headers (HSTS, no-sniff, frameguard, etc.). CSP/CORP disabled so the
 // cross-origin Vercel frontend can still call this API.
 app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: false }));
-app.use(express.json({ limit: "3mb" })); // allow base64 announcement images
+// Capture rawBody too — PayMongo signs webhook payloads, so the receiver
+// needs the exact byte string the PSP signed (not the parsed object).
+app.use(express.json({ limit: "3mb", verify: (req, _res, buf) => { req.rawBody = buf; } }));
 // Strip any $/.-prefixed keys from inputs — defense against NoSQL operator injection.
 app.use(mongoSanitize());
 
@@ -140,6 +143,7 @@ app.use("/api/announcements", adminAnnouncementsRoutes);
 app.use("/api/assets", assetsRoutes);
 app.use("/api/payments", paymentsRoutes);
 app.use("/api/disconnections", disconnectionsRoutes);
+app.use("/api/webhooks", webhooksRoutes);
 
 // JSON 404 for unknown routes
 app.use((req, res) => {

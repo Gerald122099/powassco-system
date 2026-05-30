@@ -3,9 +3,15 @@ import PaymentSettings from "../../models/PaymentSettings.js";
 import OnlinePayment from "../../models/OnlinePayment.js";
 import WaterBill from "../../models/WaterBill.js";
 import LoanApplication from "../../models/LoanApplication.js";
+import { createPaymongoCheckout, createXenditInvoice } from "../../utils/paymentProviders.js";
 
 const router = express.Router();
 const ceilPeso = (n) => Math.ceil(Number(n) || 0);
+
+function successUrl() {
+  const first = (process.env.CLIENT_ORIGIN || "https://powassco.site").split(",")[0].trim().replace(/\/+$/, "");
+  return `${first}/inquiry?paid=1`;
+}
 
 async function getSettings() {
   let s = await PaymentSettings.findOne();
@@ -104,6 +110,65 @@ router.post("/submit", async (req, res) => {
     throw e;
   }
   return res.status(201).json({ ok: true, message: "Payment submitted. It will be verified and posted within 2–3 working days." });
+});
+
+// Realtime: create a hosted PSP checkout (PayMongo / Xendit) and return the
+// URL to redirect the payer to. The PSP confirms payment via the webhook
+// (auto-posts to the bill/loan). Activates only when an admin saved valid
+// keys + toggled "Activate realtime" in Payment Settings.
+router.post("/create-checkout", async (req, res) => {
+  const s = await getSettings();
+  if (s.onlineEnabled === false) return res.status(403).json({ message: "Online payments are temporarily unavailable. Please pay at the office." });
+  if (s.mode === "manual" || !s.pspActive) {
+    return res.status(400).json({ message: "Realtime online payment is not active. Use the manual QR option." });
+  }
+
+  const b = req.body || {};
+  const fee = Number(s.onlineFee) || 0;
+  let identity, amountDue, description, doc, externalId;
+
+  if (b.module === "water") {
+    const pnNo = String(b.pnNo || "").toUpperCase().trim();
+    const meterNumber = String(b.meterNumber || "").toUpperCase().trim();
+    const periodKey = String(b.periodKey || "").trim();
+    const bill = await WaterBill.findOne({ pnNo, meterNumber, periodKey });
+    if (!bill) return res.status(404).json({ message: "Bill not found." });
+    if (bill.status === "paid") return res.status(400).json({ message: "This bill is already paid." });
+    amountDue = ceilPeso(bill.totalDue);
+    description = `POWASSCO water bill ${periodKey} • ${meterNumber}`;
+    externalId = `PW-W-${pnNo}-${meterNumber}-${periodKey}-${Date.now()}`;
+    identity = { module: "water", billId: bill._id, pnNo, meterNumber, periodKey, accountName: bill.accountName };
+  } else if (b.module === "loan") {
+    const loanId = String(b.loanId || "").trim();
+    const loan = await LoanApplication.findOne({ loanId });
+    if (!loan) return res.status(404).json({ message: "Loan not found." });
+    if ((loan.balance || 0) <= 0) return res.status(400).json({ message: "This loan has no outstanding balance." });
+    amountDue = ceilPeso(Number(b.amountDue || loan.balance || 0));
+    description = `POWASSCO loan payment • ${loanId}`;
+    externalId = `PW-L-${loanId}-${Date.now()}`;
+    identity = { module: "loan", applicationId: loan._id, loanId, borrowerName: loan.borrowerName };
+  } else {
+    return res.status(400).json({ message: "Invalid payment type." });
+  }
+
+  const amountToPay = amountDue + fee;
+  try {
+    const { url, providerRef } = s.mode === "paymongo"
+      ? await createPaymongoCheckout({ secretKey: s.paymongoSecretKey, amountPhp: amountToPay, description, referenceNumber: externalId, successUrl: successUrl() })
+      : await createXenditInvoice({ apiKey: s.xenditApiKey, amountPhp: amountToPay, description, externalId, successUrl: successUrl() });
+
+    await OnlinePayment.create({
+      ...identity,
+      amountDue, fee, amountToPay,
+      referenceId: externalId, amountPaid: amountToPay,
+      payerName: String(b.payerName || "").trim(),
+      provider: s.mode, providerRef, checkoutUrl: url, status: "pending",
+    });
+    res.json({ url });
+  } catch (e) {
+    if (e?.code === 11000) return res.status(409).json({ message: "A checkout is already in progress for this transaction." });
+    res.status(502).json({ message: e.message || "Could not create checkout." });
+  }
 });
 
 export default router;

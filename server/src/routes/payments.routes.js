@@ -1,14 +1,10 @@
 import express from "express";
 import PaymentSettings from "../models/PaymentSettings.js";
 import OnlinePayment from "../models/OnlinePayment.js";
-import WaterBill from "../models/WaterBill.js";
-import WaterPayment from "../models/WaterPayment.js";
-import LoanApplication from "../models/LoanApplication.js";
-import LoanPayment from "../models/LoanPayment.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
+import { postOnlinePayment } from "../utils/postOnlinePayment.js";
 
 const router = express.Router();
-const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
 async function getSettings() {
   let s = await PaymentSettings.findOne();
@@ -58,44 +54,13 @@ router.post("/online/:id/verify", ...officerGuard, async (req, res) => {
   const orNo = String(req.body.orNo || "").trim();
   if (!orNo) return res.status(400).json({ message: "OR number is required." });
 
-  if (op.module === "water") {
-    const bill = await WaterBill.findById(op.billId);
-    if (!bill) return res.status(404).json({ message: "Bill no longer exists." });
-    if (bill.status !== "paid") {
-      const dupOr = await WaterPayment.findOne({ orNo });
-      if (dupOr) return res.status(409).json({ message: `OR ${orNo} already used.` });
-      await WaterPayment.create({
-        billId: bill._id, pnNo: bill.pnNo, meterNumber: bill.meterNumber, periodKey: bill.periodKey,
-        orNo, method: "online", amountPaid: bill.totalDue,
-        discountApplied: bill.discount || 0, penaltyApplied: bill.penaltyApplied || 0,
-        classification: bill.classification, receivedBy: req.user?.employeeId || "",
-        paidAt: new Date(), notes: `Online payment • ref ${op.referenceId}`,
-      });
-      bill.status = "paid";
-      bill.paidAt = new Date();
-      bill.orNo = orNo;
-      await bill.save();
-    }
-  } else {
-    const loan = await LoanApplication.findById(op.applicationId);
-    if (!loan) return res.status(404).json({ message: "Loan no longer exists." });
-    const amt = op.amountDue;
-    await LoanPayment.create({
-      loanId: loan.loanId, applicationId: loan._id, borrowerPnNo: loan.borrowerPnNo,
-      orNo, method: "online", amountPaid: amt, paidAt: new Date(), receivedBy: req.user?.fullName || req.user?.employeeId || "",
-    });
-    loan.totalPaid = round2(Number(loan.totalPaid || 0) + amt);
-    loan.balance = round2(Math.max(0, Number(loan.totalPayment || 0) - loan.totalPaid));
-    if (loan.balance <= 0 && loan.status === "released") loan.status = "closed";
-    await loan.save();
+  try {
+    const updated = await postOnlinePayment(op, { orNo, receivedBy: req.user?.fullName || req.user?.employeeId || "" });
+    res.json({ ok: true, onlinePayment: updated });
+  } catch (e) {
+    if (e.code === "DUP_OR") return res.status(409).json({ message: e.message });
+    res.status(400).json({ message: e.message });
   }
-
-  op.status = "verified";
-  op.orNo = orNo;
-  op.verifiedBy = req.user?.fullName || req.user?.employeeId || "";
-  op.verifiedAt = new Date();
-  await op.save();
-  res.json({ ok: true, onlinePayment: op });
 });
 
 router.post("/online/:id/reject", ...officerGuard, async (req, res) => {
