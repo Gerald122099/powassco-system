@@ -27,7 +27,8 @@ const ROLE_OPTIONS = [
   { value: "loan_officer", label: "Loan Officer" },
   { value: "meter_reader", label: "Meter Reader (office)" },
   { value: "plumber", label: "Plumber (field reader)" },
-  { value: "cashier", label: "Cashier (dues lookup)" },
+  { value: "cashier", label: "Cashier (collects payments)" },
+  { value: "bookkeeper", label: "Bookkeeper (transactions + CBU + product loans)" },
 ];
 
 function roleLabel(role) {

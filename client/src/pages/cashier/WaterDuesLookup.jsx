@@ -1,18 +1,63 @@
 import { useMemo, useState } from "react";
 import Card from "../../components/Card";
+import Modal from "../../components/Modal";
 import { apiFetch } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
-import { Search, Droplets, Printer, AlertTriangle, MapPin, CheckCircle, Hourglass, Gauge } from "lucide-react";
+import { toast } from "../../components/Toast";
+import { Search, Droplets, Printer, AlertTriangle, MapPin, CheckCircle, Hourglass, Gauge, Banknote } from "lucide-react";
 
 const peso = (n) => "₱" + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "—");
 
 export default function WaterDuesLookup() {
   const { token, user } = useAuth();
+  const isCashier = ["admin", "cashier"].includes(user?.role);
   const [q, setQ] = useState("");
   const [data, setData] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  // Payment modal: { bill, totalDue }
+  const [payTarget, setPayTarget] = useState(null);
+  const [payOR, setPayOR] = useState("");
+  const [payReceived, setPayReceived] = useState("");
+  const [paying, setPaying] = useState(false);
+
+  function openPay(bill) {
+    setPayTarget(bill);
+    setPayOR("");
+    setPayReceived(String(bill.totalDue || ""));
+  }
+
+  async function submitPay(e) {
+    e?.preventDefault?.();
+    if (!payTarget) return;
+    const due = Number(payTarget.totalDue) || 0;
+    const received = Number(payReceived) || 0;
+    if (!payOR.trim()) return toast.error("Enter the OR number.");
+    if (received < due) return toast.error(`Amount received must be at least ₱${due.toFixed(2)}.`);
+    setPaying(true);
+    try {
+      const res = await apiFetch("/cashier/pay-water", {
+        method: "POST",
+        token,
+        body: {
+          pnNo: data.member.pnNo,
+          meterNumber: payTarget.meterNumber,
+          periodKey: payTarget.periodCovered || payTarget.periodKey,
+          orNo: payOR.trim().toUpperCase(),
+          amountReceived: received,
+          method: "cash",
+        },
+      });
+      toast.success(res.message || "Payment posted.");
+      setPayTarget(null);
+      lookup(null, data.member.pnNo);
+    } catch (e2) {
+      toast.error(e2.message);
+    } finally {
+      setPaying(false);
+    }
+  }
 
   async function lookup(e, override) {
     e?.preventDefault?.();
@@ -178,7 +223,7 @@ export default function WaterDuesLookup() {
           {/* Bills grouped per meter — so a multi-meter account shows each
               meter separately and the cashier can issue an OR against a
               specific meter. */}
-          <MeterGroups data={data} printSlip={printSlip} />
+          <MeterGroups data={data} printSlip={printSlip} onPay={isCashier ? openPay : null} />
 
           {data.recentPayments?.length > 0 && (
             <div className="rounded-2xl border border-slate-200 overflow-hidden">
@@ -213,11 +258,49 @@ export default function WaterDuesLookup() {
           )}
         </div>
       )}
+
+      <Modal open={!!payTarget} title="Receive Payment" subtitle={payTarget ? `Meter ${payTarget.meterNumber} • ${payTarget.periodCovered || payTarget.periodKey}` : ""} onClose={() => setPayTarget(null)} size="sm">
+        {payTarget && (
+          <form onSubmit={submitPay} className="space-y-3">
+            <div className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-2 text-sm">
+              <div>Account: <b>{data?.member?.accountName}</b> <span className="text-xs text-slate-500">({data?.member?.pnNo})</span></div>
+              <div className="mt-1 flex items-center justify-between">
+                <span className="text-xs text-slate-500">Total due</span>
+                <span className="text-lg font-extrabold text-red-600">{peso(payTarget.totalDue)}</span>
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-700">OR Number (paper receipt)</label>
+              <input value={payOR} onChange={(e) => setPayOR(e.target.value.toUpperCase())} autoFocus placeholder="e.g. 0010234" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-mono uppercase" />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-700">Amount Received (₱)</label>
+              <input type="number" step="0.01" min={payTarget.totalDue} value={payReceived} onChange={(e) => setPayReceived(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-mono text-right" />
+              {Number(payReceived) > Number(payTarget.totalDue) && (
+                <div className="mt-1 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-1.5 text-[11px] font-semibold text-emerald-800">
+                  Excess <b>{peso(Number(payReceived) - Number(payTarget.totalDue))}</b> will be added to {data?.member?.accountName}'s CBU (Capital Build-Up).
+                </div>
+              )}
+              {Number(payReceived) < Number(payTarget.totalDue) && (
+                <div className="mt-1 rounded-lg bg-red-50 border border-red-200 px-3 py-1.5 text-[11px] font-semibold text-red-800">
+                  Amount received must be ≥ ₱{Number(payTarget.totalDue).toFixed(2)}.
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button type="button" onClick={() => setPayTarget(null)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold">Cancel</button>
+              <button disabled={paying || Number(payReceived) < Number(payTarget.totalDue) || !payOR.trim()} className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">
+                {paying ? "Posting…" : "Post Payment"}
+              </button>
+            </div>
+          </form>
+        )}
+      </Modal>
     </Card>
   );
 }
 
-function MeterGroups({ data, printSlip }) {
+function MeterGroups({ data, printSlip, onPay }) {
   const groups = useMemo(() => {
     const map = new Map();
     // Seed with active meters from the member so meters with zero bills still appear.
@@ -277,6 +360,7 @@ function MeterGroups({ data, printSlip }) {
                     <th className="px-3 py-2 text-center">Status</th>
                     <th className="px-3 py-2">Due Date</th>
                     <th className="px-3 py-2">OR No</th>
+                    {onPay && <th className="px-3 py-2 text-right">Action</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -296,6 +380,15 @@ function MeterGroups({ data, printSlip }) {
                       </td>
                       <td className="px-3 py-2 text-xs text-slate-600">{fmtDate(b.dueDate)}</td>
                       <td className="px-3 py-2 font-mono text-xs text-slate-600">{b.orNo || "—"}</td>
+                      {onPay && (
+                        <td className="px-3 py-2 text-right">
+                          {b.status !== "paid" && (
+                            <button onClick={() => onPay(b)} className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50">
+                              <Banknote size={12}/> Pay
+                            </button>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>

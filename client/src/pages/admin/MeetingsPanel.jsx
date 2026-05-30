@@ -13,6 +13,7 @@ const AUDIENCES = [
   { v: "meter_reader", label: "Meter Readers" },
   { v: "plumber", label: "Plumbers" },
   { v: "cashier", label: "Cashiers" },
+  { v: "bookkeeper", label: "Bookkeepers" },
 ];
 const TYPES = ["meeting", "event", "training", "holiday", "deadline", "other"];
 const EMPTY = { title: "", type: "meeting", datetime: "", location: "", notes: "", audience: "all" };

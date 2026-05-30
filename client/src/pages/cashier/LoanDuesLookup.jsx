@@ -1,18 +1,65 @@
 import { useState } from "react";
 import Card from "../../components/Card";
+import Modal from "../../components/Modal";
 import { apiFetch } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
-import { Search, Banknote, Printer, Hourglass, CheckCircle } from "lucide-react";
+import { toast } from "../../components/Toast";
+import { Search, Banknote, Printer, Hourglass, CheckCircle, Wallet } from "lucide-react";
 
 const peso = (n) => "₱" + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "—");
 
 export default function LoanDuesLookup() {
   const { token, user } = useAuth();
+  const isCashier = ["admin", "cashier"].includes(user?.role);
   const [q, setQ] = useState("");
   const [data, setData] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  // Pay modal state
+  const [payLoan, setPayLoan] = useState(null);
+  const [periods, setPeriods] = useState(1);
+  const [payOR, setPayOR] = useState("");
+  const [payReceived, setPayReceived] = useState("");
+  const [paying, setPaying] = useState(false);
+
+  function openPay(loan) {
+    setPayLoan(loan);
+    setPeriods(1);
+    setPayOR("");
+    setPayReceived(String(loan.monthlyPayment || ""));
+  }
+
+  const installmentTotal = payLoan ? Number(payLoan.monthlyPayment || 0) * Number(periods || 1) : 0;
+
+  async function submitPay(e) {
+    e?.preventDefault?.();
+    if (!payLoan) return;
+    const received = Number(payReceived) || 0;
+    if (!payOR.trim()) return toast.error("Enter the OR number.");
+    if (received < installmentTotal) return toast.error(`Amount received must be at least ₱${installmentTotal.toFixed(2)}.`);
+    setPaying(true);
+    try {
+      const res = await apiFetch("/cashier/pay-loan", {
+        method: "POST",
+        token,
+        body: {
+          loanId: payLoan.loanId,
+          orNo: payOR.trim().toUpperCase(),
+          amountReceived: received,
+          periodsCovered: periods,
+          method: "cash",
+        },
+      });
+      toast.success(res.message || "Payment posted.");
+      setPayLoan(null);
+      lookup(null, payLoan.loanId);
+    } catch (e2) {
+      toast.error(e2.message);
+    } finally {
+      setPaying(false);
+    }
+  }
 
   async function lookup(e) {
     e?.preventDefault?.();
@@ -109,9 +156,16 @@ export default function LoanDuesLookup() {
                   <div className="text-right">
                     <div className="text-xs text-slate-500">Outstanding balance</div>
                     <div className="text-2xl font-extrabold text-red-600">{peso(loan.balance)}</div>
-                    <button onClick={() => printSlip(loan)} className="mt-2 inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
-                      <Printer size={13} /> Print dues slip
-                    </button>
+                    <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
+                      <button onClick={() => printSlip(loan)} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                        <Printer size={13} /> Print slip
+                      </button>
+                      {isCashier && Number(loan.balance) > 0 && (
+                        <button onClick={() => openPay(loan)} className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">
+                          <Banknote size={13} /> Receive Payment
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -164,6 +218,50 @@ export default function LoanDuesLookup() {
           })}
         </div>
       )}
+
+      <Modal open={!!payLoan} title="Receive Loan Payment" subtitle={payLoan ? `${payLoan.loanId} • ${payLoan.borrowerName}` : ""} onClose={() => setPayLoan(null)} size="sm">
+        {payLoan && (
+          <form onSubmit={submitPay} className="space-y-3">
+            <div className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-2 text-sm space-y-1">
+              <div className="flex justify-between"><span className="text-slate-500">Monthly payment</span><b>{peso(payLoan.monthlyPayment)}</b></div>
+              <div className="flex justify-between"><span className="text-slate-500">Outstanding balance</span><b className="text-red-600">{peso(payLoan.balance)}</b></div>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-700">Periods to pay (1 = current, more = advance)</label>
+              <div className="mt-1 flex items-center gap-2">
+                {[1, 2, 3, 6, 12].map((n) => (
+                  <button type="button" key={n} onClick={() => { setPeriods(n); setPayReceived(String(Number(payLoan.monthlyPayment || 0) * n)); }}
+                    className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${periods === n ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+                    {n}
+                  </button>
+                ))}
+                <input type="number" min={1} max={60} value={periods} onChange={(e) => { const n = Math.max(1, Number(e.target.value) || 1); setPeriods(n); setPayReceived(String(Number(payLoan.monthlyPayment || 0) * n)); }}
+                  className="w-20 rounded-lg border border-slate-200 px-2 py-1.5 text-sm text-center font-mono" />
+              </div>
+              <div className="mt-1 text-[11px] text-slate-500">Total of {periods} period(s) = <b>{peso(installmentTotal)}</b></div>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-700">OR Number (paper receipt)</label>
+              <input value={payOR} onChange={(e) => setPayOR(e.target.value.toUpperCase())} placeholder="e.g. 0010234" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-mono uppercase" />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-700">Amount Received (₱)</label>
+              <input type="number" step="0.01" min={installmentTotal} value={payReceived} onChange={(e) => setPayReceived(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-mono text-right" />
+              {Number(payReceived) > installmentTotal && (
+                <div className="mt-1 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-1.5 text-[11px] font-semibold text-emerald-800">
+                  <Wallet size={11} className="-mt-0.5 mr-1 inline" /> Excess <b>{peso(Number(payReceived) - installmentTotal)}</b> will be added to {payLoan.borrowerName}'s CBU.
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button type="button" onClick={() => setPayLoan(null)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold">Cancel</button>
+              <button disabled={paying || Number(payReceived) < installmentTotal || !payOR.trim()} className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">
+                {paying ? "Posting…" : "Post Payment"}
+              </button>
+            </div>
+          </form>
+        )}
+      </Modal>
     </Card>
   );
 }

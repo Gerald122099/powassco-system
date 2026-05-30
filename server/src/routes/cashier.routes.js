@@ -1,12 +1,16 @@
-// Cashier lookup — strictly read-only.
-// The cashier receives cash and writes a paper OR receipt by hand.
-// They never mark anything paid here; the consumer then walks the OR receipt
-// over to the water_bill_officer (or loan_officer) who inputs the OR number
-// and marks the specific bill/loan as paid via the existing officer panels.
+// Cashier — lookup + posting (the single place payments enter the system).
 //
-// Two surfaces:
-//   GET /api/cashier/water?q=...   — by PN no OR meter number
-//   GET /api/cashier/loan?q=...    — by loan ID, reference code, borrower name, or PN no
+//   GET  /api/cashier/water?q=...   — by PN no, meter, or name
+//   GET  /api/cashier/loan?q=...    — by loan ID, reference, borrower, PN
+//   POST /api/cashier/pay-water     — post a payment to one or more bills,
+//                                     OR + amount received (≥ total due);
+//                                     excess auto-credits the member's CBU.
+//   POST /api/cashier/pay-loan      — post a payment that may cover the
+//                                     current period and one or more advance
+//                                     periods. Excess → CBU.
+//
+// Officers (water_bill_officer, loan_officer) keep the lookup endpoints for
+// reference but can no longer mark bills paid — only the cashier can post.
 
 import express from "express";
 import WaterMember from "../models/WaterMember.js";
@@ -15,10 +19,38 @@ import WaterPayment from "../models/WaterPayment.js";
 import LoanApplication from "../models/LoanApplication.js";
 import LoanPayment from "../models/LoanPayment.js";
 import OnlinePayment from "../models/OnlinePayment.js";
+import CbuTransaction from "../models/CbuTransaction.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
 const router = express.Router();
-const guard = [requireAuth, requireRole(["admin", "cashier", "water_bill_officer", "loan_officer"])];
+// View access — for the lookup endpoints. Officers can still SEE dues but
+// not pay.
+const guard = [requireAuth, requireRole(["admin", "cashier", "water_bill_officer", "loan_officer", "bookkeeper"])];
+// Pay access — only cashier (and admin for emergencies).
+const payGuard = [requireAuth, requireRole(["admin", "cashier"])];
+
+const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+
+// Append a CBU credit and bump the member's running balance. Returns the new balance.
+async function creditCbu({ member, amount, source, refOrNo, waterPaymentId = null, loanPaymentId = null, postedBy, note = "" }) {
+  if (!member || !(amount > 0)) return Number(member?.cbuBalance || 0);
+  member.cbuBalance = round2(Number(member.cbuBalance || 0) + Number(amount));
+  await member.save();
+  await CbuTransaction.create({
+    pnNo: member.pnNo,
+    accountName: member.accountName,
+    type: "credit",
+    amount: round2(amount),
+    balanceAfter: member.cbuBalance,
+    source,
+    refOrNo,
+    waterPaymentId,
+    loanPaymentId,
+    note,
+    postedBy,
+  });
+  return member.cbuBalance;
+}
 
 const escapeRegex = (s) => String(s || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const norm = (s) => String(s || "").trim().toUpperCase();
@@ -163,6 +195,182 @@ router.get("/loan", ...guard, async (req, res) => {
   } catch (e) {
     console.error("Cashier loan lookup error:", e);
     res.status(500).json({ message: "Lookup failed. Please try again." });
+  }
+});
+
+// ----------------------------------------------------------------------
+// POST /api/cashier/pay-water — cashier posts a water payment.
+// Body: { pnNo, meterNumber, periodKey, orNo, amountReceived, method?, note? }
+// Rules:
+//   • Cashier may post against an unpaid/overdue bill identified by (pn, meter, periodKey).
+//   • amountReceived MUST be >= bill.totalDue. Excess goes to the member's CBU.
+//   • orNo is unique system-wide (WaterPayment.orNo has a unique index).
+// ----------------------------------------------------------------------
+router.post("/pay-water", ...payGuard, async (req, res) => {
+  try {
+    const pnNo = norm(req.body?.pnNo);
+    const meterNumber = norm(req.body?.meterNumber);
+    const periodKey = String(req.body?.periodKey || "").trim();
+    const orNo = String(req.body?.orNo || "").trim().toUpperCase();
+    const amountReceived = Number(req.body?.amountReceived || 0);
+    const method = String(req.body?.method || "cash").toLowerCase();
+    const note = String(req.body?.note || "");
+
+    if (!pnNo || !meterNumber || !periodKey) return res.status(400).json({ message: "pnNo, meterNumber and periodKey are required." });
+    if (!orNo) return res.status(400).json({ message: "OR number is required." });
+    if (!(amountReceived > 0)) return res.status(400).json({ message: "Enter the amount received." });
+
+    const bill = await WaterBill.findOne({ pnNo, meterNumber, periodKey });
+    if (!bill) return res.status(404).json({ message: "Bill not found for that meter/period." });
+    if (bill.status === "paid") return res.status(409).json({ message: "This bill is already paid." });
+
+    const totalDue = round2(Number(bill.totalDue) || 0);
+    if (amountReceived < totalDue) {
+      return res.status(400).json({ message: `Amount received (₱${amountReceived}) is less than total due (₱${totalDue}). Cashier cannot accept under-payment.` });
+    }
+
+    // Reject duplicate OR up-front (the unique index would catch it anyway).
+    const dupOr = await WaterPayment.findOne({ orNo });
+    if (dupOr) return res.status(409).json({ message: `OR ${orNo} already used.` });
+
+    const cbuExcess = round2(amountReceived - totalDue);
+    const receivedBy = req.user?.fullName || req.user?.employeeId || "";
+
+    const payment = await WaterPayment.create({
+      billId: bill._id,
+      pnNo: bill.pnNo,
+      meterNumber: bill.meterNumber,
+      periodKey: bill.periodKey,
+      orNo,
+      method,
+      amountPaid: totalDue,
+      amountReceived: round2(amountReceived),
+      cbuExcess,
+      discountApplied: bill.discount || 0,
+      penaltyApplied: bill.penaltyApplied || 0,
+      classification: bill.classification,
+      receivedBy,
+      paidAt: new Date(),
+      notes: note || (cbuExcess > 0 ? `Excess ₱${cbuExcess} credited to CBU` : ""),
+    });
+
+    bill.status = "paid";
+    bill.paidAt = new Date();
+    bill.orNo = orNo;
+    bill.subjectForDisconnection = false;
+    await bill.save();
+
+    // Credit CBU if there was excess.
+    let newCbuBalance = 0;
+    if (cbuExcess > 0) {
+      const member = await WaterMember.findOne({ pnNo: bill.pnNo });
+      if (member) {
+        newCbuBalance = await creditCbu({
+          member, amount: cbuExcess, source: "water_overpay", refOrNo: orNo,
+          waterPaymentId: payment._id, postedBy: receivedBy,
+          note: `Excess from OR ${orNo} (water bill ${bill.periodCovered || bill.periodKey})`,
+        });
+      }
+    }
+
+    res.status(201).json({
+      ok: true,
+      message: cbuExcess > 0
+        ? `Posted ₱${totalDue}. Excess ₱${cbuExcess} added to CBU (new balance ₱${newCbuBalance}).`
+        : `Posted ₱${totalDue}.`,
+      payment, cbuExcess, newCbuBalance,
+    });
+  } catch (e) {
+    if (e?.code === 11000) return res.status(409).json({ message: "OR number is already in use." });
+    console.error("pay-water error:", e);
+    res.status(500).json({ message: e.message || "Payment failed." });
+  }
+});
+
+// ----------------------------------------------------------------------
+// POST /api/cashier/pay-loan — cashier posts a loan payment.
+// Body: { loanId, orNo, amountReceived, periodsCovered (1..N), method?, note? }
+// Rules:
+//   • Pays the next `periodsCovered` scheduled installments (default 1).
+//   • amountReceived MUST be >= the sum of those installments. Excess → CBU.
+//   • orNo is unique system-wide.
+// ----------------------------------------------------------------------
+router.post("/pay-loan", ...payGuard, async (req, res) => {
+  try {
+    const loanId = String(req.body?.loanId || "").trim();
+    const orNo = String(req.body?.orNo || "").trim().toUpperCase();
+    const amountReceived = Number(req.body?.amountReceived || 0);
+    const periodsCovered = Math.max(1, Math.min(60, Number(req.body?.periodsCovered || 1)));
+    const method = String(req.body?.method || "cash").toLowerCase();
+    const note = String(req.body?.note || "");
+
+    if (!loanId) return res.status(400).json({ message: "loanId is required." });
+    if (!orNo) return res.status(400).json({ message: "OR number is required." });
+    if (!(amountReceived > 0)) return res.status(400).json({ message: "Enter the amount received." });
+
+    const loan = await LoanApplication.findOne({ loanId });
+    if (!loan) return res.status(404).json({ message: "Loan not found." });
+    if (Number(loan.balance || 0) <= 0) return res.status(400).json({ message: "Loan has no outstanding balance." });
+
+    // Determine the next unpaid scheduled rows. Approximate: scheduled paid
+    // through floor(totalPaid / monthlyPayment) periods. Take next N rows.
+    const monthly = Number(loan.monthlyPayment) || 0;
+    const paidPeriods = monthly > 0 ? Math.floor((Number(loan.totalPaid) || 0) / monthly) : 0;
+    const upcoming = (loan.amortizationSchedule || []).slice(paidPeriods, paidPeriods + periodsCovered);
+    if (upcoming.length === 0) return res.status(400).json({ message: "No upcoming installments to pay." });
+    const totalDue = round2(upcoming.reduce((s, r) => s + (Number(r.payment) || 0), 0));
+
+    if (amountReceived < totalDue) {
+      return res.status(400).json({ message: `Amount received (₱${amountReceived}) is less than total due (₱${totalDue}) for ${upcoming.length} period(s).` });
+    }
+    const dupOr = await LoanPayment.findOne({ orNo });
+    if (dupOr) return res.status(409).json({ message: `OR ${orNo} already used.` });
+
+    const cbuExcess = round2(amountReceived - totalDue);
+    const receivedBy = req.user?.fullName || req.user?.employeeId || "";
+
+    const payment = await LoanPayment.create({
+      loanId: loan.loanId,
+      applicationId: loan._id,
+      borrowerPnNo: loan.borrowerPnNo,
+      orNo,
+      method,
+      amountPaid: totalDue,
+      amountReceived: round2(amountReceived),
+      cbuExcess,
+      periodsCovered: upcoming.length,
+      paidAt: new Date(),
+      receivedBy,
+    });
+
+    loan.totalPaid = round2(Number(loan.totalPaid || 0) + totalDue);
+    loan.balance = round2(Math.max(0, Number(loan.totalPayment || 0) - loan.totalPaid));
+    if (loan.balance <= 0 && loan.status === "released") loan.status = "closed";
+    await loan.save();
+
+    let newCbuBalance = 0;
+    if (cbuExcess > 0) {
+      const member = await WaterMember.findOne({ pnNo: String(loan.borrowerPnNo || "").toUpperCase() });
+      if (member) {
+        newCbuBalance = await creditCbu({
+          member, amount: cbuExcess, source: "loan_overpay", refOrNo: orNo,
+          loanPaymentId: payment._id, postedBy: receivedBy,
+          note: `Excess from OR ${orNo} (loan ${loan.loanId})`,
+        });
+      }
+    }
+
+    res.status(201).json({
+      ok: true,
+      message: cbuExcess > 0
+        ? `Posted ₱${totalDue} for ${upcoming.length} period(s). Excess ₱${cbuExcess} added to CBU (new balance ₱${newCbuBalance}).`
+        : `Posted ₱${totalDue} for ${upcoming.length} period(s).`,
+      payment, cbuExcess, newCbuBalance, periodsCovered: upcoming.length, totalDue,
+    });
+  } catch (e) {
+    if (e?.code === 11000) return res.status(409).json({ message: "OR number is already in use." });
+    console.error("pay-loan error:", e);
+    res.status(500).json({ message: e.message || "Payment failed." });
   }
 });
 

@@ -15,7 +15,7 @@ router.get("/", async (req, res) => {
 const createSchema = z.object({
   employeeId: z.string().min(2),
   fullName: z.string().min(2),
-  role: z.enum(["admin", "water_bill_officer", "loan_officer", "meter_reader", "plumber", "cashier"]),
+  role: z.enum(["admin", "water_bill_officer", "loan_officer", "meter_reader", "plumber", "cashier", "bookkeeper"]),
   password: z.string().min(6),
   status: z.enum(["active", "inactive"]).optional()
 });
@@ -41,7 +41,7 @@ router.post("/", async (req, res) => {
 
 const updateSchema = z.object({
   fullName: z.string().min(2).optional(),
-  role: z.enum(["admin", "water_bill_officer", "loan_officer", "meter_reader", "plumber", "cashier"]).optional(),
+  role: z.enum(["admin", "water_bill_officer", "loan_officer", "meter_reader", "plumber", "cashier", "bookkeeper"]).optional(),
   status: z.enum(["active", "inactive"]).optional(),
   password: z.string().min(6).optional()
 });

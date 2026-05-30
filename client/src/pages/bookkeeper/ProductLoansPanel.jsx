@@ -1,0 +1,223 @@
+import { useEffect, useState, useCallback } from "react";
+import Card from "../../components/Card";
+import Modal from "../../components/Modal";
+import { apiFetch } from "../../lib/api";
+import { useAuth } from "../../context/AuthContext";
+import { toast } from "../../components/Toast";
+import { Package, Plus, RefreshCw, Trash2, Edit3, ShoppingBag, CheckCircle, XCircle } from "lucide-react";
+
+const peso = (n) => "₱" + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+const EMPTY = { name: "", category: "", unitPrice: "", stock: 0, description: "", minCbuRequired: 0, isActive: true };
+
+export default function ProductLoansPanel() {
+  const { token } = useAuth();
+  const [catalog, setCatalog] = useState([]);
+  const [apps, setApps] = useState([]);
+  const [busy, setBusy] = useState(false);
+
+  const [editing, setEditing] = useState(null);
+  const [form, setForm] = useState(EMPTY);
+
+  const [applyOpen, setApplyOpen] = useState(false);
+  const [applyForm, setApplyForm] = useState({ pnNo: "", productId: "", quantity: 1, remarks: "" });
+
+  const [releaseTarget, setReleaseTarget] = useState(null);
+  const [useCbu, setUseCbu] = useState(0);
+
+  const load = useCallback(async () => {
+    setBusy(true);
+    try {
+      const [cat, ap] = await Promise.all([
+        apiFetch("/bookkeeper/product-catalog", { token }),
+        apiFetch("/bookkeeper/product-applications", { token }),
+      ]);
+      setCatalog(cat);
+      setApps(ap);
+    } catch {/* ignore */} finally { setBusy(false); }
+  }, [token]);
+  useEffect(() => { load(); }, [load]);
+
+  function openAdd() { setEditing(null); setForm(EMPTY); }
+  function openEdit(p) { setEditing(p); setForm({ ...EMPTY, ...p }); }
+
+  async function saveProduct(e) {
+    e?.preventDefault?.();
+    try {
+      if (!form.name || !(Number(form.unitPrice) > 0)) return toast.error("Name and unit price are required.");
+      if (editing) await apiFetch(`/bookkeeper/product-catalog/${editing._id}`, { method: "PUT", token, body: form });
+      else await apiFetch("/bookkeeper/product-catalog", { method: "POST", token, body: form });
+      toast.success(editing ? "Product updated" : "Product added");
+      setEditing(null); setForm(EMPTY); load();
+    } catch (e) { toast.error(e.message); }
+  }
+
+  async function removeProduct(p) {
+    if (!confirm(`Remove "${p.name}" from the catalogue?`)) return;
+    try { await apiFetch(`/bookkeeper/product-catalog/${p._id}`, { method: "DELETE", token }); toast.success("Removed"); load(); }
+    catch (e) { toast.error(e.message); }
+  }
+
+  async function submitApplication(e) {
+    e?.preventDefault?.();
+    try {
+      const res = await apiFetch("/bookkeeper/product-applications", { method: "POST", token, body: applyForm });
+      toast.success(`Application approved (${res.productName} × ${res.quantity})`);
+      setApplyOpen(false);
+      setApplyForm({ pnNo: "", productId: "", quantity: 1, remarks: "" });
+      load();
+    } catch (e) { toast.error(e.message); }
+  }
+
+  async function release() {
+    try {
+      const res = await apiFetch(`/bookkeeper/product-applications/${releaseTarget._id}/release`, { method: "POST", token, body: { useCbu: Number(useCbu) || 0 } });
+      toast.success(`Released. CBU applied ${peso(res.application.cbuApplied)}; remaining balance ${peso(res.application.balance)}.`);
+      setReleaseTarget(null); setUseCbu(0); load();
+    } catch (e) { toast.error(e.message); }
+  }
+
+  return (
+    <Card>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2 text-lg font-bold tracking-tight text-slate-900">
+            <Package size={20} className="text-blue-600" /> Product Loans
+          </div>
+          <div className="mt-0.5 text-sm text-slate-500">Catalogue of in-kind product loans (meter, sack of rice, …) and per-member applications.</div>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={() => setApplyOpen(true)} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
+            <ShoppingBag size={16}/> New Application
+          </button>
+          <button onClick={openAdd} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold hover:bg-slate-50"><Plus size={16}/> Add Product</button>
+          <button onClick={load} disabled={busy} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold hover:bg-slate-50">
+            <RefreshCw size={14} className={busy ? "animate-spin" : ""} />
+          </button>
+        </div>
+      </div>
+
+      {/* Catalogue */}
+      <div className="mt-5">
+        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Catalogue ({catalog.length})</div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {catalog.map((p) => (
+            <div key={p._id} className={`rounded-2xl border p-4 ${p.isActive ? "border-slate-200" : "border-slate-100 bg-slate-50 opacity-70"}`}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="font-bold text-slate-900">{p.name}</div>
+                  <div className="text-xs text-slate-500">{p.category || "—"}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-lg font-extrabold text-blue-700">{peso(p.unitPrice)}</div>
+                  <div className="text-[11px] text-slate-500">stock {p.stock}</div>
+                </div>
+              </div>
+              {p.description && <p className="mt-2 text-xs text-slate-600">{p.description}</p>}
+              {Number(p.minCbuRequired) > 0 && <p className="mt-1 text-[11px] text-amber-700">Requires CBU ≥ {peso(p.minCbuRequired)}</p>}
+              <div className="mt-3 flex items-center justify-between text-xs">
+                <span className={`rounded-full px-2 py-0.5 font-bold ${p.isActive ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"}`}>{p.isActive ? "ACTIVE" : "INACTIVE"}</span>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => openEdit(p)} className="rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"><Edit3 size={12}/></button>
+                  <button onClick={() => removeProduct(p)} className="rounded-lg border border-red-200 px-2 py-1 text-[11px] font-semibold text-red-700 hover:bg-red-50"><Trash2 size={12}/></button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Applications */}
+      <div className="mt-6">
+        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Applications ({apps.length})</div>
+        <div className="overflow-hidden rounded-2xl border border-slate-200">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 text-left text-xs text-slate-500">
+              <tr><th className="px-3 py-2">Member</th><th className="px-3 py-2">Product</th><th className="px-3 py-2 text-right">Total</th><th className="px-3 py-2 text-right">CBU applied</th><th className="px-3 py-2 text-right">Balance</th><th className="px-3 py-2">Status</th><th className="px-3 py-2"></th></tr>
+            </thead>
+            <tbody>
+              {apps.length === 0 ? (
+                <tr><td colSpan={7} className="py-10 text-center text-slate-500">No applications yet.</td></tr>
+              ) : apps.map((a) => (
+                <tr key={a._id} className="border-t">
+                  <td className="px-3 py-2"><div className="font-semibold">{a.accountName}</div><div className="text-[11px] text-slate-500 font-mono">{a.pnNo}</div></td>
+                  <td className="px-3 py-2">{a.productName} × {a.quantity}</td>
+                  <td className="px-3 py-2 text-right font-bold">{peso(a.totalPrice)}</td>
+                  <td className="px-3 py-2 text-right text-blue-700">{peso(a.cbuApplied)}</td>
+                  <td className="px-3 py-2 text-right text-red-700">{peso(a.balance)}</td>
+                  <td className="px-3 py-2 text-xs"><span className={`rounded-full px-2 py-0.5 font-bold ${a.status === "fully_paid" ? "bg-emerald-100 text-emerald-700" : a.status === "released" ? "bg-blue-100 text-blue-700" : a.status === "approved" ? "bg-amber-100 text-amber-700" : "bg-slate-200 text-slate-600"}`}>{a.status}</span></td>
+                  <td className="px-3 py-2 text-right">
+                    {a.status === "approved" && (
+                      <button onClick={() => { setReleaseTarget(a); setUseCbu(0); }} className="rounded-lg border border-emerald-200 px-2 py-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-50">Release</button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Catalogue add/edit modal */}
+      <Modal open={!!(editing !== undefined && (editing || form !== EMPTY))} title={editing ? `Edit ${editing.name}` : "Add Product"} onClose={() => { setEditing(null); setForm(EMPTY); }} size="sm">
+        <form onSubmit={saveProduct} className="space-y-3">
+          <div><label className="text-xs font-semibold">Name *</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" /></div>
+          <div className="grid grid-cols-2 gap-2">
+            <div><label className="text-xs font-semibold">Category</label><input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} placeholder="e.g. rice, meter" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" /></div>
+            <div><label className="text-xs font-semibold">Unit Price (₱) *</label><input type="number" step="0.01" value={form.unitPrice} onChange={(e) => setForm({ ...form, unitPrice: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" /></div>
+            <div><label className="text-xs font-semibold">Stock</label><input type="number" value={form.stock} onChange={(e) => setForm({ ...form, stock: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" /></div>
+            <div><label className="text-xs font-semibold">Min CBU required (₱)</label><input type="number" step="0.01" value={form.minCbuRequired} onChange={(e) => setForm({ ...form, minCbuRequired: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" /></div>
+          </div>
+          <div><label className="text-xs font-semibold">Description</label><textarea rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" /></div>
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={!!form.isActive} onChange={(e) => setForm({ ...form, isActive: e.target.checked })} /> Active</label>
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => { setEditing(null); setForm(EMPTY); }} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold">Cancel</button>
+            <button className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">{editing ? "Save" : "Add"}</button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Application modal */}
+      <Modal open={applyOpen} title="New Product-Loan Application" onClose={() => setApplyOpen(false)} size="sm">
+        <form onSubmit={submitApplication} className="space-y-3">
+          <div><label className="text-xs font-semibold">Member PN No</label><input value={applyForm.pnNo} onChange={(e) => setApplyForm({ ...applyForm, pnNo: e.target.value.toUpperCase() })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 font-mono" /></div>
+          <div>
+            <label className="text-xs font-semibold">Product</label>
+            <select value={applyForm.productId} onChange={(e) => setApplyForm({ ...applyForm, productId: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2">
+              <option value="">Select…</option>
+              {catalog.filter((p) => p.isActive).map((p) => (<option key={p._id} value={p._id}>{p.name} — {peso(p.unitPrice)} (stock {p.stock})</option>))}
+            </select>
+          </div>
+          <div><label className="text-xs font-semibold">Quantity</label><input type="number" min={1} value={applyForm.quantity} onChange={(e) => setApplyForm({ ...applyForm, quantity: Number(e.target.value) || 1 })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" /></div>
+          <div><label className="text-xs font-semibold">Remarks</label><textarea rows={2} value={applyForm.remarks} onChange={(e) => setApplyForm({ ...applyForm, remarks: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" /></div>
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setApplyOpen(false)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold">Cancel</button>
+            <button className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">Approve Application</button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Release modal */}
+      <Modal open={!!releaseTarget} title="Release Product Loan" subtitle={releaseTarget ? `${releaseTarget.productName} × ${releaseTarget.quantity} for ${releaseTarget.accountName}` : ""} onClose={() => setReleaseTarget(null)} size="sm">
+        {releaseTarget && (
+          <div className="space-y-3 text-sm">
+            <div className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-2 space-y-1">
+              <div className="flex justify-between"><span className="text-slate-500">Total price</span><b>{peso(releaseTarget.totalPrice)}</b></div>
+              <div className="flex justify-between"><span className="text-slate-500">Apply from CBU</span><b className="text-blue-700">{peso(useCbu)}</b></div>
+              <div className="flex justify-between"><span className="text-slate-500">Remaining balance</span><b className="text-red-600">{peso(Math.max(0, Number(releaseTarget.totalPrice) - Number(useCbu || 0)))}</b></div>
+            </div>
+            <div>
+              <label className="text-xs font-semibold">CBU to apply (₱)</label>
+              <input type="number" step="0.01" min={0} max={releaseTarget.totalPrice} value={useCbu} onChange={(e) => setUseCbu(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-right font-mono" />
+              <div className="mt-0.5 text-[11px] text-slate-500">Leave 0 to amortise the whole amount later.</div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button onClick={() => setReleaseTarget(null)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold">Cancel</button>
+              <button onClick={release} className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">Release</button>
+            </div>
+          </div>
+        )}
+      </Modal>
+    </Card>
+  );
+}

@@ -264,7 +264,11 @@ router.patch("/applications/:id/status", guard, async (req, res) => {
 });
 
 // ---- Record a payment ----
-router.post("/applications/:id/payments", guard, async (req, res) => {
+// Locked down to cashier + admin. Officers track loans + balances but do
+// not post payments. The preferred new path is POST /api/cashier/pay-loan
+// (which captures CBU excess); this legacy endpoint stays for back-compat.
+const loanCashierGuard = [requireAuth, requireRole(["admin", "cashier"])];
+router.post("/applications/:id/payments", loanCashierGuard, async (req, res) => {
   const loan = await LoanApplication.findById(req.params.id);
   if (!loan) return res.status(404).json({ message: "Loan not found" });
 

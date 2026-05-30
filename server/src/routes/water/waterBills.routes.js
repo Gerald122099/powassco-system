@@ -416,7 +416,11 @@ router.get("/", ...guard, async (req, res) => {
 });
 
 // PAY (unchanged except: allow overdue in UI + schema)
-router.post("/:id/pay", ...guard, async (req, res) => {
+// Legacy "mark paid" endpoint — kept for backwards compatibility but now
+// restricted to cashier + admin. Officers post payments through the cashier
+// flow instead (which captures amountReceived and the CBU split).
+const cashierGuard = [requireAuth, requireRole(["admin", "cashier"])];
+router.post("/:id/pay", ...cashierGuard, async (req, res) => {
   try {
     const { orNo, method } = req.body;
 

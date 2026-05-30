@@ -11,8 +11,13 @@ const WaterPaymentSchema = new mongoose.Schema(
     periodKey: { type: String, default: "", index: true },   // "YYYY-MM"
 
     orNo: { type: String, required: true, trim: true },
-    method: { type: String, required: true, trim: true }, // cash/gcash/bank etc
+    method: { type: String, required: true, trim: true }, // cash/gcash/bank/online etc
+    // amountPaid    = the amount applied to the bill (= bill.totalDue)
+    // amountReceived = what the cashier physically received (≥ amountPaid)
+    // cbuExcess     = amountReceived - amountPaid, posted to the member's CBU
     amountPaid: { type: Number, required: true },
+    amountReceived: { type: Number, default: 0 },
+    cbuExcess: { type: Number, default: 0 },
 
     // Track discount and penalty in payment
     discountApplied: { type: Number, default: 0 },

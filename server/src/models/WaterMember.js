@@ -286,6 +286,11 @@ const WaterMemberSchema = new mongoose.Schema(
       default: "individual"
     },
     
+    // Capital Build-Up (CBU). The running total of excess payments that the
+    // cashier collected above each bill/loan installment. The bookkeeper
+    // can apply this against a future product loan or convert it.
+    cbuBalance: { type: Number, default: 0 },
+
     // Business/Organization Details (if applicable)
     businessName: { type: String, trim: true, default: "" },
     businessType: { type: String, trim: true, default: "" },

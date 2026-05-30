@@ -34,6 +34,7 @@ import disconnectionsRoutes from "./routes/disconnections.routes.js";
 import webhooksRoutes from "./routes/webhooks.routes.js";
 import cashierRoutes from "./routes/cashier.routes.js";
 import collectionsRoutes from "./routes/collections.routes.js";
+import bookkeeperRoutes from "./routes/bookkeeper.routes.js";
 
 import { auditLogger } from "./middleware/auditLogger.js";
 import { ensureBootstrapAdmin } from "./utils/ensureAdmin.js";
@@ -148,6 +149,7 @@ app.use("/api/disconnections", disconnectionsRoutes);
 app.use("/api/webhooks", webhooksRoutes);
 app.use("/api/cashier", cashierRoutes);
 app.use("/api/collections", collectionsRoutes);
+app.use("/api/bookkeeper", bookkeeperRoutes);
 
 // JSON 404 for unknown routes
 app.use((req, res) => {
