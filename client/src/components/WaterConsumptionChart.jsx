@@ -1,5 +1,6 @@
 // src/components/WaterConsumptionChart.jsx
 import { useEffect, useRef } from 'react';
+import { BarChart3 } from 'lucide-react';
 
 export default function WaterConsumptionChart({ bills }) {
   const canvasRef = useRef(null);
@@ -119,7 +120,7 @@ export default function WaterConsumptionChart({ bills }) {
     return (
       <div className="h-64 flex items-center justify-center bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
         <div className="text-center">
-          <i className="fas fa-chart-bar text-4xl text-gray-300 mb-2"></i>
+          <BarChart3 size={48} className="text-gray-300 mb-2 mx-auto" />
           <p className="text-gray-500">No consumption data available</p>
         </div>
       </div>

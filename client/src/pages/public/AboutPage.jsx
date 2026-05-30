@@ -1,6 +1,7 @@
 // src/pages/public/AboutPage.jsx
 import Navbar from "../../components/Navbar";
 import logo from "../../assets/logo.png";
+import { Target, Eye, HeartHandshake, Handshake, Users, Leaf, Heart } from "lucide-react";
 
 export default function AboutPage() {
   return (
@@ -25,7 +26,7 @@ export default function AboutPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="bg-green-50 p-6 rounded-2xl">
                   <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
-                    <i className="fas fa-bullseye text-green-600"></i>
+                    <Target className="text-green-600" size={20} />
                     Our Mission
                   </h3>
                   <p className="text-gray-600">To provide reliable and sustainable water services while promoting cooperative values and community development.</p>
@@ -33,7 +34,7 @@ export default function AboutPage() {
 
                 <div className="bg-green-50 p-6 rounded-2xl">
                   <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
-                    <i className="fas fa-eye text-green-600"></i>
+                    <Eye className="text-green-600" size={20} />
                     Our Vision
                   </h3>
                   <p className="text-gray-600">To be the leading cooperative in water management and community empowerment in the region.</p>
@@ -42,24 +43,24 @@ export default function AboutPage() {
 
               <div className="border-t border-green-100 pt-6">
                 <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
-                  <i className="fas fa-hand-holding-heart text-green-600"></i>
+                  <HeartHandshake className="text-green-600" size={20} />
                   Core Values
                 </h3>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="text-center">
-                    <i className="fas fa-handshake text-3xl text-green-600 mb-2"></i>
+                    <Handshake className="text-green-600 mb-2 mx-auto" size={32} />
                     <p className="font-semibold">Integrity</p>
                   </div>
                   <div className="text-center">
-                    <i className="fas fa-users text-3xl text-green-600 mb-2"></i>
+                    <Users className="text-green-600 mb-2 mx-auto" size={32} />
                     <p className="font-semibold">Unity</p>
                   </div>
                   <div className="text-center">
-                    <i className="fas fa-leaf text-3xl text-green-600 mb-2"></i>
+                    <Leaf className="text-green-600 mb-2 mx-auto" size={32} />
                     <p className="font-semibold">Sustainability</p>
                   </div>
                   <div className="text-center">
-                    <i className="fas fa-heart text-3xl text-green-600 mb-2"></i>
+                    <Heart className="text-green-600 mb-2 mx-auto" size={32} />
                     <p className="font-semibold">Service</p>
                   </div>
                 </div>

@@ -5,6 +5,7 @@ import WaterConsumptionChart from "../../components/WaterConsumptionChart";
 import PayOnlineModal from "../../components/PayOnlineModal";
 import { printWaterReceipt, printLoanReceipt } from "../../lib/paymentReceiptPrint";
 import { apiFetch } from "../../lib/api";
+import { ChevronUp, ChevronDown } from "lucide-react";
 
 function money(n) {
   return Number(n || 0).toLocaleString(undefined, {
@@ -219,7 +220,7 @@ export default function MemberInquiryPage() {
                       onClick={() => setShowAccountDetails((v) => !v)}
                       type="button"
                     >
-                      <i className={`fas fa-chevron-${showAccountDetails ? 'up' : 'down'}`}></i>
+                      {showAccountDetails ? <ChevronUp size={16}/> : <ChevronDown size={16}/>}
                       {showAccountDetails ? "Hide account details" : "Show account details"}
                     </button>
                   </div>
