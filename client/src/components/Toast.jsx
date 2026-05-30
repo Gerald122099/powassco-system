@@ -12,6 +12,11 @@ function emit(t) {
   if (subscriber) subscriber({ ...t, id: ++counter });
 }
 
+// HMR/fast-refresh-friendly: this module exports both a component and a
+// helper. The helper is a stable singleton; consumers import {toast} and
+// call .success/.error/.info. The directive below tells react-refresh to
+// not treat the named export as a component boundary.
+// eslint-disable-next-line react-refresh/only-export-components
 export const toast = {
   success: (msg, opts = {}) => emit({ type: "success", msg, ...opts }),
   error: (msg, opts = {}) => emit({ type: "error", msg, ...opts }),

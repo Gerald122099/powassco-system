@@ -18,6 +18,7 @@ export default function ProductLoansPanel() {
 
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(EMPTY);
+  const [catalogModalOpen, setCatalogModalOpen] = useState(false);
 
   const [applyOpen, setApplyOpen] = useState(false);
   const [applyForm, setApplyForm] = useState({ pnNo: "", productId: "", quantity: 1, remarks: "" });
@@ -38,8 +39,9 @@ export default function ProductLoansPanel() {
   }, [token]);
   useEffect(() => { load(); }, [load]);
 
-  function openAdd() { setEditing(null); setForm(EMPTY); }
-  function openEdit(p) { setEditing(p); setForm({ ...EMPTY, ...p }); }
+  function openAdd() { setEditing(null); setForm(EMPTY); setCatalogModalOpen(true); }
+  function openEdit(p) { setEditing(p); setForm({ ...EMPTY, ...p }); setCatalogModalOpen(true); }
+  function closeCatalog() { setCatalogModalOpen(false); setEditing(null); setForm(EMPTY); }
 
   async function saveProduct(e) {
     e?.preventDefault?.();
@@ -48,7 +50,7 @@ export default function ProductLoansPanel() {
       if (editing) await apiFetch(`/bookkeeper/product-catalog/${editing._id}`, { method: "PUT", token, body: form });
       else await apiFetch("/bookkeeper/product-catalog", { method: "POST", token, body: form });
       toast.success(editing ? "Product updated" : "Product added");
-      setEditing(null); setForm(EMPTY); load();
+      closeCatalog(); load();
     } catch (e) { toast.error(e.message); }
   }
 
@@ -159,7 +161,7 @@ export default function ProductLoansPanel() {
       </div>
 
       {/* Catalogue add/edit modal */}
-      <Modal open={!!(editing !== undefined && (editing || form !== EMPTY))} title={editing ? `Edit ${editing.name}` : "Add Product"} onClose={() => { setEditing(null); setForm(EMPTY); }} size="sm">
+      <Modal open={catalogModalOpen} title={editing ? `Edit ${editing.name}` : "Add Product"} onClose={closeCatalog} size="sm">
         <form onSubmit={saveProduct} className="space-y-3">
           <div><label className="text-xs font-semibold">Name *</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" /></div>
           <div className="grid grid-cols-2 gap-2">
@@ -171,7 +173,7 @@ export default function ProductLoansPanel() {
           <div><label className="text-xs font-semibold">Description</label><textarea rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" /></div>
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={!!form.isActive} onChange={(e) => setForm({ ...form, isActive: e.target.checked })} /> Active</label>
           <div className="flex justify-end gap-2">
-            <button type="button" onClick={() => { setEditing(null); setForm(EMPTY); }} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold">Cancel</button>
+            <button type="button" onClick={closeCatalog} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold">Cancel</button>
             <button className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">{editing ? "Save" : "Add"}</button>
           </div>
         </form>

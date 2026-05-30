@@ -144,7 +144,7 @@ function Table({ title, rows, columns, loading }) {
             ) : (
               rows.map((r) => (
                 <tr key={r._id} className="border-t">
-                  {columns.map(([h, fn, align, extra], i) => (
+                  {columns.map(([, fn, align, extra], i) => (
                     <td key={i} className={`px-3 py-2 ${align === "right" ? "text-right" : ""} ${extra || ""}`}>{fn(r)}</td>
                   ))}
                 </tr>
