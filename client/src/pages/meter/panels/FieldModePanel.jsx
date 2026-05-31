@@ -29,6 +29,7 @@ export default function FieldModePanel() {
   const [online, setOnline] = useState(typeof navigator !== "undefined" ? navigator.onLine : true);
   const [members, setMembers] = useState([]);
   const [queueKeys, setQueueKeys] = useState(new Set()); // pnNo__meter encoded locally
+  const [queueByKey, setQueueByKey] = useState({}); // key → { presentReading, previousReading, consumed }
   const [pending, setPending] = useState(0);
   const [periodKey, setPeriodKey] = useState(currentPeriodKey());
   const [downloadedAt, setDownloadedAt] = useState(null);
@@ -70,6 +71,11 @@ export default function FieldModePanel() {
     ]);
     setMembers(m || []);
     setQueueKeys(new Set((queue || []).map((x) => x.id)));
+    // Map each queued reading by its key so the UI can show "encoded
+    // X m³" instead of an empty input on already-read meters.
+    const qbk = {};
+    for (const r of queue || []) qbk[r.id] = r;
+    setQueueByKey(qbk);
     setPending((queue || []).filter((x) => !x.synced).length);
     if (pk) setPeriodKey(pk);
     setDownloadedAt(dAt || null);
@@ -264,7 +270,26 @@ export default function FieldModePanel() {
     }
     const meter = (member.activeBillingMeters || []).find((mt) => mnorm(mt.meterNumber) === mnorm(parsed.meterNumber));
     const meterLabel = parsed.meterNumber || meter?.meterNumber || "—";
-    flash(`${member.accountName} • ${member.pnNo} • Meter ${meterLabel}${meter ? "" : " (not on this account)"}`, meter ? "success" : "error", !meter);
+    const key = `${mnorm(member.pnNo)}__${mnorm(parsed.meterNumber || meter?.meterNumber || "")}`;
+    const alreadyEncoded = isRead(member, parsed.meterNumber || meter?.meterNumber || "");
+
+    if (alreadyEncoded) {
+      flash(`Already encoded · ${member.accountName} · Meter ${meterLabel}`, "success", true);
+    } else {
+      flash(`${member.accountName} • ${member.pnNo} • Meter ${meterLabel}${meter ? "" : " (not on this account)"}`, meter ? "success" : "error", !meter);
+    }
+
+    // Scroll the matched member card into view and, if the meter is still
+    // unread, focus its input so the plumber can type the reading right
+    // away — no scrolling/tapping required.
+    setTimeout(() => {
+      const row = document.getElementById(`pn-row-${mnorm(member.pnNo)}`);
+      if (row) row.scrollIntoView({ behavior: "smooth", block: "center" });
+      if (meter && !alreadyEncoded) {
+        const inp = document.getElementById(`meter-input-${key}`);
+        if (inp) { inp.focus(); inp.select?.(); }
+      }
+    }, 80);
   };
 
   // Counts driven by the cached batch + the local queue.
@@ -453,7 +478,7 @@ export default function FieldModePanel() {
             const allRead = meters.length > 0 && meters.every((mt) => isRead(m, mt.meterNumber));
             const blocked = (m.priorUnsettledPeriods || []).length > 0;
             return (
-              <div key={m.pnNo} className={`rounded-2xl border p-4 ${blocked ? "border-red-200 bg-red-50/30" : allRead ? "border-emerald-200 bg-emerald-50/40" : "border-slate-200"}`}>
+              <div key={m.pnNo} id={`pn-row-${mnorm(m.pnNo)}`} className={`rounded-2xl border p-4 ${blocked ? "border-red-200 bg-red-50/30" : allRead ? "border-emerald-200 bg-emerald-50/40" : "border-slate-200"}`}>
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <div className="font-bold text-slate-900">{m.accountName}</div>
@@ -488,32 +513,58 @@ export default function FieldModePanel() {
                     const calc = cons != null && cons >= 0 && settings
                       ? calculateWaterBillLocal(cons, m.billing?.classification || "residential", m, mt.meterNumber, settings)
                       : null;
+                    // Encoded value lookup: prefer the local queue (plumber's
+                    // own input) and fall back to the server's last actual
+                    // reading IF it's for the current period.
+                    const queued = queueByKey[key];
+                    const lastForPeriod = m.lastActualReadings?.[mnorm(mt.meterNumber)];
+                    const encodedPresent = queued?.presentReading ?? (lastForPeriod?.periodKey === periodKey ? lastForPeriod?.presentReading : null);
+                    const encodedConsumed = queued?.consumed ?? (lastForPeriod?.periodKey === periodKey ? lastForPeriod?.consumed : null);
                     return (
                       <div key={key} className="rounded-xl border border-slate-200 bg-white p-2.5">
                         <div className="flex items-center justify-between text-xs">
                           <span className="font-mono font-semibold text-slate-700">{mt.meterNumber}</span>
                           <span className="text-slate-400">prev {fmt(prev)}</span>
                         </div>
+                        {read ? (
+                          <div className="mt-1.5 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-sm">
+                            <CheckCircle size={16} className="text-emerald-600 shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <div className="font-semibold text-emerald-800">Reading already encoded for {periodKey}</div>
+                              <div className="mt-0.5 text-[11px] text-emerald-700 font-mono">
+                                Present <b>{encodedPresent != null ? fmt(encodedPresent) : "—"}</b> · used <b>{encodedConsumed != null ? fmt(encodedConsumed) : "—"} m³</b>
+                                {queued && !queued.synced ? " · pending sync" : ""}
+                              </div>
+                            </div>
+                            {thermalSupported() && (
+                              <button onClick={() => printMeter(m, mt)} className="shrink-0 rounded-lg border border-emerald-200 bg-white p-2 text-emerald-700 hover:bg-emerald-100" title="Print bill to thermal printer">
+                                <Printer size={14} />
+                              </button>
+                            )}
+                          </div>
+                        ) : (
                         <div className="mt-1.5 flex items-center gap-2">
                           <input
+                            id={`meter-input-${key}`}
                             type="number"
                             inputMode="decimal"
                             step="0.001"
                             value={val}
                             onChange={(e) => setInputs((p) => ({ ...p, [key]: e.target.value }))}
-                            placeholder={read ? "encoded" : "present reading"}
+                            placeholder="present reading"
                             className="flex-1 rounded-lg border border-slate-200 px-2.5 py-2 font-mono text-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
                           />
                           <div className="w-16 shrink-0 text-right text-xs">
-                            {cons != null ? <span className="font-bold text-purple-700">{fmt(cons)} m³</span> : read ? <CheckCircle size={16} className="ml-auto text-emerald-500" /> : null}
+                            {cons != null ? <span className="font-bold text-purple-700">{fmt(cons)} m³</span> : null}
                           </div>
-                          {thermalSupported() && (read || val !== "") && (
+                          {thermalSupported() && val !== "" && (
                             <button onClick={() => printMeter(m, mt)} className="shrink-0 rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50" title="Print bill to thermal printer">
                               <Printer size={14} />
                             </button>
                           )}
                         </div>
-                        {calc && (
+                        )}
+                        {calc && !read && (
                           <div className="mt-1 flex items-center justify-between text-[11px]">
                             <span className="text-blue-600">Tier {calc.tariffUsed.tier} @ ₱{fmt(calc.tariffUsed.ratePerCubic)}/m³</span>
                             <span className="font-bold text-emerald-700">₱{calc.amount.toFixed(2)}</span>

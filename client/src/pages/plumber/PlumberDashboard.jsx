@@ -5,11 +5,13 @@ import { useState } from "react";
 import DashboardLayout from "../../components/DashboardLayout";
 import FieldModePanel from "../meter/panels/FieldModePanel";
 import DisconnectionsPanel from "../../components/DisconnectionsPanel";
-import { Smartphone, AlertTriangle } from "lucide-react";
+import AppInstallPanel from "./AppInstallPanel";
+import { Smartphone, AlertTriangle, Download } from "lucide-react";
 
 const items = [
   { key: "field", label: "Field Mode", icon: Smartphone, desc: "Download my assigned meters • read offline • sync when online" },
   { key: "disconnections", label: "Disconnections", icon: AlertTriangle, desc: "Meters to physically disconnect or reconnect" },
+  { key: "install", label: "Get the App", icon: Download, desc: "Install POWASSCO on your phone (Android / iOS / APK)" },
 ];
 
 export default function PlumberDashboard() {
@@ -18,6 +20,7 @@ export default function PlumberDashboard() {
     <DashboardLayout title="Field Plumber" accent="purple" items={items} active={tab} onSelect={setTab}>
       {tab === "field" && <FieldModePanel />}
       {tab === "disconnections" && <DisconnectionsPanel />}
+      {tab === "install" && <AppInstallPanel />}
     </DashboardLayout>
   );
 }
