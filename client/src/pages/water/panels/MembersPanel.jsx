@@ -206,6 +206,141 @@ export default function MembersPanel() {
     return () => clearTimeout(t);
   }, [searchInput]);
 
+  // A4 blank application form — printed by the officer, hand-filled by the
+  // walk-in applicant, then typed into the digital form on submission. Fields
+  // mirror the Add-Member modal so transcription is 1:1 with no surprises.
+  function printApplicationForm() {
+    const w = window.open("", "_blank", "width=900,height=1200");
+    if (!w) return alert("Allow pop-ups to print.");
+    const css = `
+      @page { size: A4; margin: 12mm 10mm 12mm 10mm }
+      * { box-sizing: border-box }
+      body { font-family: Arial, sans-serif; color: #0f172a; font-size: 11px; margin: 0; }
+      .head { display: flex; align-items: center; gap: 10px; border-bottom: 2px solid #0f766e; padding-bottom: 6px; margin-bottom: 8px; }
+      .head h1 { font-size: 16px; margin: 0; color: #0f766e; line-height: 1.1 }
+      .head .sub { font-size: 10px; color: #475569 }
+      h2 { font-size: 12px; margin: 10px 0 4px; padding: 3px 6px; background: #0f766e; color: white; border-radius: 4px; }
+      .row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px }
+      .col-1 { flex: 1 1 100% } .col-2 { flex: 1 1 calc(50% - 3px) } .col-3 { flex: 1 1 calc(33.33% - 4px) } .col-4 { flex: 1 1 calc(25% - 5px) }
+      .field { display: flex; flex-direction: column; }
+      .field label { font-size: 9px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; }
+      .line { border-bottom: 1px solid #475569; min-height: 16px; padding: 2px 0; }
+      .check { display: inline-flex; align-items: center; gap: 4px; margin-right: 10px; }
+      .check .box { width: 12px; height: 12px; border: 1.5px solid #475569; display: inline-block; }
+      .note { font-size: 9px; color: #64748b; font-style: italic; }
+      .sig { display: flex; gap: 12px; margin-top: 10px }
+      .sig .slot { flex: 1; }
+      .sig .name { border-bottom: 1px solid #475569; min-height: 28px }
+      .sig .lbl { font-size: 9px; color: #475569; text-transform: uppercase; margin-top: 2px; text-align: center }
+      .footer { margin-top: 10px; padding-top: 6px; border-top: 1px solid #cbd5e1; font-size: 9px; color: #64748b; text-align: center }
+    `;
+    const F = (label, w = "col-2") => `<div class="field ${w}"><label>${label}</label><div class="line"></div></div>`;
+    const checkBox = (label) => `<span class="check"><span class="box"></span>${label}</span>`;
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"/><title>Application for Water Connection</title><style>${css}</style></head><body>
+      <div class="head">
+        <div>
+          <h1>POWASSCO Multipurpose Cooperative</h1>
+          <div class="sub">Application for Water Connection / Member Registration</div>
+        </div>
+        <div style="margin-left:auto;text-align:right;font-size:9px;color:#475569">
+          <div>Form ref: ___________________</div>
+          <div>Date received: _______________</div>
+          <div>Received by: ________________</div>
+        </div>
+      </div>
+
+      <h2>1. Account</h2>
+      <div class="row">
+        ${F("PN No. (assigned by office)", "col-2")}
+        ${F("Account Name", "col-2")}
+      </div>
+      <div class="row">
+        <div class="field col-2"><label>Account Type</label><div class="line">${checkBox("Individual")}${checkBox("Business")}${checkBox("Government")}${checkBox("Institution")}</div></div>
+        <div class="field col-2"><label>Classification</label><div class="line">${checkBox("Residential")}${checkBox("Commercial")}</div></div>
+      </div>
+
+      <h2>2. Personal Information</h2>
+      <div class="row">
+        ${F("Full Name of Account Holder", "col-1")}
+      </div>
+      <div class="row">
+        <div class="field col-3"><label>Gender</label><div class="line">${checkBox("Male")}${checkBox("Female")}${checkBox("Other")}</div></div>
+        ${F("Birthdate (YYYY-MM-DD)", "col-3")}
+        ${F("Date Registered (office use)", "col-3")}
+      </div>
+      <div class="row">
+        <div class="field col-2"><label>Senior Citizen?</label><div class="line">${checkBox("Yes")}${checkBox("No")}</div></div>
+        ${F("Senior ID No. (if yes)", "col-2")}
+      </div>
+      <div class="row">
+        <div class="field col-2"><label>PWD?</label><div class="line">${checkBox("Yes")}${checkBox("No")}</div></div>
+        ${F("PWD ID No. (if yes)", "col-2")}
+      </div>
+
+      <h2>3. Address</h2>
+      <div class="row">
+        ${F("House / Lot No.", "col-3")}
+        ${F("Street / Sitio / Purok", "col-3")}
+        ${F("Barangay", "col-3")}
+      </div>
+      <div class="row">
+        ${F("Municipality / City", "col-2")}
+        ${F("Province", "col-2")}
+      </div>
+
+      <h2>4. Contact</h2>
+      <div class="row">
+        ${F("Mobile Number (primary)", "col-3")}
+        ${F("Mobile Number (alt.)", "col-3")}
+        ${F("Email (optional)", "col-3")}
+      </div>
+
+      <h2>5. Connection / Billing Details</h2>
+      <div class="row">
+        <div class="field col-3"><label>Connection Type</label><div class="line">${checkBox("Standard")}${checkBox("Commercial")}${checkBox("Other")}</div></div>
+        <div class="field col-3"><label>Meter Size</label><div class="line">${checkBox('5/8"')}${checkBox('3/4"')}${checkBox('1"')}</div></div>
+        <div class="field col-3"><label>Water Source</label><div class="line">${checkBox("Main line")}${checkBox("Spring")}${checkBox("Deep well")}</div></div>
+      </div>
+      <div class="row">
+        <div class="field col-2"><label>Usage Type</label><div class="line">${checkBox("Domestic")}${checkBox("Commercial")}${checkBox("Mixed")}</div></div>
+        <div class="field col-2"><label>Billing Cycle</label><div class="line">${checkBox("Monthly")}${checkBox("Bi-Monthly")}</div></div>
+      </div>
+
+      <h2>6. Initial Meter (office use during installation)</h2>
+      <div class="row">
+        ${F("Meter Number", "col-3")}
+        ${F("Meter Brand", "col-3")}
+        ${F("Meter Model", "col-3")}
+      </div>
+      <div class="row">
+        ${F("Meter Size", "col-4")}
+        ${F("Installation Date", "col-4")}
+        ${F("Initial Reading", "col-4")}
+        <div class="field col-4"><label>Meter Condition</label><div class="line">${checkBox("Good")}${checkBox("Fair")}${checkBox("Needs check")}</div></div>
+      </div>
+      <div class="row">
+        ${F("Location description (front yard / sidewalk / etc.)", "col-2")}
+        ${F("Access notes", "col-2")}
+      </div>
+
+      <h2>7. Declaration</h2>
+      <div class="note">
+        I certify that the information provided above is true and complete. I agree to abide by the cooperative's rules
+        on water consumption, billing, due dates, and penalties as set by POWASSCO, including the 17th-of-the-month
+        due date and the daily flat penalty schedule for unsettled bills.
+      </div>
+      <div class="sig">
+        <div class="slot"><div class="name"></div><div class="lbl">Signature of Applicant / Date</div></div>
+        <div class="slot"><div class="name"></div><div class="lbl">Reviewed by — Water Bill Officer / Date</div></div>
+        <div class="slot"><div class="name"></div><div class="lbl">Approved by — Admin / Date</div></div>
+      </div>
+
+      <div class="footer">POWASSCO Multipurpose Cooperative — keep this form on file. Printed ${new Date().toLocaleString()}.</div>
+    </body></html>`);
+    w.document.close();
+    setTimeout(() => { w.focus(); w.print(); }, 250);
+  }
+
   function openAdd() {
     setEditing(null);
     setErr("");
@@ -678,6 +813,14 @@ export default function MembersPanel() {
             title="Generate a QR for a specific (e.g. newly installed) meter"
           >
             <QrCode size={16} /> QR by Meter #
+          </button>
+
+          <button
+            onClick={printApplicationForm}
+            className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            title="Print a blank A4 application form for walk-in members to fill out by hand"
+          >
+            Print Form
           </button>
 
           <button
