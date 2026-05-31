@@ -8,7 +8,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['logo.png'],
+      includeAssets: ['logo.png', 'icon-192.png', 'icon-512.png', 'icon-maskable-192.png', 'icon-maskable-512.png', 'screenshot-mobile.png', 'screenshot-wide.png'],
       manifest: {
         // Stable identity across updates — Chrome / PWABuilder use this to
         // de-dupe installs and keep the user's local data when the origin's
@@ -36,11 +36,59 @@ export default defineConfig({
         scope: '/',
         categories: ['utilities', 'business', 'productivity'],
         prefer_related_applications: false,
+        // Exact-dimension PNGs so PWABuilder doesn't flag mismatched sizes
+        // (logo.png is 511x512, not 512x512 — the dedicated icon-* files
+        // are generated from it during build prep).
         icons: [
-          { src: '/logo.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
-          { src: '/logo.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-          { src: '/logo.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
-          { src: '/logo.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: '/icon-maskable-192.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
+          { src: '/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+        ],
+        // Required by PWABuilder + Play Store. Placeholder branded
+        // screenshots; replace with real screen captures when ready.
+        screenshots: [
+          {
+            src: '/screenshot-mobile.png',
+            sizes: '720x1280',
+            type: 'image/png',
+            form_factor: 'narrow',
+            label: 'POWASSCO on phone',
+          },
+          {
+            src: '/screenshot-wide.png',
+            sizes: '1280x720',
+            type: 'image/png',
+            form_factor: 'wide',
+            label: 'POWASSCO on desktop',
+          },
+        ],
+        // Quick-access launcher icons (Android long-press / Windows jump
+        // list). Each shortcut lands directly on the relevant dashboard;
+        // Protected redirects to the user's role-home if they don't have
+        // access, so it stays safe even with the wrong role logged in.
+        shortcuts: [
+          {
+            name: 'Field Mode',
+            short_name: 'Field',
+            description: 'Read assigned meters offline',
+            url: '/plumber',
+            icons: [{ src: '/icon-192.png', sizes: '192x192', type: 'image/png' }],
+          },
+          {
+            name: 'Cashier Lookup',
+            short_name: 'Cashier',
+            description: 'Look up dues + receive walk-in payments',
+            url: '/cashier',
+            icons: [{ src: '/icon-192.png', sizes: '192x192', type: 'image/png' }],
+          },
+          {
+            name: 'Water Billing',
+            short_name: 'Water',
+            description: 'Members, bills, payments',
+            url: '/water',
+            icons: [{ src: '/icon-192.png', sizes: '192x192', type: 'image/png' }],
+          },
         ],
       },
       workbox: {
