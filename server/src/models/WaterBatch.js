@@ -22,7 +22,13 @@ const WaterBatchSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Ensure member is only in one active batch
-WaterBatchSchema.index({ members: 1 }, { unique: true, sparse: true });
+// Indexes
+// NOTE: the previous "unique sparse on members" caused a 500 whenever two
+// batches existed with an empty members array (sparse does not exclude
+// empty arrays — they collide as a shared empty-set key). Member uniqueness
+// across batches is enforced at the application layer in `POST /:id/members`
+// (see the otherBatches check below), which is the only correct place to
+// reject overlaps anyway.
+WaterBatchSchema.index({ members: 1 });
 
 export default mongoose.model("WaterBatch", WaterBatchSchema);

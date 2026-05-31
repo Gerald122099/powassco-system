@@ -23,7 +23,9 @@ import {
   FileText,
   XCircle,
   Database,
+  ShieldAlert,
 } from "lucide-react";
+import { toast } from "../../../components/Toast";
 
 export default function BatchManagementPanel() {
   const { token, user } = useAuth();
@@ -52,6 +54,13 @@ export default function BatchManagementPanel() {
     area: ""
   });
   const [readers, setReaders] = useState([]); // plumber + meter-reader users (admin only)
+
+  // Re-auth confirmation for destructive delete
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deletePassword, setDeletePassword] = useState("");
+  const [deleteCode, setDeleteCode] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const canDelete = ["admin", "water_bill_officer"].includes(user?.role);
 
   useEffect(() => {
     // Only admins can read /users; for others, skip and use manual entry.
@@ -479,6 +488,20 @@ export default function BatchManagementPanel() {
                   >
                     <Plus size={18} className="text-emerald-600" />
                   </button>
+                  {canDelete && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeleteTarget(batch);
+                        setDeletePassword("");
+                        setDeleteCode("");
+                      }}
+                      className="p-2 hover:bg-white rounded-lg"
+                      title="Delete batch (requires password + 2FA)"
+                    >
+                      <Trash2 size={18} className="text-red-600" />
+                    </button>
+                  )}
                   {expandedBatches[batch._id] ? (
                     <ChevronUp size={20} className="text-slate-400" />
                   ) : (
@@ -919,6 +942,85 @@ export default function BatchManagementPanel() {
             )}
           </div>
         </div>
+      </Modal>
+
+      {/* Delete-batch confirm modal — requires password + current 2FA code */}
+      <Modal
+        open={!!deleteTarget}
+        title="Delete batch"
+        subtitle={deleteTarget ? `${deleteTarget.batchNumber} • ${deleteTarget.batchName}` : ""}
+        onClose={() => setDeleteTarget(null)}
+        size="sm"
+      >
+        {deleteTarget && (
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!deletePassword || !deleteCode) return;
+              setDeleting(true);
+              try {
+                const res = await apiFetch(`/water/batches/${deleteTarget._id}`, {
+                  method: "DELETE",
+                  token,
+                  body: { password: deletePassword, code: deleteCode.trim() },
+                });
+                toast.success(res.message || "Batch deleted");
+                setDeleteTarget(null);
+                setDeletePassword("");
+                setDeleteCode("");
+                await loadBatches();
+              } catch (err) {
+                toast.error(err.message);
+              } finally {
+                setDeleting(false);
+              }
+            }}
+            className="space-y-3"
+          >
+            <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+              <ShieldAlert size={18} className="mt-0.5 shrink-0" />
+              <div>
+                This will permanently remove batch <b>{deleteTarget.batchNumber}</b> and its <b>{(deleteTarget.members || []).length}</b> assigned member link(s). The members themselves are kept. Re-authenticate with your password and a current authenticator code.
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-700">Your account password</label>
+              <input
+                type="password"
+                value={deletePassword}
+                onChange={(e) => setDeletePassword(e.target.value)}
+                autoFocus
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"
+                placeholder="••••••••"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-700">Authenticator code (or recovery code)</label>
+              <input
+                value={deleteCode}
+                onChange={(e) => setDeleteCode(e.target.value.replace(/\s/g, ""))}
+                inputMode="numeric"
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-mono tracking-widest text-center text-lg"
+                placeholder="------"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                disabled={deleting || !deletePassword || !deleteCode}
+                className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+              >
+                <Trash2 size={14} /> {deleting ? "Deleting…" : "Delete batch"}
+              </button>
+            </div>
+          </form>
+        )}
       </Modal>
     </Card>
   );

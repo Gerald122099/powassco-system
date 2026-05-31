@@ -1,15 +1,22 @@
 // server/src/routes/water/waterBatches.routes.js
 import express from "express";
 import multer from "multer";
+import bcrypt from "bcryptjs";
+import { authenticator } from "otplib";
+import crypto from "crypto";
 import WaterBatch from "../../models/WaterBatch.js";
 import WaterMember from "../../models/WaterMember.js";
 import WaterReading from "../../models/WaterReading.js";
 import WaterBill from "../../models/WaterBill.js";
+import User from "../../models/User.js";
+import AuditLog from "../../models/AuditLog.js";
 import { requireAuth, requireRole } from "../../middleware/auth.js";
 import { upsertWaterBill } from "../../utils/waterBillUpsert.js";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from 'url';
+
+const sha256 = (s) => crypto.createHash("sha256").update(String(s)).digest("hex");
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -148,25 +155,39 @@ async function getLastActualReading(pnNo, meterNumber) {
   return null;
 }
 
-// GET all batches
+// One-time index hygiene: drop the legacy "members_1_unique_sparse" index if
+// it survived from an earlier deploy. Fire-and-forget; never blocks startup.
+(async () => {
+  try {
+    const idxs = await WaterBatch.collection.indexes();
+    for (const i of idxs) {
+      if (i.unique && i.key && i.key.members === 1) {
+        await WaterBatch.collection.dropIndex(i.name);
+        console.log("✅ Dropped legacy unique index on WaterBatch.members:", i.name);
+      }
+    }
+  } catch (_) { /* index may not exist or DB is still connecting */ }
+})();
+
+// GET all batches — uses .lean() so populated-null entries are easy to filter.
 router.get("/", ...guard, async (req, res) => {
   try {
     const batches = await WaterBatch.find({ isActive: true })
       .populate("members", "pnNo accountName meters address billing personal")
-      .sort({ batchNumber: 1 });
+      .sort({ batchNumber: 1 })
+      .lean();
 
-    // Populate returns null for member ids that no longer exist (deleted
-    // accounts still referenced by old batches). Filter so the dashboard
-    // never 500s on a stale reference.
     for (const b of batches) {
       b.members = (b.members || []).filter(Boolean);
     }
-    const assignedMemberIds = batches.flatMap(b => (b.members || []).map(m => m._id));
+    const assignedMemberIds = batches.flatMap((b) => (b.members || []).map((m) => m._id));
     const availableMembers = await WaterMember.find({
       _id: { $nin: assignedMemberIds },
-      accountStatus: "active"
-    }).select("pnNo accountName meters address billing personal");
-    
+      accountStatus: "active",
+    })
+      .select("pnNo accountName meters address billing personal")
+      .lean();
+
     res.json({ batches, availableMembers });
   } catch (error) {
     console.error("Error loading batches:", error);
@@ -177,15 +198,24 @@ router.get("/", ...guard, async (req, res) => {
 // CREATE new batch
 router.post("/", ...guard, async (req, res) => {
   try {
-    const { batchName, readerName, readerId, area } = req.body;
-    
-    const lastBatch = await WaterBatch.findOne().sort({ batchNumber: -1 });
-    let batchNumber = "BATCH-001";
-    if (lastBatch) {
-      const lastNum = parseInt(lastBatch.batchNumber.split('-')[1]);
-      batchNumber = `BATCH-${String(lastNum + 1).padStart(3, '0')}`;
+    const batchName = String(req.body?.batchName || "").trim();
+    const readerName = String(req.body?.readerName || "").trim();
+    const readerId = String(req.body?.readerId || "").trim();
+    const area = String(req.body?.area || "").trim();
+
+    if (!batchName) return res.status(400).json({ error: "Batch name is required." });
+    if (!readerName || !readerId) return res.status(400).json({ error: "Reader (plumber / meter reader) is required." });
+
+    // Compute the next batch number. Pad to 3 digits; tolerate any stray
+    // suffixes in the parse so a single bad row doesn't poison the counter.
+    const lastBatch = await WaterBatch.findOne().sort({ batchNumber: -1 }).lean();
+    let nextNum = 1;
+    if (lastBatch?.batchNumber) {
+      const m = String(lastBatch.batchNumber).match(/(\d+)/);
+      if (m) nextNum = parseInt(m[1], 10) + 1;
     }
-    
+    const batchNumber = `BATCH-${String(nextNum).padStart(3, "0")}`;
+
     const batch = new WaterBatch({
       batchNumber,
       batchName,
@@ -194,15 +224,84 @@ router.post("/", ...guard, async (req, res) => {
       area,
       members: [],
       meterNumbers: [],
-      createdBy: req.user?.employeeId || req.user?.username || "system",
-      updatedBy: req.user?.employeeId || req.user?.username || "system",
+      createdBy: req.user?.employeeId || req.user?.fullName || "system",
+      updatedBy: req.user?.employeeId || req.user?.fullName || "system",
     });
-    
+
     await batch.save();
     res.status(201).json(batch);
   } catch (error) {
+    if (error?.code === 11000) {
+      return res.status(409).json({ error: "A batch with that number already exists. Refresh and try again." });
+    }
     console.error("Error creating batch:", error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: error.message || "Failed to create batch." });
+  }
+});
+
+// DELETE batch — admin or water_bill_officer, but only after re-verifying
+// password AND a current 2FA code (or one of the user's recovery codes).
+// This is a destructive, hard-to-undo action: the re-auth is the safety net.
+const deleteGuard = [requireAuth, requireRole(["admin", "water_bill_officer"])];
+router.delete("/:id", ...deleteGuard, async (req, res) => {
+  try {
+    const password = String(req.body?.password || "");
+    const code = String(req.body?.code || "").replace(/\s/g, "");
+    if (!password) return res.status(400).json({ message: "Password is required." });
+    if (!code) return res.status(400).json({ message: "Authenticator code (or recovery code) is required." });
+
+    const user = await User.findById(req.user._id);
+    if (!user) return res.status(401).json({ message: "Session user not found." });
+
+    const pwOk = await bcrypt.compare(password, user.passwordHash);
+    if (!pwOk) return res.status(401).json({ message: "Wrong password." });
+
+    let codeOk = false;
+    if (user.twoFactorEnabled && user.twoFactorSecret) {
+      codeOk = authenticator.verify({ token: code, secret: user.twoFactorSecret });
+    }
+    if (!codeOk) {
+      // Fall back to a one-time recovery code so a lost-authenticator admin
+      // is never blocked from a destructive op.
+      const h = sha256(code.toUpperCase().replace(/[\s-]/g, ""));
+      const rc = (user.recoveryCodes || []).find((x) => x.codeHash === h && !x.used);
+      if (rc) {
+        rc.used = true;
+        rc.usedAt = new Date();
+        await user.save();
+        codeOk = true;
+      }
+    }
+    if (!codeOk) return res.status(401).json({ message: "Invalid authenticator code." });
+
+    if (!user.twoFactorEnabled) {
+      return res.status(403).json({ message: "2FA must be set up on your account before deleting batches. Enroll in Security first." });
+    }
+
+    const batch = await WaterBatch.findById(req.params.id);
+    if (!batch) return res.status(404).json({ message: "Batch not found." });
+    const snapshot = { _id: batch._id, batchNumber: batch.batchNumber, batchName: batch.batchName, readerName: batch.readerName, memberCount: (batch.members || []).length };
+    await batch.deleteOne();
+
+    // Audit (security category) so this is easy to find later.
+    try {
+      await AuditLog.create({
+        actorId: String(user._id),
+        actorName: user.fullName || user.employeeId,
+        actorRole: user.role,
+        method: "DELETE",
+        path: `/api/water/batches/${req.params.id}`,
+        action: `Deleted batch ${snapshot.batchNumber} — "${snapshot.batchName}" (${snapshot.memberCount} member(s))`,
+        category: "security",
+        statusCode: 200,
+        ip: (req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "").toString().split(",")[0].trim(),
+      });
+    } catch { /* best-effort */ }
+
+    res.json({ ok: true, message: `Batch ${snapshot.batchNumber} deleted.`, deleted: snapshot });
+  } catch (error) {
+    console.error("Delete batch error:", error);
+    res.status(500).json({ message: error.message || "Failed to delete batch." });
   }
 });
 
