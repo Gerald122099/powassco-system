@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import DashboardLayout from "../../components/DashboardLayout";
-import { Users, Settings, BarChart3, Banknote, Wallet, FileBarChart, UserCog, Coins, ScrollText, ShieldCheck, Inbox, CalendarClock, Megaphone, Boxes, CreditCard, ReceiptText } from "lucide-react";
+import { Users, Settings, BarChart3, Banknote, Wallet, FileBarChart, UserCog, ScrollText, ShieldCheck, Inbox, CalendarClock, Megaphone, Boxes, CreditCard, ReceiptText } from "lucide-react";
 import CollectionTodayPanel from "../../components/CollectionTodayPanel";
 import Card from "../../components/Card";
 import Modal from "../../components/Modal";
@@ -12,7 +12,6 @@ import LoanAnalyticsPanel from "../loan/panels/LoanAnalyticsPanel";
 import ExpensesPanel from "./ExpensesPanel";
 import ReportsPanel from "./ReportsPanel";
 import EmployeesPanel from "./EmployeesPanel";
-import PayrollPanel from "./PayrollPanel";
 import AuditLogPanel from "./AuditLogPanel";
 import SecurityPanel from "./SecurityPanel";
 import RequestsPanel from "./RequestsPanel";
@@ -93,7 +92,6 @@ const adminNavItems = [
   { key: "collections", label: "Overall Collections", icon: ReceiptText, desc: "Combined water + loan daily collection — per-collector audit" },
   { key: "expenses", label: "Expenses", icon: Wallet, desc: "Log pipe repairs, utilities, office costs, and disbursements" },
   { key: "employees", label: "Employees", icon: UserCog, desc: "Register staff, profiles, positions, and salary rates" },
-  { key: "payroll", label: "Payroll", icon: Coins, desc: "Payslips with SSS, PhilHealth, Pag-IBIG, and withholding tax" },
   { key: "reports", label: "Reports", icon: FileBarChart, desc: "Financial reports across expenses and loans" },
   { key: "audit", label: "Audit Log", icon: ScrollText, desc: "System activity — who did what, and when" },
   { key: "requests", label: "Requests", icon: Inbox, desc: "New connection & reconnection requests from the public" },
@@ -400,9 +398,6 @@ export default function AdminDashboard() {
 
         {/* Employees Tab */}
         {activeTab === "employees" && <EmployeesPanel />}
-
-        {/* Payroll Tab */}
-        {activeTab === "payroll" && <PayrollPanel />}
 
         {/* Reports Tab */}
         {activeTab === "reports" && <ReportsPanel />}

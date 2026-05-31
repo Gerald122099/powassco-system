@@ -81,15 +81,27 @@ router.post("/login", async (req, res) => {
 
   if (user.twoFactorEnabled) {
     const known = deviceKnown(user, deviceToken);
+    const nowIp = clientIp(req);
     const recentlyActive = known && (Date.now() - new Date(known.lastSeen || 0).getTime()) < DEVICE_TRUST_WINDOW_MS;
-    if (recentlyActive) {
+    const sameIp = known && String(known.ip || "") === String(nowIp || "");
+
+    // Admin role: never skip — every admin login goes through 2FA.
+    // Non-admin: skip only when the device is remembered, recently active
+    //            (≤ 2h), AND the IP hasn't changed since last sign-in.
+    const canSkip = user.role !== "admin" && recentlyActive && sameIp;
+
+    if (canSkip) {
       known.lastSeen = new Date();
-      known.ip = clientIp(req);
+      known.ip = nowIp;
       await user.save();
       return res.json({ token: sessionToken(user), user: publicUser(user) });
     }
-    // New device, or trusted device idle > 2h → require the authenticator code.
-    return res.json({ twoFactorRequired: true, challengeToken: challengeToken(user) });
+    // New device, new IP, idle > 2h, or admin — require the authenticator code.
+    return res.json({
+      twoFactorRequired: true,
+      challengeToken: challengeToken(user),
+      reason: !known ? "new_device" : !sameIp ? "new_ip" : !recentlyActive ? "idle" : "policy",
+    });
   }
 
   // Not enrolled. If the admin enforces 2FA, sign them in but require setup.

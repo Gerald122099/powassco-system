@@ -6,7 +6,8 @@ import { requireAuth, requireRole } from "../../middleware/auth.js";
 import { computePayroll } from "../../utils/payrollCompute.js";
 
 const router = express.Router();
-const guard = [requireAuth, requireRole(["admin"])];
+// Bookkeeper now owns payroll day-to-day; admin retains full access.
+const guard = [requireAuth, requireRole(["admin", "bookkeeper"])];
 
 async function getSettings() {
   let s = await PayrollSettings.findOne();

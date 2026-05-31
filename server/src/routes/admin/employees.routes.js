@@ -3,7 +3,10 @@ import Employee, { EMPLOYEE_POSITIONS } from "../../models/Employee.js";
 import { requireAuth, requireRole } from "../../middleware/auth.js";
 
 const router = express.Router();
-const guard = [requireAuth, requireRole(["admin"])];
+// Bookkeeper runs payroll, which needs employee read access. Writes
+// (create/update/delete) remain admin-only via the writeGuard below.
+const guard = [requireAuth, requireRole(["admin", "bookkeeper"])];
+const writeGuard = [requireAuth, requireRole(["admin"])];
 
 async function nextEmployeeCode() {
   const last = await Employee.findOne({ employeeCode: /^EMP-\d+$/ }).sort({ createdAt: -1 }).lean();
@@ -41,7 +44,7 @@ router.get("/:id", guard, async (req, res) => {
   res.json(emp);
 });
 
-router.post("/", guard, async (req, res) => {
+router.post("/", writeGuard, async (req, res) => {
   const b = req.body || {};
   if (!b.fullName || !String(b.fullName).trim()) return res.status(400).json({ message: "Full name is required." });
   const employeeCode = b.employeeCode?.trim() || (await nextEmployeeCode());
@@ -49,7 +52,7 @@ router.post("/", guard, async (req, res) => {
   res.status(201).json(emp);
 });
 
-router.put("/:id", guard, async (req, res) => {
+router.put("/:id", writeGuard, async (req, res) => {
   const allow = [
     "employeeCode", "fullName", "position", "department", "sex", "civilStatus", "birthDate",
     "contactNo", "email", "address", "tin", "sssNo", "philhealthNo", "pagibigNo",
@@ -62,7 +65,7 @@ router.put("/:id", guard, async (req, res) => {
   res.json(emp);
 });
 
-router.delete("/:id", guard, async (req, res) => {
+router.delete("/:id", writeGuard, async (req, res) => {
   const emp = await Employee.findByIdAndDelete(req.params.id);
   if (!emp) return res.status(404).json({ message: "Employee not found." });
   res.json({ ok: true });
