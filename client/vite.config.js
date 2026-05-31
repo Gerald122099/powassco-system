@@ -10,12 +10,21 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['logo.png'],
       manifest: {
+        // Stable identity across updates — Chrome / PWABuilder use this to
+        // de-dupe installs and keep the user's local data when the origin's
+        // display name changes.
+        id: '/?source=pwa',
         name: 'POWASSCO Multipurpose Cooperative',
         short_name: 'POWASSCO',
-        description: 'Water billing, meter reading, loans, and member services.',
+        description: 'Water billing, meter reading, loans, and member services for POWASSCO Multipurpose Cooperative.',
+        lang: 'en',
+        dir: 'ltr',
         theme_color: '#166534',
         background_color: '#ffffff',
         display: 'standalone',
+        // Fallback chain so devices that don't support `standalone`
+        // (e.g. older Safari) still get the best available experience.
+        display_override: ['standalone', 'minimal-ui', 'browser'],
         orientation: 'portrait',
         // Installed PWA opens directly to the plumber's Field Mode — the
         // primary Android use case (offline meter reading). Plumbers stay
@@ -25,9 +34,12 @@ export default defineConfig({
         // logging in routeAfter sends them right back to /plumber.
         start_url: '/plumber',
         scope: '/',
+        categories: ['utilities', 'business', 'productivity'],
+        prefer_related_applications: false,
         icons: [
-          { src: '/logo.png', sizes: '192x192', type: 'image/png' },
-          { src: '/logo.png', sizes: '512x512', type: 'image/png' },
+          { src: '/logo.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: '/logo.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: '/logo.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
           { src: '/logo.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
