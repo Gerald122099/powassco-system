@@ -8,6 +8,13 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      // Inline the service-worker registration directly in index.html
+      // rather than loading it from /registerSW.js. PWABuilder reads the
+      // page source statically and only credits a SW when it sees an
+      // explicit navigator.serviceWorker.register() call — an external
+      // script tag isn't enough to clear its "add a service worker"
+      // action item even when the SW is fully working.
+      injectRegister: 'inline',
       includeAssets: ['logo.png', 'icon-192.png', 'icon-512.png', 'icon-maskable-192.png', 'icon-maskable-512.png', 'screenshot-mobile.png', 'screenshot-wide.png'],
       manifest: {
         // Stable identity across updates — Chrome / PWABuilder use this to
