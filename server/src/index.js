@@ -35,6 +35,7 @@ import webhooksRoutes from "./routes/webhooks.routes.js";
 import cashierRoutes from "./routes/cashier.routes.js";
 import collectionsRoutes from "./routes/collections.routes.js";
 import bookkeeperRoutes from "./routes/bookkeeper.routes.js";
+import dataResetRoutes from "./routes/admin/dataReset.routes.js";
 
 import { auditLogger } from "./middleware/auditLogger.js";
 import { ensureBootstrapAdmin } from "./utils/ensureAdmin.js";
@@ -150,6 +151,7 @@ app.use("/api/webhooks", webhooksRoutes);
 app.use("/api/cashier", cashierRoutes);
 app.use("/api/collections", collectionsRoutes);
 app.use("/api/bookkeeper", bookkeeperRoutes);
+app.use("/api/admin/data-reset", dataResetRoutes);
 
 // JSON 404 for unknown routes
 app.use((req, res) => {

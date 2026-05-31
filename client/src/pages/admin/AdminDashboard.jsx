@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import DashboardLayout from "../../components/DashboardLayout";
-import { Users, Settings, BarChart3, Banknote, Wallet, FileBarChart, UserCog, ScrollText, ShieldCheck, Inbox, CalendarClock, Megaphone, Boxes, CreditCard, ReceiptText } from "lucide-react";
+import { Users, Settings, BarChart3, Banknote, Wallet, FileBarChart, UserCog, ScrollText, ShieldCheck, Inbox, CalendarClock, Megaphone, Boxes, CreditCard, ReceiptText, AlertTriangle } from "lucide-react";
 import CollectionTodayPanel from "../../components/CollectionTodayPanel";
 import MembersPanel from "../water/panels/MembersPanel";
+import DangerZonePanel from "./DangerZonePanel";
 import Card from "../../components/Card";
 import Modal from "../../components/Modal";
 import { apiFetch } from "../../lib/api";
@@ -102,6 +103,7 @@ const adminNavItems = [
   { key: "assets", label: "Inventory", icon: Boxes, desc: "Equipment & device inventory with 6-month audits" },
   { key: "payments", label: "Payments", icon: CreditCard, desc: "Online payment mode, QR PH, and transaction fee" },
   { key: "security", label: "Security", icon: ShieldCheck, desc: "Two-factor authentication and access controls" },
+  { key: "danger", label: "Danger Zone", icon: AlertTriangle, desc: "Reset operational data — keeps users, employees, settings" },
 ];
 
 export default function AdminDashboard() {
@@ -427,6 +429,9 @@ export default function AdminDashboard() {
 
         {/* Payment Settings Tab */}
         {activeTab === "payments" && <PaymentSettingsPanel />}
+
+        {/* Danger Zone — irreversible data reset (admin + password + 2FA) */}
+        {activeTab === "danger" && <DangerZonePanel />}
       </div>
 
       {/* User Add/Edit Modal */}
