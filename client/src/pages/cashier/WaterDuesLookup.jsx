@@ -21,6 +21,8 @@ export default function WaterDuesLookup() {
   const [payOR, setPayOR] = useState("");
   const [payReceived, setPayReceived] = useState("");
   const [paying, setPaying] = useState(false);
+  // Highlight the just-paid bill + post-pay receipt info for printing.
+  const [justPaid, setJustPaid] = useState(null); // { orNo, period, meter, amountDue, amountReceived, cbuExcess, newCbu, accountName, pnNo }
 
   function openPay(bill) {
     setPayTarget(bill);
@@ -36,27 +38,75 @@ export default function WaterDuesLookup() {
     if (!payOR.trim()) return toast.error("Enter the OR number.");
     if (received < due) return toast.error(`Amount received must be at least ₱${due.toFixed(2)}.`);
     setPaying(true);
+    const target = payTarget;
+    const orNo = payOR.trim().toUpperCase();
     try {
+      // Always send periodKey (canonical YYYY-MM) so the server's compound
+      // index lookup never misses on the human-readable periodCovered label.
       const res = await apiFetch("/cashier/pay-water", {
         method: "POST",
         token,
         body: {
           pnNo: data.member.pnNo,
-          meterNumber: payTarget.meterNumber,
-          periodKey: payTarget.periodCovered || payTarget.periodKey,
-          orNo: payOR.trim().toUpperCase(),
+          meterNumber: target.meterNumber,
+          periodKey: target.periodKey || target.periodCovered,
+          orNo,
           amountReceived: received,
           method: "cash",
         },
       });
       toast.success(res.message || "Payment posted.");
       setPayTarget(null);
-      lookup(null, data.member.pnNo);
+      // Capture receipt info so we can show "just paid" + print OR.
+      setJustPaid({
+        module: "water",
+        orNo,
+        period: target.periodCovered || target.periodKey,
+        meter: target.meterNumber,
+        amountDue: due,
+        amountReceived: received,
+        cbuExcess: res.cbuExcess || 0,
+        newCbu: res.newCbuBalance || 0,
+        accountName: data.member.accountName,
+        pnNo: data.member.pnNo,
+        at: new Date(),
+      });
+      // Await the refresh so the bill flips to PAID in the same render pass.
+      await lookup(null, data.member.pnNo);
     } catch (e2) {
       toast.error(e2.message);
     } finally {
       setPaying(false);
     }
+  }
+
+  // Print a small thermal-style OR receipt (works on any browser printer).
+  function printJustPaidReceipt() {
+    if (!justPaid) return;
+    const j = justPaid;
+    const w = window.open("", "_blank", "width=440,height=640");
+    if (!w) return alert("Allow pop-ups to print.");
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"/><title>OR ${j.orNo}</title>
+      <style>@page{size:A6;margin:6mm}body{font-family:Arial,sans-serif;color:#0f172a;font-size:12px}
+      h1{font-size:14px;color:#0f766e;margin:0 0 4px}.row{display:flex;justify-content:space-between;margin:2px 0}
+      .total{margin-top:8px;text-align:right;font-weight:bold;font-size:15px;color:#b91c1c}
+      .ok{color:#15803d}.muted{color:#64748b;font-size:10px}.line{border-bottom:1px dashed #cbd5e1;margin:6px 0}
+      </style></head><body>
+      <h1>POWASSCO — Official Receipt</h1>
+      <div class="muted">OR ${j.orNo} • ${j.at.toLocaleString()} • by ${user?.fullName || user?.employeeId || ""}</div>
+      <div class="line"></div>
+      <div class="row"><span>Account</span><b>${j.accountName} (${j.pnNo})</b></div>
+      <div class="row"><span>Meter / Period</span><span>${j.meter} • ${j.period}</span></div>
+      <div class="line"></div>
+      <div class="row"><span>Amount due</span><span>₱${j.amountDue.toFixed(2)}</span></div>
+      <div class="row"><span>Amount received</span><b>₱${j.amountReceived.toFixed(2)}</b></div>
+      ${j.cbuExcess > 0 ? `<div class="row"><span>Excess → CBU</span><b class="ok">₱${j.cbuExcess.toFixed(2)}</b></div><div class="row"><span class="muted">New CBU balance</span><span class="muted">₱${j.newCbu.toFixed(2)}</span></div>` : ""}
+      <div class="line"></div>
+      <div class="total">PAID ₱${j.amountDue.toFixed(2)}</div>
+      <div class="muted" style="margin-top:8px">Bring this OR to the Water Bill Officer for filing. Keep your stub.</div>
+      </body></html>`);
+    w.document.close();
+    setTimeout(() => { w.focus(); w.print(); }, 250);
   }
 
   async function lookup(e, override) {
@@ -223,7 +273,28 @@ export default function WaterDuesLookup() {
           {/* Bills grouped per meter — so a multi-meter account shows each
               meter separately and the cashier can issue an OR against a
               specific meter. */}
-          <MeterGroups data={data} printSlip={printSlip} onPay={isCashier ? openPay : null} />
+          {/* Just-paid receipt banner — sticky until user dismisses or pays the next bill. */}
+          {justPaid && (
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="text-sm font-bold text-emerald-800">✓ Payment posted — OR {justPaid.orNo}</div>
+                  <div className="mt-0.5 text-xs text-emerald-700">
+                    Meter {justPaid.meter} • {justPaid.period} • paid ₱{justPaid.amountDue.toFixed(2)}{justPaid.cbuExcess > 0 ? ` • excess ₱${justPaid.cbuExcess.toFixed(2)} → CBU (new balance ₱${justPaid.newCbu.toFixed(2)})` : ""}
+                  </div>
+                  <div className="mt-0.5 text-[11px] text-emerald-600">
+                    The Water Bill Officer will see this as paid on their next refresh.
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={printJustPaidReceipt} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">Print OR receipt</button>
+                  <button onClick={() => setJustPaid(null)} className="rounded-lg border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100">Dismiss</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <MeterGroups data={data} printSlip={printSlip} onPay={isCashier ? openPay : null} justPaidPeriod={justPaid?.module === "water" && justPaid?.meter ? `${justPaid.meter}|${justPaid.period}` : null} />
 
           {data.recentPayments?.length > 0 && (
             <div className="rounded-2xl border border-slate-200 overflow-hidden">
@@ -300,7 +371,7 @@ export default function WaterDuesLookup() {
   );
 }
 
-function MeterGroups({ data, printSlip, onPay }) {
+function MeterGroups({ data, printSlip, onPay, justPaidPeriod }) {
   const groups = useMemo(() => {
     const map = new Map();
     // Seed with active meters from the member so meters with zero bills still appear.
@@ -364,8 +435,10 @@ function MeterGroups({ data, printSlip, onPay }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {g.bills.map((b) => (
-                    <tr key={b._id} className={`border-t ${b.status !== "paid" ? "bg-red-50/30" : ""}`}>
+                  {g.bills.map((b) => {
+                    const isJustPaid = justPaidPeriod && justPaidPeriod === `${b.meterNumber}|${b.periodCovered || b.periodKey}`;
+                    return (
+                    <tr key={b._id} className={`border-t ${isJustPaid ? "bg-emerald-100 animate-pulse" : b.status !== "paid" ? "bg-red-50/30" : ""}`}>
                       <td className="px-3 py-2 font-mono">{b.periodCovered || b.periodKey}</td>
                       <td className="px-3 py-2 text-xs">{Number(b.consumed || 0).toFixed(2)} m³</td>
                       <td className="px-3 py-2 text-right font-bold text-slate-800">{peso(b.totalDue)}</td>
@@ -390,7 +463,7 @@ function MeterGroups({ data, printSlip, onPay }) {
                         </td>
                       )}
                     </tr>
-                  ))}
+                  );})}
                 </tbody>
               </table>
             </div>

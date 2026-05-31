@@ -22,6 +22,7 @@ export default function LoanDuesLookup() {
   const [payOR, setPayOR] = useState("");
   const [payReceived, setPayReceived] = useState("");
   const [paying, setPaying] = useState(false);
+  const [justPaid, setJustPaid] = useState(null);
 
   function openPay(loan) {
     setPayLoan(loan);
@@ -39,26 +40,69 @@ export default function LoanDuesLookup() {
     if (!payOR.trim()) return toast.error("Enter the OR number.");
     if (received < installmentTotal) return toast.error(`Amount received must be at least ₱${installmentTotal.toFixed(2)}.`);
     setPaying(true);
+    const target = payLoan;
+    const orNo = payOR.trim().toUpperCase();
+    const periodsPaid = periods;
     try {
       const res = await apiFetch("/cashier/pay-loan", {
         method: "POST",
         token,
         body: {
-          loanId: payLoan.loanId,
-          orNo: payOR.trim().toUpperCase(),
+          loanId: target.loanId,
+          orNo,
           amountReceived: received,
-          periodsCovered: periods,
+          periodsCovered: periodsPaid,
           method: "cash",
         },
       });
       toast.success(res.message || "Payment posted.");
       setPayLoan(null);
-      lookup(null, payLoan.loanId);
+      setJustPaid({
+        orNo,
+        loanId: target.loanId,
+        borrowerName: target.borrowerName,
+        borrowerPnNo: target.borrowerPnNo,
+        amountDue: installmentTotal,
+        amountReceived: received,
+        periodsCovered: res.periodsCovered || periodsPaid,
+        cbuExcess: res.cbuExcess || 0,
+        newCbu: res.newCbuBalance || 0,
+        at: new Date(),
+      });
+      await lookup(null, target.loanId);
     } catch (e2) {
       toast.error(e2.message);
     } finally {
       setPaying(false);
     }
+  }
+
+  function printJustPaidReceipt() {
+    if (!justPaid) return;
+    const j = justPaid;
+    const w = window.open("", "_blank", "width=440,height=640");
+    if (!w) return alert("Allow pop-ups to print.");
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"/><title>OR ${j.orNo}</title>
+      <style>@page{size:A6;margin:6mm}body{font-family:Arial,sans-serif;color:#0f172a;font-size:12px}
+      h1{font-size:14px;color:#0f766e;margin:0 0 4px}.row{display:flex;justify-content:space-between;margin:2px 0}
+      .total{margin-top:8px;text-align:right;font-weight:bold;font-size:15px;color:#b91c1c}
+      .ok{color:#15803d}.muted{color:#64748b;font-size:10px}.line{border-bottom:1px dashed #cbd5e1;margin:6px 0}
+      </style></head><body>
+      <h1>POWASSCO — Loan Payment OR</h1>
+      <div class="muted">OR ${j.orNo} • ${j.at.toLocaleString()} • by ${user?.fullName || user?.employeeId || ""}</div>
+      <div class="line"></div>
+      <div class="row"><span>Borrower</span><b>${j.borrowerName}${j.borrowerPnNo ? " ("+j.borrowerPnNo+")" : ""}</b></div>
+      <div class="row"><span>Loan</span><span>${j.loanId} • ${j.periodsCovered} period(s)</span></div>
+      <div class="line"></div>
+      <div class="row"><span>Amount due (${j.periodsCovered} mo.)</span><span>₱${j.amountDue.toFixed(2)}</span></div>
+      <div class="row"><span>Amount received</span><b>₱${j.amountReceived.toFixed(2)}</b></div>
+      ${j.cbuExcess > 0 ? `<div class="row"><span>Excess → CBU</span><b class="ok">₱${j.cbuExcess.toFixed(2)}</b></div><div class="row"><span class="muted">New CBU balance</span><span class="muted">₱${j.newCbu.toFixed(2)}</span></div>` : ""}
+      <div class="line"></div>
+      <div class="total">PAID ₱${j.amountDue.toFixed(2)}</div>
+      <div class="muted" style="margin-top:8px">Bring this OR to the Loan Officer for filing. Keep your stub.</div>
+      </body></html>`);
+    w.document.close();
+    setTimeout(() => { w.focus(); w.print(); }, 250);
   }
 
   async function lookup(e) {
@@ -129,6 +173,25 @@ export default function LoanDuesLookup() {
 
       {data && (
         <div className="mt-5 space-y-4">
+          {justPaid && (
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="text-sm font-bold text-emerald-800">✓ Loan payment posted — OR {justPaid.orNo}</div>
+                  <div className="mt-0.5 text-xs text-emerald-700">
+                    Loan {justPaid.loanId} • {justPaid.periodsCovered} period(s) • paid ₱{justPaid.amountDue.toFixed(2)}{justPaid.cbuExcess > 0 ? ` • excess ₱${justPaid.cbuExcess.toFixed(2)} → CBU (new balance ₱${justPaid.newCbu.toFixed(2)})` : ""}
+                  </div>
+                  <div className="mt-0.5 text-[11px] text-emerald-600">
+                    The Loan Officer will see this on their next refresh.
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={printJustPaidReceipt} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">Print OR receipt</button>
+                  <button onClick={() => setJustPaid(null)} className="rounded-lg border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100">Dismiss</button>
+                </div>
+              </div>
+            </div>
+          )}
           {data.loans.map((loan) => {
             const pendingForThis = (data.pendingOnline || []).filter((o) => o.loanId === loan.loanId);
             const paymentsForThis = (data.recentPayments || []).filter((p) => p.loanId === loan.loanId);
