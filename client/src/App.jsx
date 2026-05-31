@@ -46,10 +46,26 @@ function RoleHome() {
   return <Navigate to="/employee-login" replace />;
 }
 
+// Maps a role to its canonical dashboard path. Used by Protected when a
+// signed-in user lands on a route their role can't access — they're sent
+// to their own dashboard instead of the public homepage.
+const ROLE_HOME = {
+  admin: "/admin",
+  water_bill_officer: "/water",
+  loan_officer: "/loan",
+  meter_reader: "/meter",
+  plumber: "/plumber",
+  cashier: "/cashier",
+  bookkeeper: "/bookkeeper",
+};
+
 function Protected({ roles, children }) {
   const { user } = useAuth();
   if (!user) return <Navigate to="/employee-login" replace />;
-  if (roles && !roles.includes(user.role)) return <Navigate to="/" replace />;
+  if (roles && !roles.includes(user.role)) {
+    const home = ROLE_HOME[user.role] || "/";
+    return <Navigate to={home} replace />;
+  }
   return children;
 }
 

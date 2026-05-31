@@ -17,10 +17,13 @@ export default defineConfig({
         background_color: '#ffffff',
         display: 'standalone',
         orientation: 'portrait',
-        // Installed PWA opens straight to employee login. LoginPage itself
-        // redirects already-authenticated users to their role dashboard, so
-        // a returning plumber/cashier/officer doesn't actually see the form.
-        start_url: '/employee-login',
+        // Installed PWA opens directly to the plumber's Field Mode — the
+        // primary Android use case (offline meter reading). Plumbers stay
+        // signed in (30-day JWT) so a cold start lands them on their
+        // dashboard with no extra taps. If they're signed out, the
+        // Protected wrapper kicks them to /employee-login, and after
+        // logging in routeAfter sends them right back to /plumber.
+        start_url: '/plumber',
         scope: '/',
         icons: [
           { src: '/logo.png', sizes: '192x192', type: 'image/png' },
