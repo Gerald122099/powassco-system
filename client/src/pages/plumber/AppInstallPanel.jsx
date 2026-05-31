@@ -26,6 +26,8 @@ function isIOS() {
 export default function AppInstallPanel() {
   const [deferred, setDeferred] = useState(null);
   const [installed, setInstalled] = useState(isStandalone());
+  // null = checking, true = real APK file is available, false = not published yet
+  const [apkAvailable, setApkAvailable] = useState(null);
 
   useEffect(() => {
     const onPrompt = (e) => { e.preventDefault(); setDeferred(e); };
@@ -36,6 +38,26 @@ export default function AppInstallPanel() {
       window.removeEventListener("beforeinstallprompt", onPrompt);
       window.removeEventListener("appinstalled", onInstalled);
     };
+  }, []);
+
+  // Only show the "Download APK" button if a real .apk is actually deployed
+  // at /downloads/powassco-field.apk. We HEAD the URL once on mount — a
+  // 200 with an apk-ish Content-Type means it's there; anything else (404,
+  // HTML 404 page, network error) means there's nothing useful to download.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/downloads/powassco-field.apk", { method: "HEAD", cache: "no-store" });
+        if (cancelled) return;
+        const ct = (res.headers.get("content-type") || "").toLowerCase();
+        const looksLikeApk = ct.includes("vnd.android.package-archive") || ct.includes("octet-stream") || ct.startsWith("application/");
+        setApkAvailable(res.ok && looksLikeApk && !ct.startsWith("text/"));
+      } catch {
+        if (!cancelled) setApkAvailable(false);
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   async function install() {
@@ -98,22 +120,34 @@ export default function AppInstallPanel() {
             </div>
           )}
 
-          {/* Direct APK link (only useful if you ever publish one) */}
+          {/* Direct APK download — only shown when a real .apk is actually
+              deployed. While unpublished, we tell the plumber the install
+              above is the way (no broken download). */}
           <div className="mt-3 rounded-2xl border border-slate-200 p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <div className="text-sm font-bold text-slate-900">Native APK (advanced)</div>
                 <div className="mt-0.5 text-xs text-slate-500">
-                  If the cooperative publishes a Capacitor-wrapped APK, download it here. Otherwise the install above is the official way.
+                  {apkAvailable === false
+                    ? "No APK published yet. Use the Android install above — the PWA is the official app."
+                    : "If the cooperative publishes a Capacitor-wrapped APK, download it here."}
                 </div>
               </div>
-              <a
-                href="/downloads/powassco-field.apk"
-                download
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-              >
-                <Download size={15} /> Download APK
-              </a>
+              {apkAvailable === null ? (
+                <span className="text-xs text-slate-400">Checking…</span>
+              ) : apkAvailable ? (
+                <a
+                  href="/downloads/powassco-field.apk"
+                  download
+                  className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  <Download size={15} /> Download APK
+                </a>
+              ) : (
+                <span className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-400 cursor-not-allowed">
+                  <Download size={15} /> Not available yet
+                </span>
+              )}
             </div>
           </div>
 
