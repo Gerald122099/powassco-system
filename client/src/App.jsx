@@ -7,6 +7,7 @@ import { AuthProvider, useAuth } from "./context/AuthContext";
 import InstallPrompt from "./components/InstallPrompt";
 import Toaster from "./components/Toast";
 import OnlineStatus from "./components/OnlineStatus";
+import AdminAuthzGate from "./components/AdminAuthzGate";
 
 // Role dashboards + public sub-pages are lazy-loaded so each user only
 // downloads the code they need (much faster startup, esp. on phones).
@@ -58,6 +59,7 @@ export default function App() {
       <InstallPrompt />
       <OnlineStatus />
       <Toaster />
+      <AdminAuthzGate />
       <Suspense fallback={<PageLoader />}>
       <Routes>
         {/* PUBLIC PAGES */}

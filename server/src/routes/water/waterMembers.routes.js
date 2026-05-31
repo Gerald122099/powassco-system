@@ -1,10 +1,14 @@
 import express from "express";
 import WaterMember from "../../models/WaterMember.js";
 import WaterBill from "../../models/WaterBill.js";
-import { requireAuth, requireRole } from "../../middleware/auth.js";
+import { requireAuth, requireRole, requireAdminAuthz } from "../../middleware/auth.js";
 
 const router = express.Router();
 const guard = [requireAuth, requireRole(["admin", "water_bill_officer", "meter_reader"])];
+// Edits + deletes go through dual-control: admin role passes; everyone else
+// must present a fresh X-Admin-Authz token (an admin entered their own
+// password + 2FA code on the officer's screen).
+const editGuard = [requireAuth, requireRole(["admin", "water_bill_officer", "meter_reader"]), requireAdminAuthz];
 
 // GET /api/water/members?q=&page=&limit=&classification=&status=
 router.get("/", ...guard, async (req, res) => {
@@ -265,7 +269,7 @@ router.post("/", ...guard, async (req, res) => {
   }
 });
 // PUT /api/water/members/:id
-router.put("/:id", ...guard, async (req, res) => {
+router.put("/:id", ...editGuard, async (req, res) => {
   try {
     const {
       accountName,
@@ -501,7 +505,7 @@ router.put("/:id", ...guard, async (req, res) => {
 });
 
 // DELETE /api/water/members/:id
-router.delete("/:id", ...guard, async (req, res) => {
+router.delete("/:id", ...editGuard, async (req, res) => {
   try {
     const member = await WaterMember.findById(req.params.id);
     if (!member) {

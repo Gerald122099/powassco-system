@@ -326,4 +326,59 @@ router.post("/logout", requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
+// ----------------------------------------------------------------------
+// Admin authorisation (dual-control / four-eyes) for sensitive edits.
+//
+// Water bill officers (and other non-admin roles) cannot edit certain
+// records by themselves. An admin must enter THEIR employee ID + password
+// + current authenticator code on the officer's screen. The server issues
+// a short-lived JWT (10 min) tied to the officer's session; the officer's
+// next mutating request carries it in the X-Admin-Authz header and is
+// allowed through.
+// ----------------------------------------------------------------------
+const ADMIN_AUTHZ_TTL = "10m";
+
+router.post("/admin-authz", requireAuth, async (req, res) => {
+  const { adminEmployeeId, adminPassword, adminCode } = req.body || {};
+  if (!adminEmployeeId || !adminPassword || !adminCode) {
+    return res.status(400).json({ message: "Admin employee ID, password, and authenticator code are required." });
+  }
+  const admin = await User.findOne({ employeeId: String(adminEmployeeId).trim() });
+  if (!admin) return res.status(401).json({ message: "Invalid admin credentials." });
+  if (admin.role !== "admin") return res.status(403).json({ message: "That account is not an admin." });
+  if (admin.status !== "active") return res.status(403).json({ message: "Admin account is inactive." });
+
+  const pwOk = await bcrypt.compare(String(adminPassword), admin.passwordHash);
+  if (!pwOk) return res.status(401).json({ message: "Invalid admin credentials." });
+
+  let codeOk = false;
+  if (admin.twoFactorEnabled && admin.twoFactorSecret) {
+    codeOk = authenticator.verify({ token: String(adminCode).replace(/\s/g, ""), secret: admin.twoFactorSecret });
+  }
+  if (!codeOk) {
+    // Recovery-code fallback so a lost-phone admin can still authorise.
+    const h = sha256(String(adminCode).toUpperCase().replace(/[\s-]/g, ""));
+    const rc = (admin.recoveryCodes || []).find((x) => x.codeHash === h && !x.used);
+    if (rc) { rc.used = true; rc.usedAt = new Date(); await admin.save(); codeOk = true; }
+  }
+  if (!codeOk) return res.status(401).json({ message: "Invalid admin authenticator code." });
+  if (!admin.twoFactorEnabled) {
+    return res.status(403).json({ message: "The admin account must have 2FA enrolled to authorise edits." });
+  }
+
+  const authzToken = jwt.sign(
+    {
+      purpose: "admin_authz",
+      grantedBy: admin._id.toString(),
+      grantedByName: admin.fullName || admin.employeeId,
+      grantedFor: req.user._id.toString(),
+    },
+    process.env.JWT_SECRET,
+    { expiresIn: ADMIN_AUTHZ_TTL }
+  );
+
+  await auditSecurity(req, admin, `Admin authorised edit for ${req.user.fullName || req.user.employeeId}`, 200);
+  res.json({ ok: true, authzToken, expiresInSeconds: 600 });
+});
+
 export default router;

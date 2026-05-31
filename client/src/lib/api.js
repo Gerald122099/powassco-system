@@ -10,6 +10,32 @@ const USER_KEY = "pow_user";
 // In-memory cache (faster than reading localStorage every request)
 let globalToken = localStorage.getItem(TOKEN_KEY) || "";
 
+// ----- Admin-authz token (dual-control short-lived JWT) -----
+// Lives in sessionStorage so it expires when the tab closes. Also tracks
+// the timestamp so we can pre-emptively drop expired tokens client-side.
+const AUTHZ_KEY = "pow_admin_authz";
+const AUTHZ_EXP_KEY = "pow_admin_authz_exp";
+
+export function setAdminAuthzToken(token, ttlSeconds = 600) {
+  if (!token) {
+    sessionStorage.removeItem(AUTHZ_KEY);
+    sessionStorage.removeItem(AUTHZ_EXP_KEY);
+    return;
+  }
+  sessionStorage.setItem(AUTHZ_KEY, token);
+  sessionStorage.setItem(AUTHZ_EXP_KEY, String(Date.now() + ttlSeconds * 1000));
+}
+
+export function getAdminAuthzToken() {
+  const t = sessionStorage.getItem(AUTHZ_KEY);
+  const exp = Number(sessionStorage.getItem(AUTHZ_EXP_KEY) || 0);
+  if (!t || !exp || Date.now() >= exp) {
+    if (t || exp) { sessionStorage.removeItem(AUTHZ_KEY); sessionStorage.removeItem(AUTHZ_EXP_KEY); }
+    return "";
+  }
+  return t;
+}
+
 // Helpers
 function getStoredToken() {
   return localStorage.getItem(TOKEN_KEY) || "";
@@ -106,11 +132,13 @@ export async function apiFetch(
   // authenticated request — keeps users inside the 2-hour 2FA-skip window
   // while they're actively using the app.
   const deviceToken = localStorage.getItem("pow_device") || "";
+  const adminAuthz = getAdminAuthzToken();
 
   const headers = {
     ...(body ? { "Content-Type": "application/json" } : {}),
     ...(finalToken ? { Authorization: `Bearer ${finalToken}` } : {}),
     ...(deviceToken ? { "X-Device-Token": deviceToken } : {}),
+    ...(adminAuthz ? { "X-Admin-Authz": `Bearer ${adminAuthz}` } : {}),
     ...(extraHeaders || {}),
   };
 
@@ -134,6 +162,18 @@ export async function apiFetch(
   }
 
   if (!res.ok) {
+    // Dual-control: server says an admin must authorise this edit. Open
+    // the AdminAuthzGate, then retry the original request once.
+    if (data?.code === "ADMIN_AUTHZ_REQUIRED") {
+      // Lazy-import to avoid a cycle with the React UI tree.
+      const { openAdminAuthz } = await import("../components/AdminAuthzGate.jsx");
+      const ok = await openAdminAuthz();
+      if (ok) {
+        // Retry once with the freshly-set X-Admin-Authz header.
+        return apiFetch(path, { method, body, token, headers: extraHeaders });
+      }
+      throw new Error(data?.message || "Admin authorisation cancelled.");
+    }
     // If your backend sometimes sends 403 for expired/invalid token,
     // you can optionally clear on BOTH 401 and 403:
     if (res.status === 401) {

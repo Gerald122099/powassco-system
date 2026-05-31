@@ -53,3 +53,32 @@ export function requireRole(roles = []) {
     next();
   };
 }
+
+// Dual-control gate: admin role bypasses; non-admins must carry a fresh
+// X-Admin-Authz token issued by POST /api/auth/admin-authz (admin enters
+// their own password + 2FA code on the officer's screen). The token is
+// JWT, 10-min TTL, bound to the officer's userId so it can't be replayed
+// against another session.
+export function requireAdminAuthz(req, res, next) {
+  if (req.user?.role === "admin") return next();
+
+  const raw = String(req.headers["x-admin-authz"] || "").replace(/^Bearer\s+/i, "");
+  if (!raw) {
+    return res.status(403).json({
+      message: "Admin authorisation required. An admin must enter their password + 2FA code to approve this edit.",
+      code: "ADMIN_AUTHZ_REQUIRED",
+    });
+  }
+  try {
+    const decoded = jwt.verify(raw, process.env.JWT_SECRET);
+    if (decoded?.purpose !== "admin_authz") throw new Error("bad purpose");
+    if (String(decoded?.grantedFor) !== String(req.user?._id)) throw new Error("session mismatch");
+    req.adminAuthz = decoded;
+    return next();
+  } catch {
+    return res.status(401).json({
+      message: "Admin authorisation expired or invalid. Ask an admin to re-authorise.",
+      code: "ADMIN_AUTHZ_REQUIRED",
+    });
+  }
+}
