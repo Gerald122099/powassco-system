@@ -19,6 +19,7 @@ import { authenticator } from "otplib";
 import { requireAuth, requireRole } from "../../middleware/auth.js";
 
 import User from "../../models/User.js";
+import Employee from "../../models/Employee.js";
 import AuditLog from "../../models/AuditLog.js";
 import WaterMember from "../../models/WaterMember.js";
 import WaterBill from "../../models/WaterBill.js";
@@ -52,6 +53,10 @@ const TARGETS = [
   { key: "productLoanApplications", model: ProductLoanApplication, label: "Product-loan applications" },
 ];
 
+// Bootstrap admin (auto-seeded on first run) is ALWAYS preserved so the
+// system can never lock itself out. The caller's own user is also kept.
+const BOOTSTRAP_ADMIN_EMPLOYEE_ID = "ADMIN2026";
+
 // GET /api/admin/data-reset/preview — counts only, no writes.
 router.get("/preview", ...guard, async (req, res) => {
   const out = {};
@@ -59,6 +64,20 @@ router.get("/preview", ...guard, async (req, res) => {
     try { out[t.key] = { label: t.label, count: await t.model.countDocuments() }; }
     catch { out[t.key] = { label: t.label, count: 0, error: true }; }
   }
+
+  // Optional wipe targets — counts only what's *eligible* (excluding the
+  // acting admin + the bootstrap admin so the UI shows the truth).
+  try {
+    const usersDeletable = await User.countDocuments({
+      _id: { $ne: req.user._id },
+      employeeId: { $ne: BOOTSTRAP_ADMIN_EMPLOYEE_ID },
+    });
+    out.users = { label: "User accounts (excludes you + bootstrap admin)", count: usersDeletable, optional: true };
+  } catch { out.users = { label: "User accounts", count: 0, error: true, optional: true }; }
+  try {
+    out.employees = { label: "Employee records", count: await Employee.countDocuments(), optional: true };
+  } catch { out.employees = { label: "Employee records", count: 0, error: true, optional: true }; }
+
   res.json({ targets: out });
 });
 
@@ -106,6 +125,32 @@ router.post("/", ...guard, async (req, res) => {
       results[t.key] = { label: t.label, deleted: r?.deletedCount ?? 0 };
     } catch (e) {
       results[t.key] = { label: t.label, deleted: 0, error: e.message };
+    }
+  }
+
+  // Optional: users + employees. Toggled by the admin in the UI.
+  const wipeUsers = !!req.body?.wipeUsers;
+  const wipeEmployees = !!req.body?.wipeEmployees;
+
+  if (wipeUsers) {
+    try {
+      // Never delete the caller or the bootstrap admin (auto-seeded on
+      // first run). This guarantees the system stays reachable.
+      const r = await User.deleteMany({
+        _id: { $ne: admin._id },
+        employeeId: { $ne: BOOTSTRAP_ADMIN_EMPLOYEE_ID },
+      });
+      results.users = { label: "User accounts", deleted: r?.deletedCount ?? 0 };
+    } catch (e) {
+      results.users = { label: "User accounts", deleted: 0, error: e.message };
+    }
+  }
+  if (wipeEmployees) {
+    try {
+      const r = await Employee.deleteMany({});
+      results.employees = { label: "Employee records", deleted: r?.deletedCount ?? 0 };
+    } catch (e) {
+      results.employees = { label: "Employee records", deleted: 0, error: e.message };
     }
   }
 

@@ -10,7 +10,7 @@ import WaterBill from "../../models/WaterBill.js";
 import WaterPayment from "../../models/WaterPayment.js";
 import WaterMember from "../../models/WaterMember.js";
 import WaterSettings from "../../models/WaterSettings.js";
-import { requireAuth, requireRole } from "../../middleware/auth.js";
+import { requireAuth, requireRole, requireAdminAuthz } from "../../middleware/auth.js";
 import { isPastDue } from "../../utils/waterPeriod.js";
 import { calculateWaterBill } from "../../utils/waterBilling.js";
 import { computeDailyPenalty } from "../../utils/penalty.js";
@@ -522,7 +522,9 @@ router.get("/:id", ...guard, async (req, res) => {
   }
 });
 
-router.delete("/:id", ...guard, async (req, res) => {
+// Bill delete: water_bill_officer can do it but only after an admin
+// re-authorises (admin role bypasses the gate by design).
+router.delete("/:id", ...guard, requireAdminAuthz, async (req, res) => {
   try {
     const bill = await WaterBill.findById(req.params.id);
     if (!bill) return res.status(404).json({ message: "Bill not found" });

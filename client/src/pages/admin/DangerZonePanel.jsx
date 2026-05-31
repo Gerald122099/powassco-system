@@ -23,6 +23,8 @@ export default function DangerZonePanel() {
   const [confirm, setConfirm] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
+  const [wipeUsers, setWipeUsers] = useState(false);
+  const [wipeEmployees, setWipeEmployees] = useState(false);
   const [working, setWorking] = useState(false);
   const [result, setResult] = useState(null);
 
@@ -33,23 +35,34 @@ export default function DangerZonePanel() {
   }, [token]);
   useEffect(() => { load(); }, [load]);
 
-  const totalDocs = preview ? Object.values(preview.targets).reduce((s, t) => s + (t.count || 0), 0) : 0;
+  // Sum only what the admin has ACTUALLY opted into deleting.
+  const totalDocs = preview
+    ? Object.entries(preview.targets).reduce((s, [k, t]) => {
+        if (k === "users" && !wipeUsers) return s;
+        if (k === "employees" && !wipeEmployees) return s;
+        return s + (t.count || 0);
+      }, 0)
+    : 0;
   const canSubmit = confirm === CONFIRM_PHRASE && password.length > 0 && code.length > 0 && totalDocs > 0;
 
   async function runReset(e) {
     e?.preventDefault?.();
     if (!canSubmit) return;
-    if (!window.confirm(`This will permanently delete ${totalDocs.toLocaleString()} record(s) across ${Object.keys(preview.targets).length} collections.\n\nUsers, employees, tariffs, all settings, audit log, catalogues, expenses, assets, payroll — all KEPT.\n\nProceed?`)) return;
+    const extras = [];
+    if (wipeUsers) extras.push("ALL user accounts (except you + bootstrap admin)");
+    if (wipeEmployees) extras.push("ALL employee records");
+    const extrasMsg = extras.length ? `\n\nALSO wiping:\n• ${extras.join("\n• ")}` : "\n\nUsers and employees: KEPT.";
+    if (!window.confirm(`This will permanently delete ${totalDocs.toLocaleString()} record(s).\n\nTariffs, all settings, audit log, catalogues, expenses, assets, payroll — KEPT.${extrasMsg}\n\nProceed?`)) return;
     setWorking(true);
     try {
       const res = await apiFetch("/admin/data-reset", {
         method: "POST",
         token,
-        body: { password, code: code.trim(), confirm },
+        body: { password, code: code.trim(), confirm, wipeUsers, wipeEmployees },
       });
       toast.success("Data reset completed.");
       setResult(res.results);
-      setConfirm(""); setPassword(""); setCode("");
+      setConfirm(""); setPassword(""); setCode(""); setWipeUsers(false); setWipeEmployees(false);
       load();
     } catch (e) { toast.error(e.message); } finally { setWorking(false); }
   }
@@ -92,18 +105,43 @@ export default function DangerZonePanel() {
           <tbody>
             {!preview ? (
               <tr><td colSpan={2} className="py-10 text-center text-slate-500">Loading…</td></tr>
-            ) : Object.entries(preview.targets).map(([k, t]) => (
-              <tr key={k} className="border-t">
-                <td className="px-4 py-2">{t.label}</td>
-                <td className="px-4 py-2 text-right font-mono">{t.error ? "—" : t.count.toLocaleString()}</td>
-              </tr>
-            ))}
+            ) : Object.entries(preview.targets).map(([k, t]) => {
+              const optional = k === "users" || k === "employees";
+              const opted = (k === "users" && wipeUsers) || (k === "employees" && wipeEmployees);
+              const skipping = optional && !opted;
+              return (
+                <tr key={k} className={`border-t ${skipping ? "text-slate-400" : ""}`}>
+                  <td className="px-4 py-2">
+                    {t.label}
+                    {optional && <span className={`ml-2 rounded-full px-2 py-0.5 text-[10px] font-bold ${opted ? "bg-red-100 text-red-700" : "bg-slate-100 text-slate-500"}`}>{opted ? "WILL DELETE" : "kept"}</span>}
+                  </td>
+                  <td className="px-4 py-2 text-right font-mono">{t.error ? "—" : (skipping ? "skipped" : t.count.toLocaleString())}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
 
       {/* Confirm form */}
       <form onSubmit={runReset} className="mt-6 space-y-3 rounded-2xl border border-red-200 p-4">
+        {/* Optional wipe toggles */}
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <label className={`flex items-start gap-2 rounded-xl border p-3 cursor-pointer ${wipeUsers ? "border-red-300 bg-red-50" : "border-slate-200 bg-white"}`}>
+            <input type="checkbox" checked={wipeUsers} onChange={(e) => setWipeUsers(e.target.checked)} className="mt-0.5" />
+            <div>
+              <div className="text-sm font-bold text-slate-800">Also delete user accounts</div>
+              <div className="text-[11px] text-slate-500">YOU and the bootstrap admin (<span className="font-mono">ADMIN2026</span>) are kept so the system stays reachable.</div>
+            </div>
+          </label>
+          <label className={`flex items-start gap-2 rounded-xl border p-3 cursor-pointer ${wipeEmployees ? "border-red-300 bg-red-50" : "border-slate-200 bg-white"}`}>
+            <input type="checkbox" checked={wipeEmployees} onChange={(e) => setWipeEmployees(e.target.checked)} className="mt-0.5" />
+            <div>
+              <div className="text-sm font-bold text-slate-800">Also delete employee records</div>
+              <div className="text-[11px] text-slate-500">Payroll runs and PayrollSettings are still kept.</div>
+            </div>
+          </label>
+        </div>
         <div>
           <label className="text-xs font-semibold text-red-800">
             Type <b>{CONFIRM_PHRASE}</b> to confirm

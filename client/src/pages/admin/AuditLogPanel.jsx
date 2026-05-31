@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import Card from "../../components/Card";
+import Modal from "../../components/Modal";
 import { apiFetch } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
-import { RefreshCw } from "lucide-react";
+import { toast } from "../../components/Toast";
+import { RefreshCw, Trash2, ShieldAlert } from "lucide-react";
 
 const PAGE_SIZE = 25;
 
@@ -34,6 +36,11 @@ export default function AuditLogPanel() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetConfirm, setResetConfirm] = useState("");
+  const [resetPw, setResetPw] = useState("");
+  const [resetCode, setResetCode] = useState("");
+  const [resetting, setResetting] = useState(false);
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / PAGE_SIZE)), [total]);
 
@@ -82,8 +89,60 @@ export default function AuditLogPanel() {
             <input type="date" value={to} onChange={(e) => { setPage(1); setTo(e.target.value); }} className="rounded-xl border border-slate-200 px-3 py-2 text-sm" />
           </div>
           <button onClick={load} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold hover:bg-slate-50"><RefreshCw size={16} className={loading ? "animate-spin" : ""} /></button>
+          <button
+            onClick={() => { setResetConfirm(""); setResetPw(""); setResetCode(""); setResetOpen(true); }}
+            className="inline-flex items-center gap-2 rounded-xl border border-red-200 px-4 py-2.5 text-sm font-semibold text-red-700 hover:bg-red-50"
+            title="Reset audit log (admin + password + 2FA)"
+          >
+            <Trash2 size={16} /> Reset
+          </button>
         </div>
       </div>
+
+      {/* Reset audit log modal */}
+      <Modal open={resetOpen} title="Reset Audit Log" subtitle="Wipes every audit row. Records a single fresh row noting the reset." onClose={() => setResetOpen(false)} size="sm">
+        <form
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (resetConfirm !== "RESET AUDIT LOG") return toast.error('Type the exact phrase "RESET AUDIT LOG".');
+            if (!resetPw || !resetCode) return toast.error("Admin password and code are required.");
+            setResetting(true);
+            try {
+              const res = await apiFetch("/audit/reset", {
+                method: "POST",
+                token,
+                body: { password: resetPw, code: resetCode.trim(), confirm: resetConfirm },
+              });
+              toast.success(`Audit log reset — ${res.deleted} row(s) deleted`);
+              setResetOpen(false);
+              setPage(1);
+              load();
+            } catch (err) { toast.error(err.message); } finally { setResetting(false); }
+          }}
+          className="space-y-3"
+        >
+          <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+            <ShieldAlert size={18} className="mt-0.5 shrink-0" />
+            <div>Destructive. The audit log itself records who did this — a single new row replaces what was wiped.</div>
+          </div>
+          <div>
+            <label className="text-xs font-semibold">Type <b>RESET AUDIT LOG</b> to confirm</label>
+            <input value={resetConfirm} onChange={(e) => setResetConfirm(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-mono text-sm" autoComplete="off" />
+          </div>
+          <div>
+            <label className="text-xs font-semibold">Admin password</label>
+            <input type="password" value={resetPw} onChange={(e) => setResetPw(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm" />
+          </div>
+          <div>
+            <label className="text-xs font-semibold">Authenticator code (or recovery code)</label>
+            <input value={resetCode} onChange={(e) => setResetCode(e.target.value.replace(/\s/g, ""))} inputMode="numeric" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-mono text-lg tracking-widest text-center" placeholder="------" />
+          </div>
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="button" onClick={() => setResetOpen(false)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold">Cancel</button>
+            <button disabled={resetting} className="rounded-xl bg-red-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60">{resetting ? "Resetting…" : "Reset audit log"}</button>
+          </div>
+        </form>
+      </Modal>
 
       {err && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{err}</div>}
 
