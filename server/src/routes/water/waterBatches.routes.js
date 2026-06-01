@@ -510,7 +510,11 @@ router.get("/:id/export", ...guard, async (req, res) => {
 // IMPORT readings from mobile app (JSON/CSV)
 router.post("/import-readings", ...guard, async (req, res) => {
   try {
-    const { readings, periodKey, readerName, readerId, importDate, forceUpdate = false, generateBill = true } = req.body;
+    // Default generateBill to FALSE for field syncs. Per-reading bill
+    // regeneration was the dominant cost (settings find + bill find +
+    // tariff calc + bill save per reading). The officer batch-regenerates
+    // from the Readings panel instead.
+    const { readings, periodKey, forceUpdate = false, generateBill = false } = req.body;
     
     const results = {
       success: 0,
@@ -590,6 +594,21 @@ router.post("/import-readings", ...guard, async (req, res) => {
       }
     };
 
+    // PERFORMANCE: pre-fetch every member + every existing reading in two
+    // queries instead of doing N findOne calls inside the loop. On the
+    // free Atlas tier each roundtrip is 50-150ms; this turns a 50-row
+    // sync from ~10s of network waits into ~200ms.
+    const _uniquePns = [...new Set(readings.map((r) => String(r.pnNo).toUpperCase()))];
+    // Not .lean() — upsertWaterBill mutates and saves the member doc when
+    // generateBill is true. Keeping these as full Mongoose docs lets the
+    // batch save path work without an extra refetch.
+    const _membersBulk = await WaterMember.find({ pnNo: { $in: _uniquePns } });
+    const _memberByPn = new Map(_membersBulk.map((m) => [String(m.pnNo).toUpperCase(), m]));
+    const _existingBulk = await WaterReading.find({ periodKey, pnNo: { $in: _uniquePns } }).select("_id pnNo meterNumber").lean();
+    const _existingByKey = new Map(
+      _existingBulk.map((d) => [`${String(d.pnNo).toUpperCase()}__${String(d.meterNumber).toUpperCase()}`, d])
+    );
+
     // Group readings by PN to better handle multiple meters
     const readingsByPn = {};
     readings.forEach(reading => {
@@ -618,8 +637,8 @@ router.post("/import-readings", ...guard, async (req, res) => {
         continue;
       }
 
-      // Get member once for all readings of this PN
-      const member = await WaterMember.findOne({ pnNo: pnNo });
+      // Get member from the pre-fetched cache (no DB hit).
+      const member = _memberByPn.get(String(pnNo).toUpperCase());
       if (!member) {
         pnReadings.forEach(reading => {
           results.failed++;
@@ -664,12 +683,15 @@ router.post("/import-readings", ...guard, async (req, res) => {
             continue;
           }
           
-          // Check if reading already exists for this period
-          const existingReading = await WaterReading.findOne({
-            periodKey,
-            pnNo: reading.pnNo,
-            meterNumber: reading.meterNumber
-          });
+          // Cache lookup — no DB hit unless we actually need to write.
+          const _existKey = `${String(reading.pnNo).toUpperCase()}__${String(reading.meterNumber).toUpperCase()}`;
+          const _cachedExisting = _existingByKey.get(_existKey);
+          // Only re-fetch the full doc when forceUpdate is true (we're
+          // about to .save() on it). Otherwise we just need to know it
+          // exists so we can mark the row as "skipped".
+          const existingReading = (_cachedExisting && forceUpdate)
+            ? await WaterReading.findById(_cachedExisting._id)
+            : _cachedExisting || null;
           
           if (existingReading) {
             if (forceUpdate) {

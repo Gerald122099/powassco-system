@@ -108,6 +108,11 @@ async function runSync({ token, user }) {
         readerId: user?.employeeId || user?._id || "",
         importDate: Date.now(),
         forceUpdate: false, // never overwrite an existing server reading
+        // Field syncs upload READINGS only — the officer batch-regenerates
+        // bills from the Readings panel. This cuts per-row cost from
+        // ~4 DB roundtrips to ~1 on the server, so a 50-row sync over a
+        // weak signal goes from ~10s to ~1-2s.
+        generateBill: false,
       },
     });
     // Map server per-row results back to queue ids; accept success + skipped.
