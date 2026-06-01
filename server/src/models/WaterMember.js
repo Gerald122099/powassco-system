@@ -671,4 +671,23 @@ WaterMemberSchema.methods.getTotalConsumption = function() {
     }, 0);
 };
 
+// Pre-save guard: a single member must not list the same meter number
+// twice. (Bills are keyed by {pnNo, periodKey, meterNumber} so a
+// duplicate inside the meters[] array would let two parallel bills slip
+// through.) Normalises meter numbers to upper/trim before the check so
+// "01234" and "01234 " count as the same.
+WaterMemberSchema.pre("save", function (next) {
+  const seen = new Set();
+  for (const m of this.meters || []) {
+    if (!m || !m.meterNumber) continue;
+    const key = String(m.meterNumber).toUpperCase().trim();
+    m.meterNumber = key;
+    if (seen.has(key)) {
+      return next(new Error(`Duplicate meter number "${key}" on the same account. Each meter number must be unique within a member.`));
+    }
+    seen.add(key);
+  }
+  next();
+});
+
 export default mongoose.model("WaterMember", WaterMemberSchema);

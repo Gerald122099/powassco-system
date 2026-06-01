@@ -220,6 +220,9 @@ router.post("/pay-water", ...payGuard, async (req, res) => {
     if (!orNo) return res.status(400).json({ message: "OR number is required." });
     if (!(amountReceived > 0)) return res.status(400).json({ message: "Enter the amount received." });
 
+    // Pre-fetch ONLY to compute totalDue + read snapshot fields. The
+    // actual write that flips status is atomic below — guarantees no
+    // two concurrent cashier clicks can both mark the same bill paid.
     const bill = await WaterBill.findOne({ pnNo, meterNumber, periodKey });
     if (!bill) return res.status(404).json({ message: "Bill not found for that meter/period." });
     if (bill.status === "paid") return res.status(409).json({ message: "This bill is already paid." });
@@ -236,39 +239,57 @@ router.post("/pay-water", ...payGuard, async (req, res) => {
     const cbuExcess = round2(amountReceived - totalDue);
     const receivedBy = req.user?.fullName || req.user?.employeeId || "";
 
-    const payment = await WaterPayment.create({
-      billId: bill._id,
-      pnNo: bill.pnNo,
-      meterNumber: bill.meterNumber,
-      periodKey: bill.periodKey,
-      orNo,
-      method,
-      amountPaid: totalDue,
-      amountReceived: round2(amountReceived),
-      cbuExcess,
-      discountApplied: bill.discount || 0,
-      penaltyApplied: bill.penaltyApplied || 0,
-      classification: bill.classification,
-      receivedBy,
-      paidAt: new Date(),
-      notes: note || (cbuExcess > 0 ? `Excess ₱${cbuExcess} credited to CBU` : ""),
-    });
+    // STEP 1 — atomic status flip. If the bill is already paid (or doesn't
+    // exist any more), this returns null and we abort. This is the single
+    // source of truth for "I have the right to post this payment".
+    const claimed = await WaterBill.findOneAndUpdate(
+      { _id: bill._id, status: { $ne: "paid" } },
+      { $set: { status: "paid", paidAt: new Date(), orNo, subjectForDisconnection: false } },
+      { new: true }
+    );
+    if (!claimed) return res.status(409).json({ message: "This bill is already paid (race lost)." });
 
-    bill.status = "paid";
-    bill.paidAt = new Date();
-    bill.orNo = orNo;
-    bill.subjectForDisconnection = false;
-    await bill.save();
+    // STEP 2 — create the WaterPayment. Unique-index on orNo is the last
+    // safety net. If create throws E11000, undo the status flip below.
+    let payment;
+    try {
+      payment = await WaterPayment.create({
+        billId: claimed._id,
+        pnNo: claimed.pnNo,
+        meterNumber: claimed.meterNumber,
+        periodKey: claimed.periodKey,
+        orNo,
+        method,
+        amountPaid: totalDue,
+        amountReceived: round2(amountReceived),
+        cbuExcess,
+        discountApplied: claimed.discount || 0,
+        penaltyApplied: claimed.penaltyApplied || 0,
+        classification: claimed.classification,
+        receivedBy,
+        paidAt: new Date(),
+        notes: note || (cbuExcess > 0 ? `Excess ₱${cbuExcess} credited to CBU` : ""),
+      });
+    } catch (e) {
+      // Compensate: re-open the bill so the cashier can retry with a
+      // different OR. The atomic check above ensures only this request
+      // touched it.
+      await WaterBill.updateOne({ _id: claimed._id }, { $set: { status: "unpaid", paidAt: null, orNo: "" } });
+      if (e?.code === 11000) return res.status(409).json({ message: "OR number is already in use." });
+      throw e;
+    }
 
-    // Credit CBU if there was excess.
+    // Credit CBU if there was excess. CbuTransaction is a ledger (append-
+    // only), but the atomic status flip above means we get here exactly
+    // once per OR, so no double-credit risk.
     let newCbuBalance = 0;
     if (cbuExcess > 0) {
-      const member = await WaterMember.findOne({ pnNo: bill.pnNo });
+      const member = await WaterMember.findOne({ pnNo: claimed.pnNo });
       if (member) {
         newCbuBalance = await creditCbu({
           member, amount: cbuExcess, source: "water_overpay", refOrNo: orNo,
           waterPaymentId: payment._id, postedBy: receivedBy,
-          note: `Excess from OR ${orNo} (water bill ${bill.periodCovered || bill.periodKey})`,
+          note: `Excess from OR ${orNo} (water bill ${claimed.periodCovered || claimed.periodKey})`,
         });
       }
     }
@@ -329,24 +350,43 @@ router.post("/pay-loan", ...payGuard, async (req, res) => {
     const cbuExcess = round2(amountReceived - totalDue);
     const receivedBy = req.user?.fullName || req.user?.employeeId || "";
 
-    const payment = await LoanPayment.create({
-      loanId: loan.loanId,
-      applicationId: loan._id,
-      borrowerPnNo: loan.borrowerPnNo,
-      orNo,
-      method,
-      amountPaid: totalDue,
-      amountReceived: round2(amountReceived),
-      cbuExcess,
-      periodsCovered: upcoming.length,
-      paidAt: new Date(),
-      receivedBy,
-    });
+    // Create the LoanPayment first. Unique-index on orNo is the race
+    // breaker: two concurrent cashier clicks with the same OR will see
+    // E11000 here. We do this BEFORE incrementing the loan so a failed
+    // payment never leaves the loan over-credited.
+    let payment;
+    try {
+      payment = await LoanPayment.create({
+        loanId: loan.loanId,
+        applicationId: loan._id,
+        borrowerPnNo: loan.borrowerPnNo,
+        orNo,
+        method,
+        amountPaid: totalDue,
+        amountReceived: round2(amountReceived),
+        cbuExcess,
+        periodsCovered: upcoming.length,
+        paidAt: new Date(),
+        receivedBy,
+      });
+    } catch (e) {
+      if (e?.code === 11000) return res.status(409).json({ message: "OR number is already in use." });
+      throw e;
+    }
 
-    loan.totalPaid = round2(Number(loan.totalPaid || 0) + totalDue);
-    loan.balance = round2(Math.max(0, Number(loan.totalPayment || 0) - loan.totalPaid));
-    if (loan.balance <= 0 && loan.status === "released") loan.status = "closed";
-    await loan.save();
+    // Atomic increment on the loan. $inc + conditional balance recompute
+    // means two concurrent payments with different ORs add up cleanly
+    // instead of clobbering each other's totalPaid. We re-fetch to get
+    // the post-write balance for the status flip.
+    await LoanApplication.updateOne(
+      { _id: loan._id },
+      { $inc: { totalPaid: totalDue } }
+    );
+    const fresh = await LoanApplication.findById(loan._id).select("totalPayment totalPaid status balance");
+    const newBalance = round2(Math.max(0, Number(fresh.totalPayment || 0) - Number(fresh.totalPaid || 0)));
+    const setOps = { balance: newBalance };
+    if (newBalance <= 0 && fresh.status === "released") setOps.status = "closed";
+    await LoanApplication.updateOne({ _id: loan._id }, { $set: setOps });
 
     let newCbuBalance = 0;
     if (cbuExcess > 0) {
