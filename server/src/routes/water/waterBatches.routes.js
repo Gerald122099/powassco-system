@@ -618,6 +618,13 @@ router.post("/import-readings", ...guard, async (req, res) => {
       }
       readingsByPn[reading.pnNo].push(reading);
     });
+
+    // Insert buffer — every brand-new reading row goes here so we can
+    // run a single WaterReading.insertMany at the end instead of N
+    // sequential save() roundtrips. forceUpdate / "skipped" rows still
+    // use the existing path because they need a save() on an existing
+    // doc anyway.
+    const _insertBuffer = []; // [{ doc, detailIndex, reading }]
     
     console.log(`Importing for ${Object.keys(readingsByPn).length} accounts`);
     
@@ -747,17 +754,22 @@ router.post("/import-readings", ...guard, async (req, res) => {
             }
           });
           
-          await newReading.save();
-          
-          results.success++;
+          // Defer the actual DB write — the row goes into a buffer that
+          // is flushed via WaterReading.insertMany() after the main
+          // loop. Mark "pending" so the post-flush step can rewrite it
+          // to success/failed based on the bulk result.
           results.details.push({
             pnNo: reading.pnNo,
             meterNumber: reading.meterNumber,
-            status: "success",
-            message: "Reading imported successfully"
+            status: "pending",
+            message: ""
           });
-          await maybeGenerateBill(member, reading);
-          
+          _insertBuffer.push({
+            doc: newReading,
+            detailIndex: results.details.length - 1,
+            reading,
+            member,
+          });
         } catch (error) {
           console.error(`Error importing reading for ${reading.pnNo}-${reading.meterNumber}:`, error);
           results.failed++;
@@ -771,6 +783,49 @@ router.post("/import-readings", ...guard, async (req, res) => {
       }
     }
     
+    // Flush the buffered new-reading inserts in one DB roundtrip.
+    // `ordered: false` lets one bad row (e.g. dup key on a race with
+    // another tab) fail without aborting the rest — its index ends up
+    // in writeErrors[] which we map back to results.details.
+    if (_insertBuffer.length > 0) {
+      const docs = _insertBuffer.map((x) => x.doc);
+      let writeErrorsByIdx = new Map();
+      try {
+        await WaterReading.insertMany(docs, { ordered: false });
+      } catch (bulkErr) {
+        if (bulkErr && Array.isArray(bulkErr.writeErrors)) {
+          for (const we of bulkErr.writeErrors) {
+            writeErrorsByIdx.set(we.index, we.errmsg || we.err?.errmsg || "insert failed");
+          }
+        } else {
+          console.error("insertMany failed:", bulkErr);
+        }
+      }
+      // Rewrite the pending detail entries to their real outcome.
+      for (let i = 0; i < _insertBuffer.length; i++) {
+        const item = _insertBuffer[i];
+        const detail = results.details[item.detailIndex];
+        if (writeErrorsByIdx.has(i)) {
+          detail.status = "failed";
+          detail.message = writeErrorsByIdx.get(i);
+          results.failed++;
+        } else {
+          detail.status = "success";
+          detail.message = "Reading imported successfully";
+          results.success++;
+        }
+      }
+      // Bill generation is best-effort and gated by generateBill flag —
+      // field syncs leave this off so syncing stays cheap. The officer
+      // batch-regenerates bills from the Readings panel.
+      for (const item of _insertBuffer) {
+        const detail = results.details[item.detailIndex];
+        if (detail.status === "success") {
+          await maybeGenerateBill(item.member, item.reading);
+        }
+      }
+    }
+
     console.log(`Import complete: ${results.success} success, ${results.failed} failed, ${results.skipped} skipped`);
 
     // Push notification fire-and-forget — every successful reading for

@@ -5,6 +5,7 @@ import mongoose from "mongoose";
 import rateLimit from "express-rate-limit";
 import helmet from "helmet";
 import mongoSanitize from "express-mongo-sanitize";
+import compression from "compression";
 
 import authRoutes from "./routes/auth.routes.js";
 import usersRoutes from "./routes/users.routes.js";
@@ -49,6 +50,11 @@ app.set("trust proxy", 1);
 // Security headers (HSTS, no-sniff, frameguard, etc.). CSP/CORP disabled so the
 // cross-origin Vercel frontend can still call this API.
 app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: false }));
+// Gzip every JSON response. The /water/readings/my-batch payload is
+// the dominant one — hundreds of member docs with repeated keys — and
+// compresses to ~20% of its raw size. Cuts a 200-member batch download
+// over a weak Cebu cell signal from ~8s to ~1.5s.
+app.use(compression());
 // Capture rawBody too — PayMongo signs webhook payloads, so the receiver
 // needs the exact byte string the PSP signed (not the parsed object).
 app.use(express.json({ limit: "3mb", verify: (req, _res, buf) => { req.rawBody = buf; } }));

@@ -14,9 +14,15 @@ export function prevPeriodKey(periodKey = currentPeriodKey()) {
 
 // Downloads the reader's assigned batch members (enriched with previous
 // readings, bill status, prior-unsettled flags) for the period via a single
-// scoped endpoint, and caches them locally.
+// scoped endpoint, and caches them locally. /my-batch and /water/settings
+// run in parallel — there's no dependency between them — so the slowest of
+// the two becomes the wall-clock cost instead of the sum.
 export async function downloadBatch({ token, periodKey = currentPeriodKey() }) {
-  const res = await apiFetch(`/water/readings/my-batch?periodKey=${periodKey}`, { token });
+  const [res, settingsRes] = await Promise.all([
+    apiFetch(`/water/readings/my-batch?periodKey=${periodKey}`, { token }),
+    apiFetch("/water/settings", { token }).catch(() => null),
+  ]);
+
   const items = res.items || [];
   const batches = res.batches || [];
 
@@ -25,12 +31,7 @@ export async function downloadBatch({ token, periodKey = currentPeriodKey() }) {
   }
 
   // Cache tariff settings so the thermal bill can be computed offline.
-  try {
-    const settings = await apiFetch("/water/settings", { token });
-    if (settings) await odb.setMeta("settings", settings);
-  } catch {
-    /* keep any previously cached settings */
-  }
+  if (settingsRes) await odb.setMeta("settings", settingsRes);
 
   await odb.saveMembers(items);
   await odb.setMeta("periodKey", periodKey);
