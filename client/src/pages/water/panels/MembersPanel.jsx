@@ -846,8 +846,6 @@ export default function MembersPanel() {
       })
     };
 
-    console.log("Sending payload:", JSON.stringify(payload, null, 2));
-
     if (!editing) {
       await apiFetch("/water/members", {
         method: "POST",
