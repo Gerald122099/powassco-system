@@ -9,8 +9,57 @@ import { QrCode } from "lucide-react";
 import MeterQRModal from "../../../components/MeterQRModal";
 import { printMeterStickers } from "../../../lib/qrStickerSheet";
 import { toast } from "../../../components/Toast";
+import Swal from "sweetalert2";
 
 const PAGE_SIZE = 12;
+
+// Diff helper: returns the array of newly-added meters when the only
+// change between `before` and `after` is meters appended to the meters[]
+// array. Returns null in every other case (any other field changed,
+// existing meter modified or removed). Used by the Edit Member save
+// flow to detect the "I only added a new meter" case and route through
+// the no-admin-authz endpoint.
+function detectOnlyAddedMeters(before, after) {
+  if (!before || !after) return null;
+
+  // Strip meters off both before deep-comparing the rest of the form.
+  const stripMeters = (o) => {
+    const { meters, ...rest } = o;
+    return rest;
+  };
+  // JSON-equality is good enough here — both sides come from the same
+  // shape (the form state object after normalisation in save()).
+  const beforeRest = JSON.stringify(stripMeters(before));
+  const afterRest = JSON.stringify(stripMeters(after));
+  if (beforeRest !== afterRest) return null;
+
+  // Map existing meters by uppercased meterNumber.
+  const beforeByNum = new Map();
+  for (const m of before.meters || []) {
+    const num = (m.meterNumber || "").toUpperCase().trim();
+    if (num) beforeByNum.set(num, m);
+  }
+
+  const newOnes = [];
+  for (const m of after.meters || []) {
+    const num = (m.meterNumber || "").toUpperCase().trim();
+    if (!num) return null; // empty meter number — let the PUT validator surface it
+    if (beforeByNum.has(num)) {
+      // Existing — must match exactly. If anything on the existing
+      // meter changed, fall back to PUT (admin authz required).
+      const orig = beforeByNum.get(num);
+      if (JSON.stringify(orig) !== JSON.stringify(m)) return null;
+      beforeByNum.delete(num);
+    } else {
+      newOnes.push(m);
+    }
+  }
+  // If any existing meter is missing from `after`, that's a removal —
+  // not an add-only change.
+  if (beforeByNum.size > 0) return null;
+  if (newOnes.length === 0) return null;
+  return newOnes;
+}
 
 function formatAddress(a) {
   if (!a) return "";
@@ -89,7 +138,13 @@ export default function MembersPanel() {
 
   const [editing, setEditing] = useState(null);
   const [viewing, setViewing] = useState(null);
-  const [managingMetersFor, setManagingMetersFor] = useState(null); 
+  const [managingMetersFor, setManagingMetersFor] = useState(null);
+
+  // Deep snapshot of the form taken at edit-open time. We diff against
+  // this on submit to decide whether the officer only added new meters
+  // (route via the no-authz endpoint) or actually changed something else
+  // (route via the admin-authz-protected PUT).
+  const [formSnapshot, setFormSnapshot] = useState(null);
 
   const [err, setErr] = useState("");
 
@@ -437,7 +492,7 @@ export default function MembersPanel() {
   function openEdit(m) {
     setEditing(m);
     setErr("");
-    setForm({
+    const built = {
       pnNo: m.pnNo || "",
       accountName: m.accountName || "",
       accountType: m.accountType || "individual",
@@ -523,7 +578,10 @@ export default function MembersPanel() {
         isBillingActive: true,
         billingSequence: 0
       }]
-    });
+    };
+    setForm(built);
+    // Deep clone so later edits to `form` don't mutate the snapshot.
+    setFormSnapshot(JSON.parse(JSON.stringify(built)));
     setModalOpen(true);
   }
 
@@ -590,6 +648,12 @@ export default function MembersPanel() {
     const num = (newMeterForm.meterNumber || "").trim();
     if (!num) {
       setAddMeterErr("Meter number is required.");
+      await Swal.fire({
+        icon: "warning",
+        title: "Meter number required",
+        text: "Type the meter number before saving.",
+        confirmButtonColor: "#d97706",
+      });
       return;
     }
     setAddingMeter(true);
@@ -603,7 +667,6 @@ export default function MembersPanel() {
           body: newMeterForm,
         }
       );
-      toast.success(`Meter ${num.toUpperCase()} added`);
       // Refresh modal state with the updated member doc so the new meter
       // appears immediately in the list and the row data stays in sync.
       setManagingMetersFor(updated);
@@ -618,8 +681,23 @@ export default function MembersPanel() {
       );
       setNewMeterForm(blankNewMeter());
       await load();
+      await Swal.fire({
+        icon: "success",
+        title: "Meter added",
+        text: `Meter ${num.toUpperCase()} is now active on PN ${updated.pnNo}.`,
+        confirmButtonColor: "#059669",
+        timer: 3000,
+        timerProgressBar: true,
+      });
     } catch (e) {
-      setAddMeterErr(e.message || "Failed to add meter.");
+      const msg = e.message || "Failed to add meter.";
+      setAddMeterErr(msg);
+      await Swal.fire({
+        icon: "error",
+        title: "Could not add meter",
+        text: msg,
+        confirmButtonColor: "#dc2626",
+      });
     } finally {
       setAddingMeter(false);
     }
@@ -776,14 +854,57 @@ export default function MembersPanel() {
         token,
         body: payload
       });
-      toast.success("Successfully saved");
-    } else {
-      await apiFetch(`/water/members/${editing._id}`, {
-        method: "PUT",
-        token,
-        body: payload,
+      await Swal.fire({
+        icon: "success",
+        title: "Member created",
+        text: `PN ${payload.pnNo} saved successfully.`,
+        confirmButtonColor: "#059669",
+        timer: 2500,
+        timerProgressBar: true,
       });
-      toast.success("Member updated");
+    } else {
+      // Smart routing: if the officer only added new meters (and didn't
+      // touch any other field or existing meter), route the additions
+      // through the no-authz POST /water/members/:id/meters endpoint
+      // instead of the dual-control PUT. This is the "I just want to
+      // register a new physical meter on an existing PN" flow that
+      // shouldn't need admin approval.
+      // Compare the raw form (matches snapshot shape) — not the normalised
+      // payload, which trims/uppercases and shifts equality checks.
+      const newMetersOnly = detectOnlyAddedMeters(formSnapshot, form);
+      if (newMetersOnly && newMetersOnly.length > 0) {
+        for (const m of newMetersOnly) {
+          await apiFetch(`/water/members/${editing._id}/meters`, {
+            method: "POST",
+            token,
+            body: m,
+          });
+        }
+        await Swal.fire({
+          icon: "success",
+          title: newMetersOnly.length === 1 ? "Meter added" : `${newMetersOnly.length} meters added`,
+          text: newMetersOnly.length === 1
+            ? `Meter ${newMetersOnly[0].meterNumber} is now active on PN ${editing.pnNo}.`
+            : `${newMetersOnly.map((m) => m.meterNumber).join(", ")} are now active on PN ${editing.pnNo}.`,
+          confirmButtonColor: "#059669",
+          timer: 3000,
+          timerProgressBar: true,
+        });
+      } else {
+        await apiFetch(`/water/members/${editing._id}`, {
+          method: "PUT",
+          token,
+          body: payload,
+        });
+        await Swal.fire({
+          icon: "success",
+          title: "Member updated",
+          text: "Changes saved successfully.",
+          confirmButtonColor: "#059669",
+          timer: 2500,
+          timerProgressBar: true,
+        });
+      }
     }
 
     setModalOpen(false);

@@ -25,6 +25,7 @@
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.12.0",
     "recharts": "^3.7.0",
+    "sweetalert2": "^11.26.25",
     "workbox-core": "^7.4.1",
     "workbox-precaching": "^7.4.1",
     "workbox-routing": "^7.4.1"
