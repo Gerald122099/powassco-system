@@ -735,8 +735,11 @@ export default function FieldModePanel() {
           for Android nav bar safe-area. */}
       <button
         onClick={() => { setScanErr(""); setScanOpen(true); }}
-        className="fixed right-4 bottom-4 z-40 inline-flex items-center gap-2 rounded-full bg-purple-600 px-5 py-4 text-base font-bold text-white shadow-2xl ring-4 ring-purple-200 active:scale-95"
-        style={{ bottom: "max(1rem, env(safe-area-inset-bottom))" }}
+        className="fixed right-4 z-40 inline-flex items-center gap-2 rounded-full bg-purple-600 px-5 py-4 text-base font-bold text-white shadow-2xl ring-4 ring-purple-200 active:scale-95"
+        // Sits ~80px above the viewport bottom so the bottom tab bar
+        // (PlumberDashboard's MobileShell, ~64px high) doesn't overlap.
+        // env() inset adds the device's safe-area on top of that.
+        style={{ bottom: "calc(env(safe-area-inset-bottom) + 5rem)" }}
         aria-label="Scan meter QR"
       >
         <QrCode size={22} /> Scan
