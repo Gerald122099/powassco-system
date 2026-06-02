@@ -130,13 +130,47 @@ async function runSync({ token, user }) {
     // Map server per-row results back to queue ids; accept success + skipped.
     const byKey = {};
     for (const d of res.details || []) byKey[`${d.pnNo}__${d.meterNumber}`] = d.status;
+    const justSynced = []; // rows that need their member's readMeters/lastActualReadings refreshed locally
     for (const r of group.items) {
       const st = byKey[r.id];
       if (st === "success" || st === "skipped") {
         doneIds.push(r.id);
         success++;
+        if (st === "success") justSynced.push(r);
       } else {
         failed++;
+      }
+    }
+
+    // After a successful server save the queue entry is removed — but
+    // the locally-cached member doc still has the OLD readMeters /
+    // lastActualReadings from the original batch download. Without
+    // patching the local doc, on next refresh `isRead` would flip the
+    // meter back to "not read" (queue empty + server-side flags stale).
+    // Patch the cache here so a newly-added meter on a multi-meter
+    // account stays marked READ across refreshes.
+    if (justSynced.length > 0) {
+      const byPn = {};
+      for (const r of justSynced) (byPn[r.pnNo] ||= []).push(r);
+      for (const [pnNo, rows] of Object.entries(byPn)) {
+        const member = await odb.getMember(pnNo);
+        if (!member) continue;
+        member.readMeters = Array.isArray(member.readMeters) ? [...member.readMeters] : [];
+        member.lastActualReadings = { ...(member.lastActualReadings || {}) };
+        for (const r of rows) {
+          const mn = String(r.meterNumber).toUpperCase().trim();
+          if (!member.readMeters.some((x) => String(x).toUpperCase().trim() === mn)) {
+            member.readMeters.push(r.meterNumber);
+          }
+          member.lastActualReadings[mn] = {
+            ...(member.lastActualReadings[mn] || {}),
+            presentReading: r.presentReading,
+            previousReading: r.previousReading,
+            consumed: r.consumed,
+            readDate: r.readDate,
+          };
+        }
+        await odb.updateMember(member);
       }
     }
     }
