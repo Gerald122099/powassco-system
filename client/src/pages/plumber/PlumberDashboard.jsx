@@ -6,6 +6,7 @@
 // phone, so a sidebar wastes the most valuable screen real estate.
 import { useState } from "react";
 import MobileShell from "../../components/MobileShell";
+import AppPinLock from "../../components/AppPinLock";
 import FieldModePanel from "../meter/panels/FieldModePanel";
 import DisconnectionsPanel from "../../components/DisconnectionsPanel";
 import AppInstallPanel from "./AppInstallPanel";
@@ -25,10 +26,12 @@ const titleFor = (k) =>
 export default function PlumberDashboard() {
   const [tab, setTab] = useState("field");
   return (
-    <MobileShell title={titleFor(tab)} items={items} active={tab} onSelect={setTab}>
-      {tab === "field" && <FieldModePanel />}
-      {tab === "disconnect" && <DisconnectionsPanel />}
-      {tab === "app" && <AppInstallPanel />}
-    </MobileShell>
+    <AppPinLock>
+      <MobileShell title={titleFor(tab)} items={items} active={tab} onSelect={setTab}>
+        {tab === "field" && <FieldModePanel />}
+        {tab === "disconnect" && <DisconnectionsPanel />}
+        {tab === "app" && <AppInstallPanel />}
+      </MobileShell>
+    </AppPinLock>
   );
 }

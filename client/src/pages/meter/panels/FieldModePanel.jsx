@@ -48,6 +48,17 @@ export default function FieldModePanel() {
   const [moreOpen, setMoreOpen] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
   const [manualValue, setManualValue] = useState("");
+  // Pre-save confirmation modal: shows a review of the readings the
+  // plumber is about to commit so a slip on the keypad can't ship a
+  // wrong value silently.
+  const [confirmSave, setConfirmSave] = useState(null); // { member, items: [{ meterNumber, prev, present, consumed }] }
+  // Edit-synced password-step-up. Clicking "Edit" on an already-synced
+  // meter row opens this modal. After the plumber's password is verified
+  // the input becomes editable again for that meter only.
+  const [editAuth, setEditAuth] = useState(null); // { pnNo, meterNumber, key }
+  const [editPw, setEditPw] = useState("");
+  const [editBusy, setEditBusy] = useState(false);
+  const [editUnlocked, setEditUnlocked] = useState({}); // key → true
   const [settings, setSettings] = useState(null);
   const [printerOn, setPrinterOn] = useState(false);
 
@@ -178,7 +189,9 @@ export default function FieldModePanel() {
     [queueKeys]
   );
 
-  async function saveMember(member) {
+  // First-pass: gather what would be saved, then open the review modal.
+  // The actual writes happen in commitSave (after the plumber confirms).
+  function saveMember(member) {
     const meters = member.activeBillingMeters || [];
     const toSave = [];
     let alreadyEncodedCount = 0;
@@ -216,8 +229,26 @@ export default function FieldModePanel() {
       return flash("Enter a reading first.", "error");
     }
 
+    // Build the review payload — present, previous, computed consumption.
+    // This is what the confirm modal will show the plumber. No DB writes
+    // happen until they tap "Confirm & Save".
+    const items = toSave.map(({ mt, val }) => {
+      const prev = prevReadingFor(member, mt.meterNumber);
+      const present = parseFloat(val);
+      const cons = Number.isFinite(present) ? (present - prev) * (mt.consumptionMultiplier || 1) : 0;
+      return { meterNumber: mt.meterNumber, mt, val, prev, present, consumed: cons };
+    });
+    setConfirmSave({ member, items });
+  }
+
+  // Actually commit the readings after the review modal is confirmed.
+  async function commitSave() {
+    if (!confirmSave) return;
+    const { member, items } = confirmSave;
+    setConfirmSave(null);
     try {
-      for (const { mt, val } of toSave) {
+      for (const { mt, val } of items) {
+        const key = `${mnorm(member.pnNo)}__${mnorm(mt.meterNumber)}`;
         await saveReadingOffline({
           pnNo: member.pnNo,
           meterNumber: mt.meterNumber,
@@ -225,12 +256,21 @@ export default function FieldModePanel() {
           previousReading: prevReadingFor(member, mt.meterNumber),
           presentReading: val,
           consumptionMultiplier: mt.consumptionMultiplier || 1,
+          // If the plumber explicitly edited a synced reading, tell the
+          // server to overwrite the existing row.
+          forceUpdate: !!editUnlocked[key],
         });
       }
-      flash(`✓ Saved ${toSave.length} reading(s)${navigator.onLine ? " — syncing…" : " offline (will sync when online)."}`, "success");
+      flash(`✓ Saved ${items.length} reading(s)${navigator.onLine ? " — syncing…" : " offline (will sync when online)."}`, "success");
       setInputs((p) => {
         const next = { ...p };
-        for (const { mt } of toSave) delete next[`${mnorm(member.pnNo)}__${mnorm(mt.meterNumber)}`];
+        for (const { mt } of items) delete next[`${mnorm(member.pnNo)}__${mnorm(mt.meterNumber)}`];
+        return next;
+      });
+      // Re-lock any edited rows so the next save needs a fresh password.
+      setEditUnlocked((p) => {
+        const next = { ...p };
+        for (const { mt } of items) delete next[`${mnorm(member.pnNo)}__${mnorm(mt.meterNumber)}`];
         return next;
       });
       await refreshLocal();
@@ -649,7 +689,7 @@ export default function FieldModePanel() {
                           <span className="font-mono font-semibold text-slate-700">{mt.meterNumber}</span>
                           <span className="text-slate-400">prev {fmt(prev)}</span>
                         </div>
-                        {read ? (
+                        {read && !editUnlocked[key] ? (
                           <div className="mt-1.5 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-sm">
                             <CheckCircle size={16} className="text-emerald-600 shrink-0" />
                             <div className="flex-1 min-w-0">
@@ -659,6 +699,13 @@ export default function FieldModePanel() {
                                 {queued && !queued.synced ? " · pending sync" : ""}
                               </div>
                             </div>
+                            <button
+                              onClick={() => { setEditAuth({ pnNo: m.pnNo, meterNumber: mt.meterNumber, key }); setEditPw(""); }}
+                              className="shrink-0 rounded-lg border border-amber-300 bg-white px-2 py-1.5 text-[11px] font-bold text-amber-700 active:bg-amber-50"
+                              title="Edit this reading (requires your password)"
+                            >
+                              Edit
+                            </button>
                             {thermalSupported() && (
                               <button onClick={() => printMeter(m, mt)} className="shrink-0 rounded-lg border border-emerald-200 bg-white p-2 text-emerald-700 hover:bg-emerald-100" title="Print bill to thermal printer">
                                 <Printer size={14} />
@@ -772,6 +819,117 @@ export default function FieldModePanel() {
             <Search size={18} /> Find meter
           </button>
         </form>
+      </Modal>
+
+      {/* Edit-synced password step-up. Plumber types their own password
+          to unlock the input on an already-encoded meter. After verify
+          we prefill the input with the current encoded value so they
+          can just adjust the digits. Forces forceUpdate on next sync. */}
+      <Modal
+        open={!!editAuth}
+        title="Edit a synced reading"
+        subtitle={editAuth ? `Meter ${editAuth.meterNumber} • ${editAuth.pnNo}` : ""}
+        onClose={() => { setEditAuth(null); setEditPw(""); }}
+        size="sm"
+      >
+        {editAuth && (
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!editPw) return;
+              setEditBusy(true);
+              try {
+                await apiFetch("/auth/verify-password", { method: "POST", body: { password: editPw } });
+                // Prefill the input with the currently-encoded present value
+                // so the plumber can adjust digits rather than retyping.
+                const member = members.find((mm) => mnorm(mm.pnNo) === mnorm(editAuth.pnNo));
+                const lastForPeriod = member?.lastActualReadings?.[mnorm(editAuth.meterNumber)];
+                const queued = queueByKey[editAuth.key];
+                const seed = queued?.presentReading ?? (lastForPeriod?.periodKey === periodKey ? lastForPeriod?.presentReading : "") ?? "";
+                setInputs((p) => ({ ...p, [editAuth.key]: String(seed) }));
+                setEditUnlocked((p) => ({ ...p, [editAuth.key]: true }));
+                setEditAuth(null);
+                setEditPw("");
+                flash("Edit unlocked. Change the reading and tap Save & Sync.", "success");
+              } catch (e2) {
+                flash(e2.message || "Wrong password.", "error", true);
+              } finally {
+                setEditBusy(false);
+              }
+            }}
+            className="space-y-3"
+          >
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              Confirm with your own password. After unlock, Save & Sync will overwrite the previous reading on the server.
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-700">Your password</label>
+              <input
+                type="password"
+                value={editPw}
+                onChange={(e) => setEditPw(e.target.value)}
+                autoFocus
+                className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3 text-base"
+              />
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button type="button" onClick={() => { setEditAuth(null); setEditPw(""); }} className="flex-1 rounded-2xl border border-slate-200 px-4 py-3 text-base font-semibold">Cancel</button>
+              <button disabled={editBusy || !editPw} className="flex-1 rounded-2xl bg-amber-500 px-4 py-3 text-base font-bold text-white active:scale-95 disabled:opacity-50">
+                {editBusy ? "Verifying…" : "Unlock edit"}
+              </button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      {/* Review-before-save modal. Plumber confirms the present readings
+          before they're written to IndexedDB + pushed to the server. */}
+      <Modal
+        open={!!confirmSave}
+        title="Please review the readings"
+        subtitle={confirmSave ? `${confirmSave.member.accountName} • ${confirmSave.member.pnNo}` : ""}
+        onClose={() => setConfirmSave(null)}
+        size="sm"
+      >
+        {confirmSave && (
+          <div className="space-y-3">
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              Tap <b>Cancel</b> to go back and edit. Once saved, this reading will be queued for sync to the database.
+            </div>
+            <div className="space-y-2">
+              {confirmSave.items.map((it) => (
+                <div key={it.meterNumber} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="flex items-center justify-between text-xs text-slate-500">
+                    <span className="font-mono font-semibold text-slate-700">Meter {it.meterNumber}</span>
+                    <span>prev {fmt(it.prev)}</span>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between">
+                    <div className="text-xs text-slate-500">Present</div>
+                    <div className="font-mono text-2xl font-extrabold text-slate-900">{fmt(it.present)}</div>
+                  </div>
+                  <div className="mt-0.5 flex items-center justify-between">
+                    <div className="text-xs text-slate-500">Consumption</div>
+                    <div className="font-mono text-sm font-semibold text-purple-700">{fmt(it.consumed)} m³</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => setConfirmSave(null)}
+                className="flex-1 rounded-2xl border border-slate-200 px-4 py-3 text-base font-bold text-slate-700 active:bg-slate-100"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={commitSave}
+                className="flex-1 inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-4 py-3 text-base font-bold text-white active:scale-95"
+              >
+                <Save size={18} /> Confirm & Save
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* Sticky bottom-right FAB — the primary action in Field Mode. Always

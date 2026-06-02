@@ -128,6 +128,10 @@ export default function AdminDashboard() {
 
   const [err, setErr] = useState("");
   const [toast, setToast] = useState("");
+  // App-entry PIN management for the plumber (field reader). Admin only.
+  const [pinTarget, setPinTarget] = useState(null);
+  const [pinValue, setPinValue] = useState("");
+  const [pinBusy, setPinBusy] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -368,6 +372,9 @@ export default function AdminDashboard() {
                           <IconButton onClick={() => openEdit(u)} title="Edit user">
                             Edit
                           </IconButton>
+                          <IconButton onClick={() => setPinTarget(u)} title="Set / clear app PIN">
+                            PIN
+                          </IconButton>
                           <IconButton tone="danger" onClick={() => removeUser(u)} title="Delete user">
                             Delete
                           </IconButton>
@@ -514,6 +521,70 @@ export default function AdminDashboard() {
             Save
           </button>
         </div>
+      </Modal>
+
+      {/* PIN management modal — set or clear the 4-digit app-entry PIN
+          on any user. Admin-only. The PIN is used by the Plumber
+          dashboard's AppPinLock screen. */}
+      <Modal open={!!pinTarget} title={pinTarget ? `App PIN — ${pinTarget.fullName}` : ""} subtitle={pinTarget?.appPinHash ? "PIN is currently set." : "No PIN set on this account."} onClose={() => { setPinTarget(null); setPinValue(""); }} size="sm">
+        {pinTarget && (
+          <div className="space-y-3">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+              When a PIN is set, this user must enter it every time they re-open the app (after closing the tab). Use this primarily for plumber (field reader) accounts on shared phones.
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-700">New 4-digit PIN</label>
+              <input
+                type="password"
+                inputMode="numeric"
+                maxLength={4}
+                value={pinValue}
+                onChange={(e) => setPinValue(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                placeholder="••••"
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-3 text-center text-2xl font-bold tracking-[0.5em]"
+              />
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+              <button
+                onClick={async () => {
+                  if (!confirm(`Clear PIN for ${pinTarget.fullName}? They'll no longer be prompted on app open.`)) return;
+                  setPinBusy(true);
+                  try {
+                    await apiFetch(`/auth/admin/pin/${pinTarget._id}`, { method: "DELETE", token });
+                    setToast("PIN cleared");
+                    setTimeout(() => setToast(""), 2200);
+                    setPinTarget(null); setPinValue("");
+                  } catch (e) { setErr(e.message); }
+                  finally { setPinBusy(false); }
+                }}
+                disabled={pinBusy || !pinTarget.appPinHash}
+                className="rounded-xl border border-red-200 px-4 py-2.5 text-sm font-semibold text-red-700 disabled:opacity-40"
+              >
+                Clear PIN
+              </button>
+              <div className="flex items-center gap-2">
+                <button onClick={() => { setPinTarget(null); setPinValue(""); }} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold">Cancel</button>
+                <button
+                  onClick={async () => {
+                    if (!/^\d{4}$/.test(pinValue)) return setErr("PIN must be exactly 4 digits.");
+                    setPinBusy(true);
+                    try {
+                      await apiFetch(`/auth/admin/pin/${pinTarget._id}`, { method: "POST", token, body: { pin: pinValue } });
+                      setToast(`PIN set for ${pinTarget.fullName}`);
+                      setTimeout(() => setToast(""), 2200);
+                      setPinTarget(null); setPinValue("");
+                    } catch (e) { setErr(e.message); }
+                    finally { setPinBusy(false); }
+                  }}
+                  disabled={pinBusy || pinValue.length !== 4}
+                  className="rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-bold text-white disabled:opacity-50"
+                >
+                  {pinBusy ? "Saving…" : pinTarget.appPinHash ? "Replace PIN" : "Set PIN"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </Modal>
     </DashboardLayout>
   );

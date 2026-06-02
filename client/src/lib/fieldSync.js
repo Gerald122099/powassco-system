@@ -40,8 +40,10 @@ export async function downloadBatch({ token, periodKey = currentPeriodKey() }) {
   return { ok: true, count: items.length, periodKey, batches: batches.length };
 }
 
-// Save a reading locally (works fully offline).
-export async function saveReadingOffline({ pnNo, meterNumber, periodKey, previousReading, presentReading, consumptionMultiplier = 1 }) {
+// Save a reading locally (works fully offline). `forceUpdate` is true
+// when the plumber explicitly edited an already-synced row after
+// password step-up — the server will overwrite the existing reading.
+export async function saveReadingOffline({ pnNo, meterNumber, periodKey, previousReading, presentReading, consumptionMultiplier = 1, forceUpdate = false }) {
   const prev = Number(previousReading) || 0;
   const pres = Number(presentReading);
   if (!(pres >= prev)) throw new Error("Present reading must be ≥ previous reading.");
@@ -55,6 +57,7 @@ export async function saveReadingOffline({ pnNo, meterNumber, periodKey, previou
     consumptionMultiplier: Number(consumptionMultiplier) || 1,
     consumed,
     readDate: String(Date.now()),
+    forceUpdate: !!forceUpdate,
   });
   return { consumed };
 }
@@ -90,7 +93,16 @@ async function runSync({ token, user }) {
   const doneIds = [];
 
   for (const [periodKey, rows] of Object.entries(byPeriod)) {
-    const readings = rows.map((r) => ({
+    // Split by forceUpdate so we can re-encode edited rows without
+    // accidentally overwriting unedited ones. Two payloads = at most
+    // two API hits per period — typical case is just one.
+    const groups = [
+      { force: false, items: rows.filter((r) => !r.forceUpdate) },
+      { force: true,  items: rows.filter((r) =>  r.forceUpdate) },
+    ].filter((g) => g.items.length > 0);
+
+    for (const group of groups) {
+    const readings = group.items.map((r) => ({
       pnNo: r.pnNo,
       meterNumber: r.meterNumber,
       previousReading: r.previousReading,
@@ -107,7 +119,7 @@ async function runSync({ token, user }) {
         readerName: user?.fullName || "",
         readerId: user?.employeeId || user?._id || "",
         importDate: Date.now(),
-        forceUpdate: false, // never overwrite an existing server reading
+        forceUpdate: group.force,
         // Field syncs upload READINGS only — the officer batch-regenerates
         // bills from the Readings panel. This cuts per-row cost from
         // ~4 DB roundtrips to ~1 on the server, so a 50-row sync over a
@@ -118,7 +130,7 @@ async function runSync({ token, user }) {
     // Map server per-row results back to queue ids; accept success + skipped.
     const byKey = {};
     for (const d of res.details || []) byKey[`${d.pnNo}__${d.meterNumber}`] = d.status;
-    for (const r of rows) {
+    for (const r of group.items) {
       const st = byKey[r.id];
       if (st === "success" || st === "skipped") {
         doneIds.push(r.id);
@@ -126,6 +138,7 @@ async function runSync({ token, user }) {
       } else {
         failed++;
       }
+    }
     }
   }
 

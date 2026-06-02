@@ -327,6 +327,70 @@ router.post("/logout", requireAuth, async (req, res) => {
 });
 
 // ----------------------------------------------------------------------
+// App-entry PIN (currently used by the Plumber dashboard). Admin sets a
+// 4-digit code per user; the installed PWA prompts for it every time
+// the user re-opens the app. Independent from the 2FA flow — this is a
+// fast "is the right person holding the phone" check, not a session
+// challenge.
+// ----------------------------------------------------------------------
+
+// Anyone authenticated can check whether their account has a PIN set
+// and (sessionless) verify it.
+router.get("/pin-status", requireAuth, async (req, res) => {
+  res.json({
+    hasPin: !!req.user?.appPinHash,
+    setAt: req.user?.appPinSetAt || null,
+  });
+});
+
+router.post("/pin-verify", requireAuth, async (req, res) => {
+  const pin = String(req.body?.pin || "").trim();
+  if (!pin) return res.status(400).json({ message: "PIN is required." });
+  if (!req.user.appPinHash) return res.status(409).json({ message: "No PIN is set on this account." });
+  const ok = await bcrypt.compare(pin, req.user.appPinHash);
+  if (!ok) return res.status(401).json({ message: "Wrong PIN." });
+  res.json({ ok: true });
+});
+
+// Admin set / clear a PIN on any user.
+router.post("/admin/pin/:userId", requireAuth, requireRole(["admin"]), async (req, res) => {
+  const pin = String(req.body?.pin || "").trim();
+  if (!/^\d{4}$/.test(pin)) return res.status(400).json({ message: "PIN must be exactly 4 digits." });
+  const u = await User.findById(req.params.userId);
+  if (!u) return res.status(404).json({ message: "User not found." });
+  u.appPinHash = await bcrypt.hash(pin, 10);
+  u.appPinSetAt = new Date();
+  u.appPinSetBy = req.user?.fullName || req.user?.employeeId || "";
+  await u.save();
+  await auditSecurity(req, u, `Admin set app PIN for ${u.fullName || u.employeeId}`);
+  res.json({ ok: true });
+});
+
+router.delete("/admin/pin/:userId", requireAuth, requireRole(["admin"]), async (req, res) => {
+  const u = await User.findById(req.params.userId);
+  if (!u) return res.status(404).json({ message: "User not found." });
+  u.appPinHash = "";
+  u.appPinSetAt = null;
+  u.appPinSetBy = "";
+  await u.save();
+  await auditSecurity(req, u, `Admin cleared app PIN for ${u.fullName || u.employeeId}`);
+  res.json({ ok: true });
+});
+
+// ----------------------------------------------------------------------
+// Password step-up — used by the field reader when editing a reading that
+// was already synced. Cheaper / more familiar than a TOTP prompt, and
+// the audit log captures who edited what.
+// ----------------------------------------------------------------------
+router.post("/verify-password", requireAuth, async (req, res) => {
+  const password = String(req.body?.password || "");
+  if (!password) return res.status(400).json({ message: "Password is required." });
+  const ok = await bcrypt.compare(password, req.user.passwordHash);
+  if (!ok) return res.status(401).json({ message: "Wrong password." });
+  res.json({ ok: true });
+});
+
+// ----------------------------------------------------------------------
 // Admin authorisation (dual-control / four-eyes) for sensitive edits.
 //
 // Water bill officers (and other non-admin roles) cannot edit certain

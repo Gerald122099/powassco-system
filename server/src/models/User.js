@@ -29,6 +29,15 @@ const UserSchema = new mongoose.Schema(
       ],
       default: [],
     },
+    // Plumber app re-entry PIN (admin-set, 4 digits). Stored bcrypt-hashed
+    // so the raw value never sits on disk. When set, the installed PWA
+    // demands this PIN every time the user returns to the field role
+    // dashboard after closing the tab — prevents an unattended phone
+    // from being used to read meters under the plumber's identity.
+    appPinHash: { type: String, default: "" },
+    appPinSetAt: { type: Date, default: null },
+    appPinSetBy: { type: String, default: "" },
+
     // Single-use backup/recovery codes (hashed) — used if the authenticator is lost.
     recoveryCodes: {
       type: [
