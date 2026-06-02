@@ -1,10 +1,27 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Card from "../../components/Card";
 import Modal from "../../components/Modal";
 import { apiFetch } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
 import { toast } from "../../components/Toast";
-import { Search, Droplets, Printer, AlertTriangle, MapPin, CheckCircle, Hourglass, Gauge, Banknote } from "lucide-react";
+import { Search, Droplets, Printer, AlertTriangle, MapPin, CheckCircle, Hourglass, Gauge, Banknote, History, Wallet, TrendingUp } from "lucide-react";
+
+// Recently-looked-up PNs are kept in localStorage so the cashier can
+// re-open a customer with one tap (e.g. when they walk back after
+// stepping out for cash). Cap is small on purpose — old entries fall
+// off the list rather than crowding the UI.
+const RECENT_KEY = "pow_cashier_recent_water";
+const RECENT_LIMIT = 6;
+function loadRecents() {
+  try { return JSON.parse(localStorage.getItem(RECENT_KEY) || "[]"); } catch { return []; }
+}
+function pushRecent(entry) {
+  if (!entry?.pnNo) return;
+  const prev = loadRecents().filter((r) => r.pnNo !== entry.pnNo);
+  const next = [{ pnNo: entry.pnNo, accountName: entry.accountName, totalDue: entry.totalDue, at: Date.now() }, ...prev].slice(0, RECENT_LIMIT);
+  localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+  return next;
+}
 
 const peso = (n) => "₱" + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "—");
@@ -23,6 +40,12 @@ export default function WaterDuesLookup() {
   const [paying, setPaying] = useState(false);
   // Highlight the just-paid bill + post-pay receipt info for printing.
   const [justPaid, setJustPaid] = useState(null); // { orNo, period, meter, amountDue, amountReceived, cbuExcess, newCbu, accountName, pnNo }
+  // Quick today's-collection summary fetched from /collections/today, and
+  // recent customers (localStorage) so the cashier can re-open a stepped-
+  // away walk-in with a single tap.
+  const [todayStats, setTodayStats] = useState(null);
+  const [recents, setRecents] = useState(() => loadRecents());
+  const searchRef = useRef(null);
 
   function openPay(bill) {
     setPayTarget(bill);
@@ -109,21 +132,55 @@ export default function WaterDuesLookup() {
     setTimeout(() => { w.focus(); w.print(); }, 250);
   }
 
+  // Focus the search box the moment the page opens so the cashier can
+  // start typing as the customer walks up — no mouse needed.
+  useEffect(() => { searchRef.current?.focus(); }, []);
+
+  // Fetch today's quick stats once on mount (and after every payment).
+  useEffect(() => {
+    apiFetch("/collections/today?module=water", { token })
+      .then(setTodayStats)
+      .catch(() => {/* non-blocking */});
+  }, [token, justPaid]);
+
+  // Debounced auto-search. Cashier just types — results appear when
+  // they pause for ~400ms. No "Look up" button to chase.
+  useEffect(() => {
+    const term = q.trim();
+    if (term.length < 2) { setData(null); setErr(""); return; }
+    const t = setTimeout(() => { lookup(null, term); }, 400);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q]);
+
   async function lookup(e, override) {
     e?.preventDefault?.();
     const term = (override ?? q).trim();
     if (!term) return;
     setBusy(true);
     setErr("");
-    setData(null);
     try {
       const res = await apiFetch(`/cashier/water?q=${encodeURIComponent(term)}`, { token });
       setData(res);
+      // Push to "recent" only on a single-account match (skips the
+      // candidate-list response from a name with multiple matches).
+      if (res?.member?.pnNo) setRecents(pushRecent({ pnNo: res.member.pnNo, accountName: res.member.accountName, totalDue: res.totalDue }) || []);
     } catch (e2) {
       setErr(e2.message);
+      setData(null);
     } finally {
       setBusy(false);
     }
+  }
+
+  function openRecent(r) {
+    setQ(r.pnNo);
+    lookup(null, r.pnNo);
+    searchRef.current?.focus();
+  }
+  function clearRecents() {
+    localStorage.removeItem(RECENT_KEY);
+    setRecents([]);
   }
 
   function printSlip(filterMeter = null) {
@@ -161,27 +218,72 @@ export default function WaterDuesLookup() {
 
   return (
     <Card>
-      <div className="flex items-center gap-2 text-lg font-bold tracking-tight text-slate-900">
-        <Droplets size={20} className="text-emerald-600" /> Water Dues Lookup
+      {/* TODAY'S QUICK STATS — at-a-glance KPIs for the cashier. */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Kpi label="Receipts today" value={todayStats?.totals?.water?.count ?? "—"} icon={CheckCircle} tone="emerald" />
+        <Kpi label="Cash collected" value={peso(todayStats?.totals?.water?.cash ?? 0)} icon={Wallet} tone="amber" />
+        <Kpi label="Online posted" value={peso(todayStats?.totals?.water?.online ?? 0)} icon={Banknote} tone="blue" />
+        <Kpi label="Grand today" value={peso((todayStats?.totals?.water?.cash || 0) + (todayStats?.totals?.water?.online || 0))} icon={TrendingUp} tone="violet" big />
       </div>
-      <p className="mt-0.5 text-sm text-slate-500">
-        Search by <b>PN No</b>, <b>meter number</b>, or <b>account name</b>. Read-only — collect cash, write a paper OR, then send the consumer to the Water Bill Officer to post it.
-      </p>
 
-      <form onSubmit={lookup} className="mt-4 flex flex-wrap items-stretch gap-2">
-        <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+      {/* CENTERED SEARCH — primary action, auto-debounced (no button). */}
+      <div className="mt-6 mx-auto max-w-2xl">
+        <div className="text-center">
+          <div className="inline-flex items-center gap-2 text-base font-bold text-slate-900">
+            <Droplets size={18} className="text-emerald-600" /> Water Dues Lookup
+          </div>
+          <div className="mt-0.5 text-xs text-slate-500">
+            Just type — search is automatic. PN No, meter number, or account name.
+          </div>
+        </div>
+        <div className="mt-3 relative">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
           <input
+            ref={searchRef}
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="e.g. AST123, meter 0009876, or Juan Dela Cruz"
-            className="w-full rounded-xl border border-slate-200 pl-9 pr-3 py-2.5 text-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+            onKeyDown={(e) => { if (e.key === "Escape") { setQ(""); setData(null); setErr(""); } }}
+            placeholder="AST123,  meter 0009876,  or  Juan Dela Cruz…"
+            autoComplete="off"
+            className="w-full rounded-2xl border-2 border-slate-200 pl-12 pr-12 py-4 text-base font-semibold focus:border-emerald-400 focus:outline-none focus:ring-4 focus:ring-emerald-100 shadow-sm"
           />
+          {q && (
+            <button
+              onClick={() => { setQ(""); setData(null); setErr(""); searchRef.current?.focus(); }}
+              aria-label="Clear search"
+              className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            >
+              ×
+            </button>
+          )}
+          {busy && (
+            <div className="absolute -bottom-5 left-0 right-0 text-center text-[11px] text-slate-400">Searching…</div>
+          )}
         </div>
-        <button disabled={busy} className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">
-          {busy ? "Searching…" : "Look up"}
-        </button>
-      </form>
+
+        {/* RECENT — one-tap re-open of the last customers. */}
+        {recents.length > 0 && (
+          <div className="mt-4">
+            <div className="flex items-center justify-between text-[11px] uppercase tracking-wide text-slate-500">
+              <span className="inline-flex items-center gap-1"><History size={12} /> Recent</span>
+              <button onClick={clearRecents} className="text-slate-400 hover:text-slate-700">Clear</button>
+            </div>
+            <div className="mt-1 flex flex-wrap gap-2">
+              {recents.map((r) => (
+                <button
+                  key={r.pnNo}
+                  onClick={() => openRecent(r)}
+                  className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-emerald-50 hover:border-emerald-200"
+                >
+                  <span className="font-mono">{r.pnNo}</span>
+                  <span className="text-slate-400">·</span>
+                  <span className="truncate max-w-[160px]">{r.accountName}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
 
       {err && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{err}</div>}
 
@@ -470,6 +572,27 @@ function MeterGroups({ data, printSlip, onPay, justPaidPeriod }) {
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+// Single KPI tile for the top-of-page stats strip. Tone is the brand
+// accent for that metric — emerald=count, amber=cash, blue=online,
+// violet=combined.
+export function Kpi({ label, value, icon: Icon, tone = "slate", big = false }) {
+  const styles = {
+    emerald: "bg-emerald-50 border-emerald-200 text-emerald-800",
+    amber: "bg-amber-50 border-amber-200 text-amber-800",
+    blue: "bg-blue-50 border-blue-200 text-blue-800",
+    violet: "bg-violet-50 border-violet-200 text-violet-800",
+    slate: "bg-slate-50 border-slate-200 text-slate-800",
+  }[tone] || "bg-slate-50 border-slate-200 text-slate-800";
+  return (
+    <div className={`rounded-2xl border p-3 ${styles}`}>
+      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide opacity-70">
+        {Icon && <Icon size={12} />} {label}
+      </div>
+      <div className={`mt-1 font-extrabold ${big ? "text-2xl" : "text-xl"}`}>{value}</div>
     </div>
   );
 }

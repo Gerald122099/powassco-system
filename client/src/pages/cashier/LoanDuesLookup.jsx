@@ -1,10 +1,24 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Card from "../../components/Card";
 import Modal from "../../components/Modal";
 import { apiFetch } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
 import { toast } from "../../components/Toast";
-import { Search, Banknote, Printer, Hourglass, CheckCircle, Wallet } from "lucide-react";
+import { Kpi } from "./WaterDuesLookup";
+import { Search, Banknote, Printer, Hourglass, CheckCircle, Wallet, History, TrendingUp } from "lucide-react";
+
+const RECENT_KEY = "pow_cashier_recent_loan";
+const RECENT_LIMIT = 6;
+function loadRecents() {
+  try { return JSON.parse(localStorage.getItem(RECENT_KEY) || "[]"); } catch { return []; }
+}
+function pushRecent(entry) {
+  if (!entry?.loanId) return;
+  const prev = loadRecents().filter((r) => r.loanId !== entry.loanId);
+  const next = [{ loanId: entry.loanId, borrowerName: entry.borrowerName, balance: entry.balance, at: Date.now() }, ...prev].slice(0, RECENT_LIMIT);
+  localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+  return next;
+}
 
 const peso = (n) => "₱" + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "—");
@@ -23,6 +37,9 @@ export default function LoanDuesLookup() {
   const [payReceived, setPayReceived] = useState("");
   const [paying, setPaying] = useState(false);
   const [justPaid, setJustPaid] = useState(null);
+  const [todayStats, setTodayStats] = useState(null);
+  const [recents, setRecents] = useState(() => loadRecents());
+  const searchRef = useRef(null);
 
   function openPay(loan) {
     setPayLoan(loan);
@@ -105,20 +122,51 @@ export default function LoanDuesLookup() {
     setTimeout(() => { w.focus(); w.print(); }, 250);
   }
 
-  async function lookup(e) {
+  useEffect(() => { searchRef.current?.focus(); }, []);
+  useEffect(() => {
+    apiFetch("/collections/today?module=loan", { token })
+      .then(setTodayStats)
+      .catch(() => {});
+  }, [token, justPaid]);
+
+  // Auto-debounce the loan search.
+  useEffect(() => {
+    const term = q.trim();
+    if (term.length < 2) { setData(null); setErr(""); return; }
+    const t = setTimeout(() => { lookup(null, term); }, 400);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q]);
+
+  async function lookup(e, override) {
     e?.preventDefault?.();
-    if (!q.trim()) return;
+    const term = (override ?? q).trim();
+    if (!term) return;
     setBusy(true);
     setErr("");
-    setData(null);
     try {
-      const res = await apiFetch(`/cashier/loan?q=${encodeURIComponent(q.trim())}`, { token });
+      const res = await apiFetch(`/cashier/loan?q=${encodeURIComponent(term)}`, { token });
       setData(res);
+      if (res?.loans?.length === 1) {
+        const l = res.loans[0];
+        setRecents(pushRecent({ loanId: l.loanId, borrowerName: l.borrowerName, balance: l.balance }) || []);
+      }
     } catch (e2) {
       setErr(e2.message);
+      setData(null);
     } finally {
       setBusy(false);
     }
+  }
+
+  function openRecent(r) {
+    setQ(r.loanId);
+    lookup(null, r.loanId);
+    searchRef.current?.focus();
+  }
+  function clearRecents() {
+    localStorage.removeItem(RECENT_KEY);
+    setRecents([]);
   }
 
   function printSlip(loan) {
@@ -147,27 +195,70 @@ export default function LoanDuesLookup() {
 
   return (
     <Card>
-      <div className="flex items-center gap-2 text-lg font-bold tracking-tight text-slate-900">
-        <Banknote size={20} className="text-emerald-600" /> Loan Dues Lookup
+      {/* TODAY'S QUICK STATS for loan postings. */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Kpi label="Receipts today" value={todayStats?.totals?.loan?.count ?? "—"} icon={CheckCircle} tone="emerald" />
+        <Kpi label="Cash collected" value={peso(todayStats?.totals?.loan?.cash ?? 0)} icon={Wallet} tone="amber" />
+        <Kpi label="Online posted" value={peso(todayStats?.totals?.loan?.online ?? 0)} icon={Banknote} tone="blue" />
+        <Kpi label="Grand today" value={peso((todayStats?.totals?.loan?.cash || 0) + (todayStats?.totals?.loan?.online || 0))} icon={TrendingUp} tone="violet" big />
       </div>
-      <p className="mt-0.5 text-sm text-slate-500">
-        Search by <b>Loan ID</b>, <b>reference code</b>, <b>borrower name</b>, or <b>PN No</b>. Read-only — collect cash, write a paper OR, then send the consumer to the Loan Officer to post it.
-      </p>
 
-      <form onSubmit={lookup} className="mt-4 flex flex-wrap items-stretch gap-2">
-        <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+      <div className="mt-6 mx-auto max-w-2xl">
+        <div className="text-center">
+          <div className="inline-flex items-center gap-2 text-base font-bold text-slate-900">
+            <Banknote size={18} className="text-emerald-600" /> Loan Dues Lookup
+          </div>
+          <div className="mt-0.5 text-xs text-slate-500">
+            Just type — search is automatic. Loan ID, reference, borrower, or PN.
+          </div>
+        </div>
+        <div className="mt-3 relative">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
           <input
+            ref={searchRef}
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="e.g. LN-0042 / REF12345 / Juan Dela Cruz / AST123"
-            className="w-full rounded-xl border border-slate-200 pl-9 pr-3 py-2.5 text-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+            onKeyDown={(e) => { if (e.key === "Escape") { setQ(""); setData(null); setErr(""); } }}
+            placeholder="LN-0042,  REF12345,  Juan Dela Cruz,  or  AST123…"
+            autoComplete="off"
+            className="w-full rounded-2xl border-2 border-slate-200 pl-12 pr-12 py-4 text-base font-semibold focus:border-emerald-400 focus:outline-none focus:ring-4 focus:ring-emerald-100 shadow-sm"
           />
+          {q && (
+            <button
+              onClick={() => { setQ(""); setData(null); setErr(""); searchRef.current?.focus(); }}
+              aria-label="Clear search"
+              className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            >
+              ×
+            </button>
+          )}
+          {busy && (
+            <div className="absolute -bottom-5 left-0 right-0 text-center text-[11px] text-slate-400">Searching…</div>
+          )}
         </div>
-        <button disabled={busy} className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">
-          {busy ? "Searching…" : "Look up"}
-        </button>
-      </form>
+
+        {recents.length > 0 && (
+          <div className="mt-4">
+            <div className="flex items-center justify-between text-[11px] uppercase tracking-wide text-slate-500">
+              <span className="inline-flex items-center gap-1"><History size={12} /> Recent</span>
+              <button onClick={clearRecents} className="text-slate-400 hover:text-slate-700">Clear</button>
+            </div>
+            <div className="mt-1 flex flex-wrap gap-2">
+              {recents.map((r) => (
+                <button
+                  key={r.loanId}
+                  onClick={() => openRecent(r)}
+                  className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-emerald-50 hover:border-emerald-200"
+                >
+                  <span className="font-mono">{r.loanId}</span>
+                  <span className="text-slate-400">·</span>
+                  <span className="truncate max-w-[160px]">{r.borrowerName}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
 
       {err && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{err}</div>}
 
