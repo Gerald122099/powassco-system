@@ -81,7 +81,7 @@ const corsOptions = {
   },
   credentials: true,
   methods: ["GET","POST","PUT","PATCH","DELETE","OPTIONS"],
-  allowedHeaders: ["Content-Type","Authorization","X-Device-Token"],
+  allowedHeaders: ["Content-Type","Authorization","X-Device-Token","X-Admin-Authz"],
 };
 
 app.use(cors(corsOptions));
