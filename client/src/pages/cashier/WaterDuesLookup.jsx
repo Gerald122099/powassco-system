@@ -558,8 +558,12 @@ function MeterGroups({ data, printSlip, onPay, justPaidPeriod }) {
                       {onPay && (
                         <td className="px-3 py-2 text-right">
                           {b.status !== "paid" && (
-                            <button onClick={() => onPay(b)} className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50">
-                              <Banknote size={12}/> Pay
+                            <button
+                              onClick={() => onPay(b)}
+                              className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700 active:scale-95 ring-1 ring-emerald-700/10"
+                              title={`Receive payment for ${b.periodCovered || b.periodKey}`}
+                            >
+                              <Banknote size={16} /> Pay
                             </button>
                           )}
                         </td>
