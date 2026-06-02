@@ -70,3 +70,63 @@ export function computeDailyPenalty(dueDate, settings = {}, now = new Date()) {
     breakdown: `Grace (${grace}d × ₱${daily}) + post-grace ₱${after} = ₱${round2(grace * daily + after)}`,
   };
 }
+
+// Brings a bill's penaltyApplied / totalDue / subjectForDisconnection /
+// daysOverdue fields up to date against the current calendar day. Used
+// by every read path that must show the "live" totalDue (water bill
+// officer's bills list, cashier's lookup, public inquiry, etc.) so a
+// stale row doesn't lead to under-collection at the counter.
+//
+//   • No-op on paid bills.
+//   • No-op on bills that aren't past due.
+//   • Uses the daily-flat engine when penaltyDailyAmount > 0; falls back
+//     to the legacy flat/percent rule otherwise.
+//   • Persists changes only when something actually moved so we don't
+//     hammer Mongo with no-op writes.
+export async function freshenBill(bill, { settings, WaterSettings, now = new Date() } = {}) {
+  if (!bill) return bill;
+  if (bill.status === "paid") return bill;
+  const dueDate = bill.dueDate;
+  if (!dueDate || new Date(dueDate).getTime() >= new Date(now).getTime()) return bill;
+
+  const s = settings || (WaterSettings ? await WaterSettings.findOne() : {}) || {};
+  const useDaily = Number(s.penaltyDailyAmount ?? 0) > 0;
+
+  let penaltyShouldBe = 0;
+  let subjectForDisconnection = false;
+  let daysOverdue = 0;
+
+  if (useDaily) {
+    const r = computeDailyPenalty(dueDate, s, now);
+    penaltyShouldBe = round2(r.penalty);
+    subjectForDisconnection = r.subjectForDisconnection;
+    daysOverdue = r.daysOverdue;
+  } else {
+    // Legacy: flat amount or percent of base, taken from snapshot on the bill.
+    const base = Number(bill.amount || 0);
+    const val = Number(bill.penaltyValueUsed || 0);
+    const type = bill.penaltyTypeUsed || "flat";
+    penaltyShouldBe = round2(Math.max(0, type === "percent" ? base * (val / 100) : val));
+  }
+
+  const totalShouldBe = round2(Number(bill.amount || 0) + penaltyShouldBe);
+  const targetStatus = "overdue";
+
+  const moved =
+    bill.status !== targetStatus ||
+    Number(bill.penaltyApplied || 0) !== penaltyShouldBe ||
+    Number(bill.totalDue || 0) !== totalShouldBe ||
+    !!bill.subjectForDisconnection !== subjectForDisconnection ||
+    Number(bill.daysOverdue || 0) !== daysOverdue;
+
+  if (moved) {
+    bill.status = targetStatus;
+    bill.penaltyApplied = penaltyShouldBe;
+    bill.totalDue = totalShouldBe;
+    bill.subjectForDisconnection = subjectForDisconnection;
+    bill.daysOverdue = daysOverdue;
+    bill.penaltyComputedAt = new Date();
+    if (typeof bill.save === "function") await bill.save();
+  }
+  return bill;
+}

@@ -20,6 +20,8 @@ import LoanApplication from "../models/LoanApplication.js";
 import LoanPayment from "../models/LoanPayment.js";
 import OnlinePayment from "../models/OnlinePayment.js";
 import CbuTransaction from "../models/CbuTransaction.js";
+import WaterSettings from "../models/WaterSettings.js";
+import { freshenBill } from "../utils/penalty.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
 const router = express.Router();
@@ -98,11 +100,37 @@ router.get("/water", ...guard, async (req, res) => {
       member = nameMatches[0];
     }
 
-    // Bills (all — sorted newest first). Compute outstanding from unpaid/overdue.
-    const bills = await WaterBill.find({ pnNo: member.pnNo })
-      .sort({ periodCovered: -1 })
-      .select("pnNo meterNumber periodCovered periodKey consumed previousReading presentReading baseAmount discount penaltyApplied totalDue status dueDate paidAt orNo")
-      .lean();
+    // Bills (all — sorted newest first). We DON'T use .lean() because we
+    // call freshenBill() below to bring totalDue / penalty / overdue
+    // status up to today. Without this the cashier saw a stale totalDue
+    // (older snapshot) while the water bill officer saw the live one,
+    // because their endpoint already runs the same recompute.
+    const billDocs = await WaterBill.find({ pnNo: member.pnNo }).sort({ periodCovered: -1 });
+    const liveSettings = await WaterSettings.findOne();
+    for (const b of billDocs) {
+      if (b.status !== "paid") await freshenBill(b, { settings: liveSettings });
+    }
+    // Project to the same shape the client already consumes.
+    const bills = billDocs.map((b) => ({
+      _id: b._id,
+      pnNo: b.pnNo,
+      meterNumber: b.meterNumber,
+      periodCovered: b.periodCovered,
+      periodKey: b.periodKey,
+      consumed: b.consumed,
+      previousReading: b.previousReading,
+      presentReading: b.presentReading,
+      baseAmount: b.baseAmount,
+      discount: b.discount,
+      penaltyApplied: b.penaltyApplied,
+      totalDue: b.totalDue,
+      status: b.status,
+      dueDate: b.dueDate,
+      paidAt: b.paidAt,
+      orNo: b.orNo,
+      daysOverdue: b.daysOverdue || 0,
+      subjectForDisconnection: !!b.subjectForDisconnection,
+    }));
 
     // Last few payments (so the cashier can sanity-check "already paid recently?").
     const billIds = bills.map((b) => b._id);
