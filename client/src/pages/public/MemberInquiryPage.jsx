@@ -23,11 +23,30 @@ function formatDate(dateString) {
   });
 }
 
+// Saved items live in localStorage so a returning visitor auto-pulls
+// their dues without re-typing. We keep a small list of mixed handles:
+//   { kind: "pn" | "meter", value, label?: friendly name on first fetch }
+// On mount, the page expands the first item; the rest sit as quick-pick
+// chips. Removing an item is one tap.
+const SAVED_KEY = "pow_inquiry_saved";
+function loadSaved() {
+  try { return JSON.parse(localStorage.getItem(SAVED_KEY) || "[]"); } catch { return []; }
+}
+function persistSaved(list) {
+  localStorage.setItem(SAVED_KEY, JSON.stringify(list.slice(0, 12)));
+}
+
 export default function MemberInquiryPage() {
+  // 'pn' (default) or 'meter' — toggles which input + endpoint we use.
+  const [mode, setMode] = useState("pn");
   const [pnNo, setPnNo] = useState("");
+  const [meterNo, setMeterNo] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [data, setData] = useState(null);
+
+  // Saved-locally list — quick-pick chips so users don't retype.
+  const [saved, setSaved] = useState(() => loadSaved());
 
   // Online payment
   const [payTarget, setPayTarget] = useState(null);
@@ -36,34 +55,125 @@ export default function MemberInquiryPage() {
   const [showAccountDetails, setShowAccountDetails] = useState(false);
   const [showMeterDetails, setShowMeterDetails] = useState(false);
 
-  async function submit(e) {
-    e.preventDefault();
+  // Shared fetch — `kind` is "pn" or "meter".
+  async function runInquiry(kind, value) {
     setErr("");
     setData(null);
-
-    const pn = pnNo.trim();
-    if (!pn) {
-      setErr("Please enter PN No.");
-      return;
+    const v = String(value || "").trim().toUpperCase();
+    if (!v) {
+      setErr(kind === "meter" ? "Please enter the meter number." : "Please enter PN No.");
+      return null;
     }
-
     try {
       setLoading(true);
-      const json = await apiFetch("/public/water/inquiry", {
-        method: "POST",
-        body: { pnNo: pn, onlyLast12: true },
-      });
-
-      setData(json);
-
-      // collapse details by default
+      const path = kind === "meter" ? "/public/water/inquiry-meter" : "/public/water/inquiry";
+      const body = kind === "meter" ? { meterNumber: v, onlyLast12: true } : { pnNo: v, onlyLast12: true };
+      const json = await apiFetch(path, { method: "POST", body });
+      // Shim: meter-only response uses {account, meter, bills}. Map onto
+      // the {member, bills} shape the rest of this page already renders.
+      const shaped = kind === "meter"
+        ? {
+            ...json,
+            member: {
+              pnNo: json.account?.pnNo,
+              accountName: json.account?.accountName,
+              billing: { classification: json.account?.classification },
+              accountStatus: "active",
+              address: {
+                barangay: json.account?.barangay,
+                municipalityCity: json.account?.municipalityCity,
+              },
+              meters: json.meter ? [{
+                meterNumber: json.meter.meterNumber,
+                meterBrand: json.meter.meterBrand,
+                meterModel: json.meter.meterModel,
+                meterSize: json.meter.meterSize,
+                meterStatus: json.meter.meterStatus,
+                lastReading: json.meter.lastReading,
+                isBillingActive: true,
+              }] : [],
+            },
+          }
+        : json;
+      setData({ ...shaped, _kind: kind, _value: v });
       setShowAccountDetails(false);
       setShowMeterDetails(false);
+      return json;
     } catch (e2) {
       setErr(e2.message);
+      return null;
     } finally {
       setLoading(false);
     }
+  }
+
+  async function submit(e) {
+    e.preventDefault();
+    const v = mode === "meter" ? meterNo : pnNo;
+    await runInquiry(mode, v);
+  }
+
+  // Auto-open the most-recently-saved entry on page mount so a returning
+  // visitor sees their dues right away. Other saved items stay as chips.
+  useEffect(() => {
+    if (saved.length === 0) return;
+    const first = saved[0];
+    setMode(first.kind);
+    if (first.kind === "meter") setMeterNo(first.value);
+    else setPnNo(first.value);
+    runInquiry(first.kind, first.value);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Auto-refresh when the page becomes visible again (e.g. user
+  // backgrounded the PWA and came back to it) and on a slow 5-min
+  // interval while open — so a newly-posted reading shows up without
+  // a manual refresh.
+  useEffect(() => {
+    if (!data?._value) return;
+    const refetch = () => {
+      if (document.visibilityState !== "visible") return;
+      runInquiry(data._kind, data._value);
+    };
+    const interval = setInterval(refetch, 5 * 60 * 1000);
+    document.addEventListener("visibilitychange", refetch);
+    window.addEventListener("focus", refetch);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", refetch);
+      window.removeEventListener("focus", refetch);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data?._kind, data?._value]);
+
+  // ----- Save / remove local entries -----
+  const isCurrentSaved = data && saved.some((s) => s.kind === data._kind && s.value === data._value);
+  function saveCurrent() {
+    if (!data?._value) return;
+    const label = data._kind === "meter" ? (data.account?.accountName || data._value) : (data.member?.accountName || data._value);
+    const next = [
+      { kind: data._kind, value: data._value, label, savedAt: Date.now() },
+      ...saved.filter((s) => !(s.kind === data._kind && s.value === data._value)),
+    ];
+    setSaved(next);
+    persistSaved(next);
+  }
+  function unsaveCurrent() {
+    if (!data?._value) return;
+    const next = saved.filter((s) => !(s.kind === data._kind && s.value === data._value));
+    setSaved(next);
+    persistSaved(next);
+  }
+  function openSaved(s) {
+    setMode(s.kind);
+    if (s.kind === "meter") setMeterNo(s.value);
+    else setPnNo(s.value);
+    runInquiry(s.kind, s.value);
+  }
+  function removeSaved(s) {
+    const next = saved.filter((x) => !(x.kind === s.kind && x.value === s.value));
+    setSaved(next);
+    persistSaved(next);
   }
 
   // ---- Derived Data ----
@@ -134,23 +244,46 @@ export default function MemberInquiryPage() {
                 <div className="text-xs font-semibold uppercase tracking-wide text-green-600">POWASSCO</div>
                 <div className="text-2xl font-bold text-gray-900">Member Bill Inquiry</div>
                 <div className="mt-1 text-sm text-gray-500">
-                  Enter your PN No to view bills, payment history, and meter information.
+                  Search by your PN No to see the full account, or by your meter number to see that meter only.
                 </div>
               </div>
+            </div>
+
+            {/* Mode toggle — PN (whole account) vs single meter (tenant view). */}
+            <div className="mb-3 inline-flex rounded-2xl border border-green-200 bg-green-50 p-1 text-sm font-semibold">
+              <button type="button" onClick={() => setMode("pn")}
+                className={`px-4 py-2 rounded-xl transition ${mode === "pn" ? "bg-green-600 text-white shadow-sm" : "text-green-700 hover:bg-green-100"}`}>
+                PN / Account
+              </button>
+              <button type="button" onClick={() => setMode("meter")}
+                className={`px-4 py-2 rounded-xl transition ${mode === "meter" ? "bg-green-600 text-white shadow-sm" : "text-green-700 hover:bg-green-100"}`}>
+                Meter Number
+              </button>
             </div>
 
             <form onSubmit={submit} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="md:col-span-2">
                   <label className="mb-2 block text-sm font-semibold text-gray-700">
-                    PN No (Account Number)
+                    {mode === "meter" ? "Meter Number" : "PN No (Account Number)"}
                   </label>
-                  <input
-                    className="w-full rounded-2xl border border-green-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-green-400 focus:border-transparent transition-all"
-                    value={pnNo}
-                    onChange={(e) => setPnNo(e.target.value.toUpperCase())}
-                    placeholder="e.g. PN-000123"
-                  />
+                  {mode === "meter" ? (
+                    <input
+                      key="meter"
+                      className="w-full rounded-2xl border border-green-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-green-400 focus:border-transparent transition-all"
+                      value={meterNo}
+                      onChange={(e) => setMeterNo(e.target.value.toUpperCase())}
+                      placeholder="e.g. 0009876"
+                    />
+                  ) : (
+                    <input
+                      key="pn"
+                      className="w-full rounded-2xl border border-green-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-green-400 focus:border-transparent transition-all"
+                      value={pnNo}
+                      onChange={(e) => setPnNo(e.target.value.toUpperCase())}
+                      placeholder="e.g. PN-000123"
+                    />
+                  )}
                 </div>
 
                 <div className="flex items-end">
@@ -165,8 +298,30 @@ export default function MemberInquiryPage() {
               </div>
 
               <div className="rounded-xl bg-slate-50 p-3 text-xs text-gray-500">
-                Enter your PN Number exactly as it appears on your bill statement.
+                {mode === "meter"
+                  ? "Tip: tenants can search by their meter number to see only their meter's bills, not the whole account."
+                  : "Enter your PN Number exactly as it appears on your bill statement."}
               </div>
+
+              {/* Saved-locally chips — open with one tap, auto-displayed
+                  on page mount so a return visit just shows the dues. */}
+              {saved.length > 0 && (
+                <div className="rounded-2xl border border-green-100 bg-green-50/40 p-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-green-700">Saved on this phone</div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {saved.map((s) => (
+                      <div key={`${s.kind}-${s.value}`} className="inline-flex items-center gap-1 rounded-full border border-green-200 bg-white pl-3 pr-1 py-1 text-xs font-semibold text-green-800">
+                        <button type="button" onClick={() => openSaved(s)} className="inline-flex items-center gap-1.5 max-w-[220px]">
+                          <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${s.kind === "meter" ? "bg-blue-100 text-blue-700" : "bg-emerald-100 text-emerald-700"}`}>{s.kind === "meter" ? "METER" : "PN"}</span>
+                          <span className="font-mono truncate">{s.value}</span>
+                          {s.label && <span className="text-slate-500 truncate">· {s.label}</span>}
+                        </button>
+                        <button type="button" onClick={() => removeSaved(s)} aria-label="Remove" className="ml-1 rounded-full p-1 text-slate-400 hover:bg-red-50 hover:text-red-600">×</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </form>
 
             {err && (
@@ -180,11 +335,31 @@ export default function MemberInquiryPage() {
             <div className="space-y-5">
               {/* Account Summary */}
               <div className="rounded-3xl bg-white border border-green-100 shadow-lg p-4 sm:p-6">
+                {/* Save toggle — pin this lookup so the next visit auto-loads. */}
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-[11px] uppercase tracking-wide text-slate-500">
+                    Showing {data._kind === "meter" ? "single meter view" : "full account"}
+                  </div>
+                  {isCurrentSaved ? (
+                    <button onClick={unsaveCurrent} className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-800 hover:bg-amber-100">
+                      ★ Saved on this phone — tap to remove
+                    </button>
+                  ) : (
+                    <button onClick={saveCurrent} className="inline-flex items-center gap-1.5 rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white shadow hover:bg-emerald-700">
+                      ☆ Save on this phone (auto-load next time)
+                    </button>
+                  )}
+                </div>
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                   <div>
-                    <div className="mb-2 text-xl font-bold text-gray-900">{data.member?.accountName}</div>
+                    <div className="mb-2 text-xl font-bold text-gray-900">{data.member?.accountName || data.account?.accountName}</div>
                     <div className="text-sm text-gray-600 flex flex-wrap items-center gap-2">
-                      <span>PN No: <span className="font-semibold">{data.member?.pnNo}</span></span>
+                      {data._kind === "meter" && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 text-blue-800 px-3 py-1 text-xs font-bold">
+                          Meter {data.meter?.meterNumber}
+                        </span>
+                      )}
+                      <span>PN No: <span className="font-semibold">{data.member?.pnNo || data.account?.pnNo}</span></span>
                       <span className="text-gray-300">•</span>
                       <span
                         className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold ${

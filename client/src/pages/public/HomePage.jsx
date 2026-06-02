@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiFetch } from "../../lib/api";
 import Navbar from "../../components/Navbar";
+import PublicAppInstallBanner from "../../components/PublicAppInstallBanner";
 import logo from "../../assets/logo.png";
 import bg from "../../assets/bg.jpg";
 import {
@@ -65,6 +66,14 @@ export default function HomePage() {
   return (
     <div className="min-h-screen bg-slate-50" style={{ fontFamily: "'Poppins', ui-sans-serif, system-ui, sans-serif" }}>
       <Navbar />
+
+      {/* Install-app banner — sits above the hero so visitors see the CTA
+          before scrolling. Android sees an inline 'Install now' button;
+          iPhone users see the Safari 'Add to Home Screen' steps; desktop
+          sees Chrome/Edge install instructions. */}
+      <section className="relative mx-auto max-w-6xl px-4 pt-24 sm:pt-28">
+        <PublicAppInstallBanner />
+      </section>
 
       {/* Hero */}
       <section className="relative overflow-hidden">

@@ -42,6 +42,127 @@ function rateLimit(req, res, next) {
 }
 
 /**
+ * Public inquiry by METER NUMBER — single-meter view.
+ *
+ * For households where the PN account holder rents a unit and a tenant
+ * pays only their own meter. The tenant searches by their meter number
+ * and sees bills, payments, and online-payment status for THAT meter
+ * only, not every meter on the PN.
+ *
+ * POST /api/public/water/inquiry-meter
+ * body: { meterNumber, onlyLast12? }
+ */
+router.post("/inquiry-meter", rateLimit, async (req, res) => {
+  try {
+    const { meterNumber, onlyLast12 = true } = req.body || {};
+    const meter = String(meterNumber || "").trim().toUpperCase();
+    if (!meter) return res.status(400).json({ message: "Meter number is required." });
+
+    // Find the member that owns this meter. Match against the active list
+    // so a removed/replaced meter doesn't masquerade.
+    const member = await WaterMember.findOne({
+      "meters.meterNumber": meter,
+    })
+      .select("-__v -createdAt -updatedAt -createdBy -updatedBy -history -documents")
+      .lean();
+
+    if (!member) {
+      return res.status(404).json({
+        message: "Meter not found. Please check your meter number and try again.",
+      });
+    }
+
+    const ownMeter = (member.meters || []).find((m) => String(m.meterNumber).toUpperCase() === meter);
+
+    // Period filter — same 12-month rolling window as the PN view.
+    const billsFilter = { pnNo: member.pnNo, meterNumber: meter };
+    if (onlyLast12) {
+      const periods = [];
+      const d = new Date();
+      for (let i = 0; i < 12; i++) {
+        const dd = new Date(d.getFullYear(), d.getMonth() - i, 1);
+        periods.push(`${dd.getFullYear()}-${String(dd.getMonth() + 1).padStart(2, "0")}`);
+      }
+      billsFilter.periodCovered = { $in: periods };
+    }
+
+    const bills = await WaterBill.find(billsFilter)
+      .sort({ periodCovered: -1 })
+      .select("-__v -createdAt -updatedAt -readerId -remarks")
+      .lean();
+
+    const billIds = bills.map((b) => b._id);
+    const payments = billIds.length
+      ? await WaterPayment.find({ billId: { $in: billIds } })
+          .sort({ paidAt: -1 })
+          .select("_id billId pnNo meterNumber orNo method amountPaid paidAt receivedBy")
+          .lean()
+      : [];
+
+    const payByBill = new Map();
+    for (const p of payments) {
+      const k = String(p.billId);
+      if (!payByBill.has(k)) payByBill.set(k, []);
+      payByBill.get(k).push(p);
+    }
+
+    const pendingOnline = await OnlinePayment.find({
+      status: "pending",
+      module: "water",
+      pnNo: member.pnNo,
+      meterNumber: meter,
+    })
+      .select("meterNumber periodKey amountToPay referenceId createdAt")
+      .lean();
+    const pendingByPeriod = new Set(pendingOnline.map((o) => o.periodKey));
+
+    const billsDecorated = bills.map((b) => ({
+      ...b,
+      payments: payByBill.get(String(b._id)) || [],
+      onlinePending: pendingByPeriod.has(b.periodCovered),
+      statusBadge: b.status,
+    }));
+
+    const unpaid = billsDecorated.filter((b) => b.status !== "paid");
+    const totalOutstanding = unpaid.reduce((s, b) => s + (Number(b.totalDue) || 0), 0);
+
+    res.json({
+      scope: "meter", // tells the client this is a single-meter view
+      meter: {
+        meterNumber: meter,
+        meterBrand: ownMeter?.meterBrand || "",
+        meterModel: ownMeter?.meterModel || "",
+        meterSize: ownMeter?.meterSize || "",
+        meterStatus: ownMeter?.meterStatus || "active",
+        lastReading: ownMeter?.lastReading || 0,
+      },
+      // Limited account info — never expose other meters on the PN to a
+      // tenant. They get the PN (so the bill header makes sense) and the
+      // account-holder display name. No contact / address / personal data.
+      account: {
+        pnNo: member.pnNo,
+        accountName: member.accountName,
+        classification: member.billing?.classification,
+        barangay: member.address?.barangay,
+        municipalityCity: member.address?.municipalityCity,
+      },
+      bills: billsDecorated,
+      summary: {
+        totalBills: billsDecorated.length,
+        unpaidBills: unpaid.length,
+        paidBills: billsDecorated.length - unpaid.length,
+        totalOutstanding,
+      },
+      pendingOnline,
+      message: "Inquiry successful. Showing this meter only.",
+    });
+  } catch (e) {
+    console.error("Meter inquiry error:", e);
+    res.status(500).json({ message: "Inquiry failed. Please try again later." });
+  }
+});
+
+/**
  * Enhanced Public inquiry
  * POST /api/public/water/inquiry
  * body: { pnNo, onlyLast12? } - Removed birthdate requirement
