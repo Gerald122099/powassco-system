@@ -504,6 +504,88 @@ router.put("/:id", ...editGuard, async (req, res) => {
   }
 });
 
+// POST /api/water/members/:id/meters
+// Append a single meter to an existing member. Intentionally uses the
+// regular `guard` (no requireAdminAuthz) so a water_bill_officer or
+// meter_reader can register a new physical connection on an existing PN
+// without dual-control. Editing an existing meter still goes through the
+// full PUT /api/water/members/:id (admin-authz protected).
+router.post("/:id/meters", ...guard, async (req, res) => {
+  try {
+    const member = await WaterMember.findById(req.params.id);
+    if (!member) {
+      return res.status(404).json({ message: "Member not found" });
+    }
+
+    const md = req.body || {};
+    if (!md.meterNumber || !String(md.meterNumber).trim()) {
+      return res.status(400).json({ message: "Meter number is required" });
+    }
+    const meterNumber = String(md.meterNumber).toUpperCase().trim();
+
+    if (member.meters.some((m) => m.meterNumber === meterNumber)) {
+      return res.status(409).json({ message: "That meter number is already on this account" });
+    }
+
+    const now = new Date();
+    const who = req.user?.employeeId || req.user?.username || "system";
+
+    member.meters.push({
+      meterNumber,
+      meterBrand: (md.meterBrand || "").trim(),
+      meterModel: (md.meterModel || "").trim(),
+      meterSize: md.meterSize || "5/8",
+      installationDate: md.installationDate ? new Date(md.installationDate) : now,
+      meterCondition: md.meterCondition || "good",
+      meterStatus: md.meterStatus || "active",
+      location: {
+        description: (md.location?.description || "").trim(),
+        placement: md.location?.placement || "front_yard",
+        coordinates: md.location?.coordinates || { latitude: null, longitude: null, accuracy: null },
+        accessNotes: (md.location?.accessNotes || "").trim(),
+        visibility: md.location?.visibility || "good",
+        safetyNotes: (md.location?.safetyNotes || "").trim(),
+      },
+      serialNumber: (md.serialNumber || "").trim(),
+      initialReading: parseFloat(md.initialReading) || 0,
+      lastReading: parseFloat(md.initialReading) || 0,
+      isBillingActive: md.isBillingActive !== false,
+      billingSequence: member.meters.length,
+      consumptionMultiplier: parseFloat(md.consumptionMultiplier) || 1,
+      createdBy: who,
+      updatedBy: who,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    member.history.push({
+      date: now,
+      action: "meter_added",
+      description: `Added meter ${meterNumber}`,
+      performedBy: who,
+    });
+
+    member.updatedBy = who;
+    member.updatedAt = now;
+
+    await member.save();
+    res.json(member);
+  } catch (error) {
+    console.error("Error adding meter:", error);
+    if (error.name === "ValidationError") {
+      const messages = Object.values(error.errors).map((e) => e.message);
+      return res.status(400).json({ message: "Meter validation failed", errors: messages });
+    }
+    if (error.code === 11000) {
+      return res.status(409).json({ message: "That meter number is already in use" });
+    }
+    res.status(500).json({
+      message: "Failed to add meter",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+});
+
 // DELETE /api/water/members/:id
 router.delete("/:id", ...editGuard, async (req, res) => {
   try {

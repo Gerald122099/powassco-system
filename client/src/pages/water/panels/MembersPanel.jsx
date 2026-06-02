@@ -168,6 +168,27 @@ export default function MembersPanel() {
   // NEW: Meters management form
   const [metersForm, setMetersForm] = useState([]);
 
+  // Add-meter sub-form inside the Manage Meters modal. This path hits the
+  // dedicated POST /api/water/members/:id/meters endpoint, which is NOT
+  // gated by admin-authz — officers/readers can register a new physical
+  // meter on an existing PN without dual control.
+  const blankNewMeter = () => ({
+    meterNumber: "",
+    meterBrand: "",
+    meterModel: "",
+    meterSize: "5/8",
+    serialNumber: "",
+    installationDate: new Date().toISOString().slice(0, 10),
+    meterCondition: "good",
+    meterStatus: "active",
+    initialReading: 0,
+    isBillingActive: true,
+    location: { description: "", placement: "front_yard", accessNotes: "" },
+  });
+  const [newMeterForm, setNewMeterForm] = useState(blankNewMeter());
+  const [addingMeter, setAddingMeter] = useState(false);
+  const [addMeterErr, setAddMeterErr] = useState("");
+
   const totalPages = useMemo(
     () => Math.max(1, Math.ceil(total / PAGE_SIZE)),
     [total]
@@ -514,6 +535,8 @@ export default function MembersPanel() {
   // NEW: Open meters management modal
   function openManageMeters(m) {
     setManagingMetersFor(m);
+    setNewMeterForm(blankNewMeter());
+    setAddMeterErr("");
     setMetersForm(m.meters?.map(meter => ({
       ...meter,
       installationDate: meter.installationDate ? new Date(meter.installationDate).toISOString().slice(0, 10) : "",
@@ -557,6 +580,49 @@ export default function MembersPanel() {
         }
       ]
     });
+  }
+
+  // Submit just-this-new-meter via the lightweight no-admin-authz endpoint.
+  // Used from the Manage Meters modal so officers can register a new meter
+  // on an existing PN without triggering the dual-control flow.
+  async function submitNewMeter() {
+    if (!managingMetersFor) return;
+    const num = (newMeterForm.meterNumber || "").trim();
+    if (!num) {
+      setAddMeterErr("Meter number is required.");
+      return;
+    }
+    setAddingMeter(true);
+    setAddMeterErr("");
+    try {
+      const updated = await apiFetch(
+        `/water/members/${managingMetersFor._id}/meters`,
+        {
+          method: "POST",
+          token,
+          body: newMeterForm,
+        }
+      );
+      toast.success(`Meter ${num.toUpperCase()} added`);
+      // Refresh modal state with the updated member doc so the new meter
+      // appears immediately in the list and the row data stays in sync.
+      setManagingMetersFor(updated);
+      setMetersForm(
+        (updated.meters || []).map((meter) => ({
+          ...meter,
+          installationDate: meter.installationDate ? new Date(meter.installationDate).toISOString().slice(0, 10) : "",
+          lastCalibration: meter.lastCalibration ? new Date(meter.lastCalibration).toISOString().slice(0, 10) : "",
+          nextCalibration: meter.nextCalibration ? new Date(meter.nextCalibration).toISOString().slice(0, 10) : "",
+          lastMaintenance: meter.lastMaintenance ? new Date(meter.lastMaintenance).toISOString().slice(0, 10) : "",
+        }))
+      );
+      setNewMeterForm(blankNewMeter());
+      await load();
+    } catch (e) {
+      setAddMeterErr(e.message || "Failed to add meter.");
+    } finally {
+      setAddingMeter(false);
+    }
   }
 
   // NEW: Remove a meter from the form
@@ -1844,49 +1910,161 @@ export default function MembersPanel() {
             <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
               <div className="font-bold text-blue-900">{managingMetersFor.accountName}</div>
               <div className="text-sm text-blue-700 mt-1">PN No: {managingMetersFor.pnNo}</div>
+              <div className="text-xs text-blue-700 mt-2">
+                Adding a new meter here does <b>not</b> require admin authorization. To edit an existing meter or other member details, use the <b>Edit</b> action on the row.
+              </div>
             </div>
-            
-            <div className="space-y-4">
-              {metersForm.map((meter, index) => (
-                <div key={index} className="p-4 border border-slate-200 rounded-xl">
-                  <div className="font-bold text-slate-900 mb-2">Meter: {meter.meterNumber}</div>
-                  <div className="grid grid-cols-2 gap-3 text-sm">
-                    <div>
-                      <div className="text-slate-500">Status</div>
-                      <div className="font-bold">{meter.meterStatus}</div>
-                    </div>
-                    <div>
-                      <div className="text-slate-500">Condition</div>
-                      <div className="font-bold">{meter.meterCondition}</div>
-                    </div>
-                    <div>
-                      <div className="text-slate-500">Location</div>
-                      <div>{meter.location?.description || "—"}</div>
-                    </div>
-                    <div>
-                      <div className="text-slate-500">Billing Active</div>
-                      <div>{meter.isBillingActive ? "Yes" : "No"}</div>
+
+            <div>
+              <div className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-2">
+                Existing meters ({metersForm.length})
+              </div>
+              <div className="space-y-3">
+                {metersForm.length === 0 && (
+                  <div className="rounded-xl border border-dashed border-slate-200 p-4 text-sm text-slate-500">
+                    No meters yet.
+                  </div>
+                )}
+                {metersForm.map((meter, index) => (
+                  <div key={index} className="p-4 border border-slate-200 rounded-xl">
+                    <div className="font-bold text-slate-900 mb-2">Meter: {meter.meterNumber}</div>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <div className="text-slate-500">Status</div>
+                        <div className="font-bold">{meter.meterStatus}</div>
+                      </div>
+                      <div>
+                        <div className="text-slate-500">Condition</div>
+                        <div className="font-bold">{meter.meterCondition}</div>
+                      </div>
+                      <div>
+                        <div className="text-slate-500">Location</div>
+                        <div>{meter.location?.description || "—"}</div>
+                      </div>
+                      <div>
+                        <div className="text-slate-500">Billing Active</div>
+                        <div>{meter.isBillingActive ? "Yes" : "No"}</div>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-            
+
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+              <div className="font-bold text-emerald-900 mb-3">+ Add new meter</div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <Field label="Meter Number" required>
+                  <input
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5"
+                    value={newMeterForm.meterNumber}
+                    onChange={(e) => setNewMeterForm({ ...newMeterForm, meterNumber: e.target.value })}
+                    placeholder="e.g., MET-002"
+                  />
+                </Field>
+                <Field label="Serial Number">
+                  <input
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5"
+                    value={newMeterForm.serialNumber}
+                    onChange={(e) => setNewMeterForm({ ...newMeterForm, serialNumber: e.target.value })}
+                  />
+                </Field>
+                <Field label="Brand">
+                  <input
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5"
+                    value={newMeterForm.meterBrand}
+                    onChange={(e) => setNewMeterForm({ ...newMeterForm, meterBrand: e.target.value })}
+                    placeholder="e.g., Neptune"
+                  />
+                </Field>
+                <Field label="Model">
+                  <input
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5"
+                    value={newMeterForm.meterModel}
+                    onChange={(e) => setNewMeterForm({ ...newMeterForm, meterModel: e.target.value })}
+                  />
+                </Field>
+                <Field label="Size">
+                  <select
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5"
+                    value={newMeterForm.meterSize}
+                    onChange={(e) => setNewMeterForm({ ...newMeterForm, meterSize: e.target.value })}
+                  >
+                    {['5/8','3/4','1','1.5','2','3','4'].map((s) => <option key={s} value={s}>{s}"</option>)}
+                  </select>
+                </Field>
+                <Field label="Installation Date">
+                  <input
+                    type="date"
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5"
+                    value={newMeterForm.installationDate}
+                    onChange={(e) => setNewMeterForm({ ...newMeterForm, installationDate: e.target.value })}
+                  />
+                </Field>
+                <Field label="Initial Reading (m³)">
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5"
+                    value={newMeterForm.initialReading}
+                    onChange={(e) => setNewMeterForm({ ...newMeterForm, initialReading: e.target.value })}
+                  />
+                </Field>
+                <Field label="Status">
+                  <select
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5"
+                    value={newMeterForm.meterStatus}
+                    onChange={(e) => setNewMeterForm({ ...newMeterForm, meterStatus: e.target.value })}
+                  >
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                    <option value="defective">Defective</option>
+                  </select>
+                </Field>
+                <Field label="Location Description">
+                  <input
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5"
+                    value={newMeterForm.location.description}
+                    onChange={(e) => setNewMeterForm({ ...newMeterForm, location: { ...newMeterForm.location, description: e.target.value } })}
+                    placeholder="e.g., front of house"
+                  />
+                </Field>
+                <div className="flex items-center gap-2 pt-6">
+                  <input
+                    id="newMeterBillingActive"
+                    type="checkbox"
+                    checked={newMeterForm.isBillingActive}
+                    onChange={(e) => setNewMeterForm({ ...newMeterForm, isBillingActive: e.target.checked })}
+                  />
+                  <label htmlFor="newMeterBillingActive" className="text-sm font-semibold text-slate-700">
+                    Billing active
+                  </label>
+                </div>
+              </div>
+              {addMeterErr && (
+                <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+                  {addMeterErr}
+                </div>
+              )}
+              <div className="mt-3 flex justify-end">
+                <button
+                  type="button"
+                  disabled={addingMeter || !newMeterForm.meterNumber.trim()}
+                  onClick={submitNewMeter}
+                  className="rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-60"
+                >
+                  {addingMeter ? "Saving…" : "Save meter"}
+                </button>
+              </div>
+            </div>
+
             <div className="flex justify-end gap-2">
               <button
-                className="rounded-xl border border-slate-200 px-4 py-2.5"
+                className="rounded-xl border border-slate-200 px-4 py-2.5 font-semibold"
                 onClick={() => setMetersModalOpen(false)}
               >
-                Close
-              </button>
-              <button
-                className="rounded-xl bg-blue-600 text-white px-4 py-2.5 font-semibold hover:bg-blue-700"
-                onClick={() => {
-                  // You can implement advanced meter management here
-                  setMetersModalOpen(false);
-                }}
-              >
-                Edit Meters
+                Done
               </button>
             </div>
           </div>
