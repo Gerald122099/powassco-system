@@ -121,11 +121,12 @@ async function runSync({ token, user }) {
         readerId: user?.employeeId || user?._id || "",
         importDate: Date.now(),
         forceUpdate: group.force,
-        // Field syncs upload READINGS only — the officer batch-regenerates
-        // bills from the Readings panel. This cuts per-row cost from
-        // ~4 DB roundtrips to ~1 on the server, so a 50-row sync over a
-        // weak signal goes from ~10s to ~1-2s.
-        generateBill: false,
+        // Generate bills inline so they appear in the Water Bill
+        // Officer dashboard immediately after the field reader syncs.
+        // The server batches the bill upserts via WaterBill.bulkWrite
+        // so this stays cheap (single roundtrip per sync regardless of
+        // row count).
+        generateBill: true,
       },
     });
     // Map server per-row results back to queue ids; accept success + skipped.

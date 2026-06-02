@@ -12,7 +12,7 @@ import { pushAsync } from "../../utils/push.js";
 import User from "../../models/User.js";
 import AuditLog from "../../models/AuditLog.js";
 import { requireAuth, requireRole } from "../../middleware/auth.js";
-import { upsertWaterBill } from "../../utils/waterBillUpsert.js";
+import { upsertWaterBill, upsertWaterBillsBulk } from "../../utils/waterBillUpsert.js";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from 'url';
@@ -815,13 +815,36 @@ router.post("/import-readings", ...guard, async (req, res) => {
           results.success++;
         }
       }
-      // Bill generation is best-effort and gated by generateBill flag —
-      // field syncs leave this off so syncing stays cheap. The officer
-      // batch-regenerates bills from the Readings panel.
-      for (const item of _insertBuffer) {
-        const detail = results.details[item.detailIndex];
-        if (detail.status === "success") {
-          await maybeGenerateBill(item.member, item.reading);
+      // Bulk-generate bills for every successful insert in ONE bulkWrite
+      // instead of N upsert roundtrips. With the unique compound index on
+      // (pnNo, periodKey, meterNumber), MongoDB upserts each in O(log n).
+      if (generateBill !== false) {
+        const billItems = [];
+        for (const item of _insertBuffer) {
+          const detail = results.details[item.detailIndex];
+          if (detail.status !== "success") continue;
+          billItems.push({
+            member: item.member,
+            periodCovered: periodKey,
+            meterReading: {
+              meterNumber: item.reading.meterNumber,
+              previousReading: item.reading.previousReading,
+              presentReading: item.reading.presentReading,
+              multiplier: item.reading.consumptionMultiplier || 1,
+            },
+            readingDate: item.reading.readDate ? new Date(parseInt(item.reading.readDate)) : new Date(),
+            readerId: actorLabel,
+            remarks: "Field sync",
+            createdBy: actorLabel,
+            forceUpdate: false,
+          });
+        }
+        if (billItems.length > 0) {
+          try {
+            await upsertWaterBillsBulk(billItems);
+          } catch (e) {
+            console.error("Bulk bill generation failed:", e.message);
+          }
         }
       }
     }
