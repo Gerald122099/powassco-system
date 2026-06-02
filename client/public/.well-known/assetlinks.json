@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "site.powassco.twa",
+        "sha256_cert_fingerprints": ["F6:D4:F4:5F:2D:F9:68:CB:24:C4:F3:A4:32:0A:39:8F:B9:21:BE:39:64:CC:25:B3:D4:17:28:21:F9:D5:FA:51"]
+      }
+    }]
