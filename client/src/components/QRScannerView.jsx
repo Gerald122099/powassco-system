@@ -40,7 +40,11 @@ export default function QRScannerView({ onResult, onError }) {
     const raf = requestAnimationFrame(async () => {
       try {
         scanner = new Html5Qrcode(id, { verbose: false });
-        const constraints = { facingMode: { ideal: "environment" } };
+        // html5-qrcode validates `facingMode` as either a string or an
+        // object with an `exact` key — `{ ideal: ... }` is rejected with
+        // 'should be string or object with exact as key'. Plain string
+        // is the most compatible form and is what we used originally.
+        const constraints = { facingMode: "environment" };
         const config = {
           fps: 10,
           // qrbox proportional to container instead of fixed 240px — works
