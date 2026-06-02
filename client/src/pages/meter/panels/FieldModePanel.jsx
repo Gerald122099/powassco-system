@@ -181,13 +181,41 @@ export default function FieldModePanel() {
   async function saveMember(member) {
     const meters = member.activeBillingMeters || [];
     const toSave = [];
+    let alreadyEncodedCount = 0;
     for (const mt of meters) {
       const key = `${mnorm(member.pnNo)}__${mnorm(mt.meterNumber)}`;
       const val = inputs[key];
-      if (val === undefined || val === "") continue;
-      toSave.push({ mt, val });
+      const encoded = isRead(member, mt.meterNumber);
+      if (val !== undefined && val !== "") {
+        toSave.push({ mt, val });
+      } else if (encoded) {
+        alreadyEncodedCount += 1;
+      }
     }
-    if (toSave.length === 0) return flash("Enter a reading first.", "error");
+
+    if (toSave.length === 0) {
+      // Nothing new to write. Distinguish "everything's already done" from
+      // "you haven't typed anything yet" so the plumber isn't confused
+      // when they re-tap Save on a fully-encoded account.
+      const allEncoded = meters.length > 0 && alreadyEncodedCount === meters.length;
+      const someEncoded = alreadyEncodedCount > 0;
+      if (allEncoded) {
+        return flash(
+          `✓ ${member.accountName} — all readings already synced for ${periodKey}.`,
+          "success",
+          true
+        );
+      }
+      if (someEncoded) {
+        return flash(
+          `Already encoded ${alreadyEncodedCount}/${meters.length} meter(s). Enter the present reading on the remaining one(s) before tapping Save.`,
+          "error",
+          true
+        );
+      }
+      return flash("Enter a reading first.", "error");
+    }
+
     try {
       for (const { mt, val } of toSave) {
         await saveReadingOffline({
@@ -670,16 +698,23 @@ export default function FieldModePanel() {
                   })}
                 </div>
 
-                {/* Full-width primary action so the Scan FAB at the
-                    right edge of the viewport never overlays it. Also
-                    bigger touch target (~52px tall) for mobile thumbs. */}
+                {/* Full-width primary action. When every meter on the
+                    card is already encoded for the current period we swap
+                    the Save button for an "Already synced" chip so the
+                    plumber doesn't even get the chance to retap it. */}
                 <div className="mt-3">
-                  <button
-                    onClick={() => saveMember(m)}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-4 py-3 text-base font-bold text-white shadow-sm active:scale-95 active:bg-emerald-700"
-                  >
-                    <Save size={18} /> Save{online ? " & Sync" : " (offline)"}
-                  </button>
+                  {allRead ? (
+                    <div className="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-emerald-300 bg-emerald-50 px-4 py-3 text-base font-bold text-emerald-800">
+                      <CheckCircle size={18} /> Already synced to database — {periodKey}
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => saveMember(m)}
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-4 py-3 text-base font-bold text-white shadow-sm active:scale-95 active:bg-emerald-700"
+                    >
+                      <Save size={18} /> Save{online ? " & Sync" : " (offline)"}
+                    </button>
+                  )}
                 </div>
               </div>
             );
