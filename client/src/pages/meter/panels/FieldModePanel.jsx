@@ -9,7 +9,7 @@ import { downloadBatch, saveReadingOffline, syncQueue, currentPeriodKey } from "
 import { connectPrinter, printerConnected, printWaterReceipt, thermalSupported } from "../../../lib/thermalPrint";
 import { calculateWaterBillLocal } from "../../../lib/waterBillingLocal";
 import { printRouteSheet } from "../../../lib/routeSheet";
-import { Wifi, WifiOff, Download, RefreshCw, QrCode, Save, Search, MapPin, CheckCircle, CloudOff, Printer, Bluetooth, FileText, Trash2, AlertTriangle, Ban, UploadCloud } from "lucide-react";
+import { Wifi, WifiOff, Download, RefreshCw, QrCode, Save, Search, MapPin, CheckCircle, CloudOff, Printer, Bluetooth, FileText, Trash2, AlertTriangle, Ban, UploadCloud, MoreVertical, X, Keyboard } from "lucide-react";
 
 function fmt(n) {
   return Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 3 });
@@ -45,6 +45,9 @@ export default function FieldModePanel() {
   const [toast, setToast] = useState(null);
   const [scanOpen, setScanOpen] = useState(false);
   const [scanErr, setScanErr] = useState("");
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualValue, setManualValue] = useState("");
   const [settings, setSettings] = useState(null);
   const [printerOn, setPrinterOn] = useState(false);
 
@@ -363,43 +366,106 @@ export default function FieldModePanel() {
         </div>
       )}
 
-      {/* Status bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2 text-lg font-bold tracking-tight text-slate-900">
+      {/* Mobile-first header: title row + meta row + primary action row.
+          Less-used controls (Download / Route Sheet / Printer / Clear)
+          live in a "More" sheet so plumbers see only what they need. */}
+      <div>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 text-xl font-extrabold tracking-tight text-slate-900">
             Field Mode
-            <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${online ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
-              {online ? <Wifi size={12} /> : <WifiOff size={12} />} {online ? "Online" : "Offline"}
+            <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${online ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+              {online ? <Wifi size={11} /> : <WifiOff size={11} />} {online ? "ONLINE" : "OFFLINE"}
             </span>
           </div>
-          <div className="mt-0.5 text-sm text-slate-500">
-            {user?.fullName ? <b>{user.fullName}</b> : "—"} • Period {periodKey} • {batchInfo.map((b) => b.batchName).join(", ") || "no batch"} • downloaded {ago(downloadedAt)}
-          </div>
+          <button
+            onClick={() => setMoreOpen(true)}
+            aria-label="More actions"
+            className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 active:bg-slate-100"
+          >
+            <MoreVertical size={20} />
+          </button>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button onClick={handleDownload} disabled={busy === "download" || !online} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50">
-            <Download size={16} className={busy === "download" ? "animate-pulse" : ""} /> {busy === "download" ? "Downloading…" : "Download Batch"}
+        <div className="mt-1 text-xs text-slate-500 leading-tight">
+          {user?.fullName ? <b>{user.fullName}</b> : "—"} • {periodKey} • {batchInfo.map((b) => b.batchName).join(", ") || "no batch"} • {ago(downloadedAt)}
+        </div>
+
+        {/* Primary action row — Sync is the only thing that needs to be one-tap reachable. */}
+        <div className="mt-3 flex gap-2">
+          <button
+            onClick={doSync}
+            disabled={!online || pending === 0 || busy === "sync"}
+            className={`flex-1 inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-base font-bold shadow-sm transition active:scale-95 disabled:opacity-50
+              ${pending > 0 ? "bg-purple-600 text-white hover:bg-purple-700" : "border border-emerald-200 bg-emerald-50 text-emerald-800"}`}
+          >
+            {busy === "sync" ? <><UploadCloud size={20} className="animate-pulse" /> Syncing…</> :
+             pending > 0 ? <><RefreshCw size={20} /> Sync {pending}</> :
+             <><CheckCircle size={20} /> All synced</>}
           </button>
-          <button onClick={doSync} disabled={!online || pending === 0 || busy === "sync"} className="inline-flex items-center gap-2 rounded-xl bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-700 disabled:opacity-50">
-            {busy === "sync" ? <UploadCloud size={16} className="animate-pulse" /> : pending > 0 ? <RefreshCw size={16} /> : <CheckCircle size={16} />} {busy === "sync" ? "Syncing…" : pending > 0 ? `Sync (${pending})` : "Synced"}
+          <button
+            onClick={handleDownload}
+            disabled={busy === "download" || !online}
+            className="inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm active:scale-95 disabled:opacity-50"
+            aria-label="Download batch"
+            title="Download my batch"
+          >
+            <Download size={20} className={busy === "download" ? "animate-pulse text-purple-600" : ""} />
           </button>
-          {thermalSupported() && (
-            <button onClick={connectPrinterUI} className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold ${printerOn ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}>
-              <Bluetooth size={16} /> {printerOn ? "Printer ✓" : "Printer"}
-            </button>
-          )}
-          {total > 0 && (
-            <button onClick={() => printRouteSheet(filtered, { periodKey, readerName: user?.fullName })} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" title="Print a paper worksheet of these accounts">
-              <FileText size={16} /> Route Sheet
-            </button>
-          )}
-          {total > 0 && (
-            <button onClick={clearData} className="inline-flex items-center gap-2 rounded-xl border border-red-200 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50" title="Clear downloaded data from this device">
-              <Trash2 size={16} />
-            </button>
-          )}
         </div>
       </div>
+
+      {/* "More" bottom sheet — slides up from below on tap. */}
+      {moreOpen && (
+        <div className="fixed inset-0 z-[60]">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setMoreOpen(false)} />
+          <div className="absolute inset-x-0 bottom-0 rounded-t-3xl bg-white p-4 shadow-2xl pb-[calc(env(safe-area-inset-bottom)+1rem)]">
+            <div className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-slate-300" />
+            <div className="flex items-center justify-between">
+              <div className="text-base font-bold text-slate-900">More actions</div>
+              <button onClick={() => setMoreOpen(false)} className="rounded-lg p-2 text-slate-500"><X size={18} /></button>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button
+                onClick={() => { setMoreOpen(false); handleDownload(); }}
+                disabled={busy === "download" || !online}
+                className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-3 text-sm font-semibold text-slate-700 active:bg-slate-50 disabled:opacity-50"
+              >
+                <Download size={18} className="text-purple-600" />
+                {busy === "download" ? "Downloading…" : "Download batch"}
+              </button>
+              {thermalSupported() && (
+                <button
+                  onClick={() => { setMoreOpen(false); connectPrinterUI(); }}
+                  className={`flex items-center gap-2 rounded-xl border px-3 py-3 text-sm font-semibold active:scale-95 ${printerOn ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-slate-200 text-slate-700"}`}
+                >
+                  <Bluetooth size={18} /> {printerOn ? "Printer ✓" : "Connect printer"}
+                </button>
+              )}
+              {total > 0 && (
+                <button
+                  onClick={() => { setMoreOpen(false); printRouteSheet(filtered, { periodKey, readerName: user?.fullName }); }}
+                  className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-3 text-sm font-semibold text-slate-700 active:bg-slate-50"
+                >
+                  <FileText size={18} /> Route sheet
+                </button>
+              )}
+              {total > 0 && (
+                <button
+                  onClick={() => { setMoreOpen(false); clearData(); }}
+                  className="flex items-center gap-2 rounded-xl border border-red-200 px-3 py-3 text-sm font-semibold text-red-700 active:bg-red-50"
+                >
+                  <Trash2 size={18} /> Clear data
+                </button>
+              )}
+              <button
+                onClick={() => { setMoreOpen(false); setManualOpen(true); }}
+                className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-3 text-sm font-semibold text-slate-700 active:bg-slate-50"
+              >
+                <Keyboard size={18} /> Type meter number
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {total > 0 && periodKey !== currentPeriodKey() && (
         <div className="mt-3 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
@@ -461,15 +527,19 @@ export default function FieldModePanel() {
         )}
       </div>
 
-      {/* Controls */}
-      <div className="mt-4 flex flex-wrap items-center gap-2">
+      {/* Controls — mobile-first sticky search header. The Scan button
+          is intentionally a fixed FAB at the bottom-right (see end of
+          this component) so it's always reachable while scrolling. */}
+      <div className="mt-4 sticky top-0 z-20 -mx-1 px-1 py-2 bg-white/85 backdrop-blur supports-[backdrop-filter]:bg-white/70 flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-[180px]">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search PN, name, meter, address" className="w-full rounded-xl border border-slate-200 pl-9 pr-3 py-2 text-sm focus:border-purple-300 focus:outline-none focus:ring-2 focus:ring-purple-100" />
+          <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search PN, name, meter, address"
+            className="w-full rounded-xl border border-slate-200 pl-9 pr-3 py-3 text-sm focus:border-purple-300 focus:outline-none focus:ring-2 focus:ring-purple-100"
+          />
         </div>
-        <button onClick={() => { setScanErr(""); setScanOpen(true); }} className="inline-flex items-center gap-2 rounded-xl bg-purple-600 px-3 py-2 text-sm font-semibold text-white hover:bg-purple-700">
-          <QrCode size={16} /> Scan
-        </button>
         {[
           { v: "all", label: "All" },
           { v: "unread", label: "Unread" },
@@ -612,13 +682,65 @@ export default function FieldModePanel() {
       <Modal open={scanOpen} title="Scan Meter QR" subtitle="Works offline against your downloaded batch" onClose={() => setScanOpen(false)} size="sm">
         {scanOpen && (
           <Suspense fallback={<div className="py-6 text-center text-sm text-slate-500">Starting camera…</div>}>
-            <QRScannerView onResult={onScan} onError={(msg) => { setScanErr(msg); setScanOpen(false); }} />
+            <QRScannerView
+              onResult={(text) => onScan(text)}
+              onError={(msg) => { setScanErr(msg); setScanOpen(false); }}
+            />
           </Suspense>
         )}
-        <button onClick={() => setScanOpen(false)} className="mt-3 w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+        <button
+          onClick={() => { setScanOpen(false); setManualOpen(true); }}
+          className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-700 active:bg-slate-200"
+        >
+          <Keyboard size={15} /> Can't scan? Type the meter number
+        </button>
+        <button onClick={() => setScanOpen(false)} className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 active:bg-slate-50">
           Cancel
         </button>
       </Modal>
+
+      {/* Manual entry — fallback when the camera can't read the sticker. */}
+      <Modal open={manualOpen} title="Type Meter Number" subtitle="Searches your downloaded batch. Works offline." onClose={() => setManualOpen(false)} size="sm">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const v = manualValue.trim();
+            if (!v) return;
+            setManualOpen(false);
+            setManualValue("");
+            onScan(v); // parseMeterQR accepts a bare meter number
+          }}
+          className="space-y-3"
+        >
+          <input
+            value={manualValue}
+            onChange={(e) => setManualValue(e.target.value.toUpperCase())}
+            autoFocus
+            inputMode="numeric"
+            placeholder="e.g. 00012345"
+            className="w-full rounded-2xl border border-slate-200 px-4 py-4 text-center font-mono text-xl tracking-widest focus:border-purple-300 focus:outline-none focus:ring-2 focus:ring-purple-100"
+          />
+          <button
+            type="submit"
+            disabled={!manualValue.trim()}
+            className="w-full inline-flex items-center justify-center gap-2 rounded-2xl bg-purple-600 px-4 py-3 text-base font-bold text-white active:scale-95 disabled:opacity-50"
+          >
+            <Search size={18} /> Find meter
+          </button>
+        </form>
+      </Modal>
+
+      {/* Sticky bottom-right FAB — the primary action in Field Mode. Always
+          reachable while scrolling the member list. Includes a paddding
+          for Android nav bar safe-area. */}
+      <button
+        onClick={() => { setScanErr(""); setScanOpen(true); }}
+        className="fixed right-4 bottom-4 z-40 inline-flex items-center gap-2 rounded-full bg-purple-600 px-5 py-4 text-base font-bold text-white shadow-2xl ring-4 ring-purple-200 active:scale-95"
+        style={{ bottom: "max(1rem, env(safe-area-inset-bottom))" }}
+        aria-label="Scan meter QR"
+      >
+        <QrCode size={22} /> Scan
+      </button>
     </Card>
   );
 }
