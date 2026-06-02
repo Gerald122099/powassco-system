@@ -51,6 +51,14 @@ const WaterReadingSchema = new mongoose.Schema(
 // KEEP ONLY THIS - it creates all needed indexes
 WaterReadingSchema.index({ periodKey: 1, pnNo: 1, meterNumber: 1 }, { unique: true });
 
+// "latest reading per (pn, meter)" — used by /my-batch enrichment and
+// any per-meter history lookup. periodKey descending lets MongoDB use
+// an index-only scan + limit 1 with no in-memory sort.
+WaterReadingSchema.index({ pnNo: 1, meterNumber: 1, periodKey: -1 });
+// "all readings for a member, newest first" — bill detail screens,
+// member history page, public inquiry-by-PN.
+WaterReadingSchema.index({ pnNo: 1, periodKey: -1 });
+
 // ✅ compute rawConsumed + consumed(billed)
 WaterReadingSchema.pre("validate", function (next) {
   const prev = Number(this.previousReading ?? 0);

@@ -123,6 +123,16 @@ WaterBillSchema.index({ status: 1 }); // Keep this if you often filter by status
 // Period-wide queries (analytics, reports, period exports) — the unique index
 // above starts with pnNo, so a period-only filter can't use it.
 WaterBillSchema.index({ periodKey: 1, status: 1 });
+// "latest paid bill per (pn, meter)" — fallback for /my-batch when
+// a meter has no dedicated reading row yet. Index-only scan + limit 1
+// instead of a collection scan filtered by status.
+WaterBillSchema.index({ pnNo: 1, status: 1, periodKey: -1 });
+// "member bills, newest first" — the member detail screen and the
+// cashier dues lookup both query this exact shape.
+WaterBillSchema.index({ pnNo: 1, periodKey: -1 });
+// Prior-unsettled scan in /my-batch — currently a collection-wide
+// status+periodKey filter; this gives us an index path scoped per PN.
+WaterBillSchema.index({ pnNo: 1, status: 1, periodKey: 1 });
 
 const WaterBill =
   mongoose.models.WaterBill ||

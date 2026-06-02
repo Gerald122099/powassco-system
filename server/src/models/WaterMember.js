@@ -466,6 +466,16 @@ WaterMemberSchema.index({ accountStatus: 1 });
 WaterMemberSchema.index({ "personal.birthdate": 1 });
 // NEW: Index for meter status queries
 WaterMemberSchema.index({ "meters.meterStatus": 1 });
+// Equality lookup by meter number — used by the public meter-only
+// inquiry endpoint and any "find member by meter" path. Multikey index
+// on an array field; cheap on 1500 members but saves a full collection
+// scan as the table grows. Not unique because in practice the same
+// physical meter number CAN appear on different accounts after a
+// reconnection / transfer.
+WaterMemberSchema.index({ "meters.meterNumber": 1 });
+// Status filters on the members list (active/inactive/disconnected) —
+// admin dashboards and analytics filter by this constantly.
+WaterMemberSchema.index({ accountStatus: 1, pnNo: 1 });
 
 // REMOVED: Comment out or remove the 2dsphere index to fix the error
 // WaterMemberSchema.index({ "meters.location.coordinates": "2dsphere" });
