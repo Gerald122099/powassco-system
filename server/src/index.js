@@ -26,6 +26,7 @@ import publicRequestsRoutes from "./routes/public/requests.routes.js";
 import adminRequestsRoutes from "./routes/admin/requests.routes.js";
 import meetingsRoutes from "./routes/meetings.routes.js";
 import publicAnnouncementsRoutes from "./routes/public/announcements.routes.js";
+import publicPushRoutes from "./routes/public/push.routes.js";
 import adminAnnouncementsRoutes from "./routes/admin/announcements.routes.js";
 import assetsRoutes from "./routes/admin/assets.routes.js";
 import publicPaymentsRoutes from "./routes/public/payments.routes.js";
@@ -131,6 +132,7 @@ app.use("/api/public/water", waterInquiryRoutes);
 app.use("/api/public/requests", publicRequestsRoutes);
 app.use("/api/public/announcements", publicAnnouncementsRoutes);
 app.use("/api/public/payments", publicPaymentsRoutes);
+app.use("/api/public/push", publicPushRoutes);
 app.use("/api/water/batches", waterBatchesRoutes);
 
 // ✅ LOAN MODULE

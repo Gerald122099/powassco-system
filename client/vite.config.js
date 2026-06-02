@@ -8,12 +8,12 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      // Inline the service-worker registration directly in index.html
-      // rather than loading it from /registerSW.js. PWABuilder reads the
-      // page source statically and only credits a SW when it sees an
-      // explicit navigator.serviceWorker.register() call — an external
-      // script tag isn't enough to clear its "add a service worker"
-      // action item even when the SW is fully working.
+      // Custom SW (src/sw.js) so we can own push + notificationclick
+      // handlers. Workbox precaching is still wired up inside that file
+      // via injectManifest's __WB_MANIFEST placeholder.
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.js',
       injectRegister: 'inline',
       includeAssets: ['logo.png', 'icon-192.png', 'icon-512.png', 'icon-maskable-192.png', 'icon-maskable-512.png', 'screenshot-mobile.png', 'screenshot-wide.png'],
       manifest: {
@@ -98,18 +98,11 @@ export default defineConfig({
           },
         ],
       },
-      workbox: {
-        // Cache the app shell so it loads offline; API data is handled by IndexedDB.
+      // injectManifest mode reads src/sw.js as the source of truth.
+      // We tell it which files to add to the precache manifest there.
+      injectManifest: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
-        navigateFallback: '/index.html',
-        // Never let the SW intercept cross-origin API calls.
-        navigateFallbackDenylist: [/^\/api/],
-        cleanupOutdatedCaches: true,
-        // Activate a new service worker immediately so users see the latest
-        // build on the next page load instead of after a manual reload.
-        skipWaiting: true,
-        clientsClaim: true,
       },
     }),
   ],

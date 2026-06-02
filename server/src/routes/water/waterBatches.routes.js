@@ -8,6 +8,7 @@ import WaterBatch from "../../models/WaterBatch.js";
 import WaterMember from "../../models/WaterMember.js";
 import WaterReading from "../../models/WaterReading.js";
 import WaterBill from "../../models/WaterBill.js";
+import { pushAsync } from "../../utils/push.js";
 import User from "../../models/User.js";
 import AuditLog from "../../models/AuditLog.js";
 import { requireAuth, requireRole } from "../../middleware/auth.js";
@@ -771,7 +772,24 @@ router.post("/import-readings", ...guard, async (req, res) => {
     }
     
     console.log(`Import complete: ${results.success} success, ${results.failed} failed, ${results.skipped} skipped`);
-    
+
+    // Push notification fire-and-forget — every successful reading for
+    // a saved meter / PN gets a "new bill is ready" push to that
+    // subscriber's phone. Clicking the notification deep-links into
+    // /inquiry with the meter / PN preloaded so they see the new dues.
+    for (const d of results.details || []) {
+      if (d.status !== "success") continue;
+      const url = `/inquiry?meter=${encodeURIComponent(d.meterNumber)}`;
+      const payload = {
+        title: `New reading recorded · ${periodKey}`,
+        body: `Meter ${d.meterNumber} · open POWASSCO to see your dues.`,
+        url,
+        tag: `reading-${d.meterNumber}-${periodKey}`,
+      };
+      pushAsync({ kind: "meter", value: d.meterNumber }, payload);
+      pushAsync({ kind: "pn", value: d.pnNo }, payload);
+    }
+
     res.json({
       ...results,
       message: `Imported ${results.success} readings, ${results.failed} failed, ${results.skipped} skipped`

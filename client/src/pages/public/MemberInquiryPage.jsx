@@ -5,7 +5,8 @@ import WaterConsumptionChart from "../../components/WaterConsumptionChart";
 import PayOnlineModal from "../../components/PayOnlineModal";
 import { printWaterReceipt, printLoanReceipt } from "../../lib/paymentReceiptPrint";
 import { apiFetch } from "../../lib/api";
-import { ChevronUp, ChevronDown } from "lucide-react";
+import { enablePushForItems, updatePushItems, disablePush, getCurrentSubscription, pushSupported } from "../../lib/pushClient";
+import { ChevronUp, ChevronDown, Bell, BellOff } from "lucide-react";
 
 function money(n) {
   return Number(n || 0).toLocaleString(undefined, {
@@ -47,6 +48,45 @@ export default function MemberInquiryPage() {
 
   // Saved-locally list — quick-pick chips so users don't retype.
   const [saved, setSaved] = useState(() => loadSaved());
+  // Push notification state — whether THIS device is currently
+  // subscribed for any of the saved handles.
+  const [pushOn, setPushOn] = useState(false);
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushErr, setPushErr] = useState("");
+  useEffect(() => {
+    if (!pushSupported()) return;
+    getCurrentSubscription().then((sub) => setPushOn(!!sub)).catch(() => {});
+  }, []);
+
+  // Whenever the saved list changes AND we already have a subscription
+  // active, push the updated items list to the server so newly-saved
+  // meters start receiving notifications without re-prompting permission.
+  useEffect(() => {
+    if (!pushOn) return;
+    updatePushItems(saved.map((s) => ({ kind: s.kind, value: s.value }))).catch(() => {});
+  }, [saved, pushOn]);
+
+  async function toggleNotifications() {
+    setPushErr("");
+    setPushBusy(true);
+    try {
+      if (pushOn) {
+        await disablePush();
+        setPushOn(false);
+      } else {
+        if (saved.length === 0) {
+          setPushErr("Save a PN or meter first, then enable notifications.");
+          return;
+        }
+        await enablePushForItems(saved.map((s) => ({ kind: s.kind, value: s.value })));
+        setPushOn(true);
+      }
+    } catch (e) {
+      setPushErr(e.message || "Could not change notifications setting.");
+    } finally {
+      setPushBusy(false);
+    }
+  }
 
   // Online payment
   const [payTarget, setPayTarget] = useState(null);
@@ -307,7 +347,28 @@ export default function MemberInquiryPage() {
                   on page mount so a return visit just shows the dues. */}
               {saved.length > 0 && (
                 <div className="rounded-2xl border border-green-100 bg-green-50/40 p-3">
-                  <div className="text-[11px] font-semibold uppercase tracking-wide text-green-700">Saved on this phone</div>
+                  <div className="flex items-center justify-between">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-green-700">Saved on this phone</div>
+                    {pushSupported() && (
+                      <button
+                        type="button"
+                        onClick={toggleNotifications}
+                        disabled={pushBusy}
+                        className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-bold transition ${
+                          pushOn
+                            ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                            : "border border-emerald-300 text-emerald-700 hover:bg-emerald-100"
+                        }`}
+                        title={pushOn ? "Turn off notifications on this device" : "Get a push when a new reading or due date is posted"}
+                      >
+                        {pushOn ? <Bell size={12} /> : <BellOff size={12} />}
+                        {pushBusy ? "…" : pushOn ? "Notifications on" : "Enable notifications"}
+                      </button>
+                    )}
+                  </div>
+                  {pushErr && (
+                    <div className="mt-1.5 text-[11px] text-red-700">{pushErr}</div>
+                  )}
                   <div className="mt-2 flex flex-wrap gap-2">
                     {saved.map((s) => (
                       <div key={`${s.kind}-${s.value}`} className="inline-flex items-center gap-1 rounded-full border border-green-200 bg-white pl-3 pr-1 py-1 text-xs font-semibold text-green-800">
