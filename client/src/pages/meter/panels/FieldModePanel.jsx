@@ -557,7 +557,10 @@ export default function FieldModePanel() {
       {scanErr && <div className="mt-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{scanErr}</div>}
 
       {/* Member list */}
-      <div className="mt-4 space-y-3">
+      {/* Bottom padding (pb-32) keeps the very last member card's Save
+          button above both the bottom tab bar (~64px) and the Scan FAB
+          (~64px taller than that). */}
+      <div className="mt-4 space-y-3 pb-32">
         {total === 0 ? (
           <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">
             No meters assigned yet. {online ? "Tap “Download Batch” to load only YOUR assigned meters for offline reading." : "Connect to the internet and download your batch."}
@@ -667,9 +670,15 @@ export default function FieldModePanel() {
                   })}
                 </div>
 
-                <div className="mt-3 flex justify-end">
-                  <button onClick={() => saveMember(m)} className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">
-                    <Save size={15} /> Save{online ? " & Sync" : " (offline)"}
+                {/* Full-width primary action so the Scan FAB at the
+                    right edge of the viewport never overlays it. Also
+                    bigger touch target (~52px tall) for mobile thumbs. */}
+                <div className="mt-3">
+                  <button
+                    onClick={() => saveMember(m)}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-4 py-3 text-base font-bold text-white shadow-sm active:scale-95 active:bg-emerald-700"
+                  >
+                    <Save size={18} /> Save{online ? " & Sync" : " (offline)"}
                   </button>
                 </div>
               </div>
