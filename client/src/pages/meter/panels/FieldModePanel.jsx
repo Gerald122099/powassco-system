@@ -257,35 +257,57 @@ export default function FieldModePanel() {
     setScanOpen(false);
     const parsed = parseMeterQR(text);
     if (!parsed) return setScanErr("Unrecognized QR code.");
-    // Resolve against the cached batch so the plumber sees who/what they
-    // just scanned — account name, PN no, and meter number — before they
-    // even start typing the reading. Works fully offline.
-    const member = members.find((m) => mnorm(m.pnNo) === mnorm(parsed.pnNo));
-    setQ(parsed.pnNo);
-    setFilter("all");
     setScanErr("");
+    setFilter("all");
+
+    // Resolve the member.
+    //   • POW|PN|METER or PN|METER  → match by PN.
+    //   • bare meter number         → match by meter (parsed.meterOnly).
+    // Either way, falling back to a meter-number search lets us recover
+    // even when the QR uses an old/short format from a sticker printed
+    // before this system existed.
+    const wantMeter = String(parsed.meterNumber || "").toUpperCase();
+    let member = null;
+    if (parsed.pnNo) {
+      member = members.find((m) => mnorm(m.pnNo) === mnorm(parsed.pnNo));
+    }
+    if (!member && wantMeter) {
+      member = members.find((m) =>
+        (m.activeBillingMeters || []).some((mt) => mnorm(mt.meterNumber) === wantMeter)
+      );
+    }
+
+    // Search box: prefer meter number when we have it (matches both the
+    // PN row AND highlights the meter in lookups), else fall back to PN.
+    setQ(wantMeter || parsed.pnNo || "");
+
     if (!member) {
-      flash(`Scanned ${parsed.pnNo} — not in your downloaded batch.`, "error", true);
+      const label = parsed.pnNo || wantMeter || "this code";
+      flash(`Scanned ${label} — not in your downloaded batch.`, "error", true);
       return;
     }
-    const meter = (member.activeBillingMeters || []).find((mt) => mnorm(mt.meterNumber) === mnorm(parsed.meterNumber));
-    const meterLabel = parsed.meterNumber || meter?.meterNumber || "—";
-    const key = `${mnorm(member.pnNo)}__${mnorm(parsed.meterNumber || meter?.meterNumber || "")}`;
-    const alreadyEncoded = isRead(member, parsed.meterNumber || meter?.meterNumber || "");
+
+    const meter = (member.activeBillingMeters || []).find((mt) => mnorm(mt.meterNumber) === wantMeter);
+    const meterLabel = wantMeter || meter?.meterNumber || "—";
+    const key = meter ? `${mnorm(member.pnNo)}__${mnorm(meter.meterNumber)}` : null;
+    const alreadyEncoded = meter ? isRead(member, meter.meterNumber) : false;
 
     if (alreadyEncoded) {
       flash(`Already encoded · ${member.accountName} · Meter ${meterLabel}`, "success", true);
+    } else if (meter) {
+      flash(`${member.accountName} • ${member.pnNo} • Meter ${meterLabel}`, "success");
     } else {
-      flash(`${member.accountName} • ${member.pnNo} • Meter ${meterLabel}${meter ? "" : " (not on this account)"}`, meter ? "success" : "error", !meter);
+      // We matched the PN but the QR's meter number isn't an active
+      // billing meter on this account. Likely a swapped/replaced meter.
+      flash(`Scanned ${meterLabel} — not an active meter on ${member.accountName} (${member.pnNo}). Verify the meter sticker.`, "error", true);
     }
 
-    // Scroll the matched member card into view and, if the meter is still
-    // unread, focus its input so the plumber can type the reading right
-    // away — no scrolling/tapping required.
+    // Scroll the matched member card into view and, when the meter is
+    // unread, focus its input so the plumber can type immediately.
     setTimeout(() => {
       const row = document.getElementById(`pn-row-${mnorm(member.pnNo)}`);
       if (row) row.scrollIntoView({ behavior: "smooth", block: "center" });
-      if (meter && !alreadyEncoded) {
+      if (key && !alreadyEncoded) {
         const inp = document.getElementById(`meter-input-${key}`);
         if (inp) { inp.focus(); inp.select?.(); }
       }
