@@ -259,7 +259,13 @@ export default function MembersPanel() {
       if (classificationFilter) {
         url += `&classification=${encodeURIComponent(classificationFilter)}`;
       }
-      if (sitioFilter) {
+      // sitioFilter format is either "" (no filter), a plain sitio name,
+      // or "AR:<Sitio>" — the latter narrows to migrated / accounts-
+      // receivable members in that sitio (isExistingMember=true).
+      if (sitioFilter.startsWith("AR:")) {
+        const arSitio = sitioFilter.slice(3);
+        url += `&sitio=${encodeURIComponent(arSitio)}&existing=true`;
+      } else if (sitioFilter) {
         url += `&sitio=${encodeURIComponent(sitioFilter)}`;
       }
 
@@ -1004,12 +1010,19 @@ export default function MembersPanel() {
             value={sitioFilter}
             onChange={(e) => { setPage(1); setSitioFilter(e.target.value); }}
             className="rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm"
-            title="Filter by sitio"
+            title="Filter by sitio or accounts-receivable group"
           >
             <option value="">All Sitios</option>
             {sitios.map((s) => (
               <option key={s} value={s}>{s}</option>
             ))}
+            {sitios.length > 0 && (
+              <optgroup label="Accounts Receivable">
+                {sitios.map((s) => (
+                  <option key={`ar-${s}`} value={`AR:${s}`}>AR Water — {s}</option>
+                ))}
+              </optgroup>
+            )}
           </select>
           
           <button
