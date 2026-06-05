@@ -4,24 +4,69 @@ import WaterBill from "../../models/WaterBill.js";
 import { requireAuth, requireRole, requireAdminAuthz } from "../../middleware/auth.js";
 
 const router = express.Router();
+
+// 6-char alphanumeric pnNo for new accounts. Skips 0/O/1/I to avoid OCR
+// + handwriting confusion in field receipts. ~30^6 = 729M possible
+// values; retries until it finds an unused one. Re-keys the meter
+// numbers as <5-digit base>#N for new meters under the same account.
+const PN_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+function randomPnNo() {
+  let s = "";
+  for (let i = 0; i < 6; i++) s += PN_CHARS[Math.floor(Math.random() * PN_CHARS.length)];
+  return s;
+}
+async function generateUniquePnNo() {
+  for (let i = 0; i < 50; i++) {
+    const candidate = randomPnNo();
+    // eslint-disable-next-line no-await-in-loop
+    const dupe = await WaterMember.findOne({ pnNo: candidate }).select("_id").lean();
+    if (!dupe) return candidate;
+  }
+  throw new Error("Could not allocate a unique pnNo after 50 tries.");
+}
+function randomMeterBase() {
+  return String(10000 + Math.floor(Math.random() * 90000));
+}
+
+// Apply auto-generation to a meters array. Meters arrive from the
+// client without numbers (the form no longer asks the officer to
+// invent one); we assign <base>#N where N is the meter's billing
+// sequence + 1. The base is shared per account so 12345#1 and 12345#2
+// always belong to the same PN. Returns the SAME array (mutated).
+function assignAutoMeterNumbers(meters, sharedBase) {
+  meters.forEach((m, i) => {
+    const provided = String(m.meterNumber || "").trim();
+    if (provided) {
+      m.meterNumber = provided.toUpperCase();
+    } else {
+      m.meterNumber = `${sharedBase}#${i + 1}`;
+    }
+  });
+  return meters;
+}
 const guard = [requireAuth, requireRole(["admin", "water_bill_officer", "meter_reader"])];
 // Edits + deletes go through dual-control: admin role passes; everyone else
 // must present a fresh X-Admin-Authz token (an admin entered their own
 // password + 2FA code on the officer's screen).
 const editGuard = [requireAuth, requireRole(["admin", "water_bill_officer", "meter_reader"]), requireAdminAuthz];
 
-// GET /api/water/members?q=&page=&limit=&classification=&status=
+// GET /api/water/members?q=&page=&limit=&classification=&status=&sitio=&existing=
 router.get("/", ...guard, async (req, res) => {
   const q = (req.query.q || "").trim();
   const page = Math.max(1, parseInt(req.query.page || "1", 10));
   const limit = Math.min(100, Math.max(1, parseInt(req.query.limit || "12", 10)));
   const classification = (req.query.classification || "").trim();
   const status = (req.query.status || "").trim();
+  const sitio = (req.query.sitio || "").trim();
+  const existing = (req.query.existing || "").trim(); // "true" | "false" | ""
   const skip = (page - 1) * limit;
 
   const filter = {};
   if (classification) filter["billing.classification"] = classification;
   if (status) filter.accountStatus = status;
+  if (sitio) filter["address.streetSitioPurok"] = sitio;
+  if (existing === "true") filter.isExistingMember = true;
+  else if (existing === "false") filter.isExistingMember = { $ne: true };
 
   if (q) {
     filter.$or = [
@@ -48,6 +93,20 @@ router.get("/", ...guard, async (req, res) => {
   } catch (error) {
     console.error("Error fetching members:", error);
     res.status(500).json({ message: "Failed to fetch members" });
+  }
+});
+
+// GET /api/water/members/sitios — distinct, sorted sitio (streetSitioPurok)
+// list. Powers the sitio filter dropdown in the Members panel.
+router.get("/sitios", ...guard, async (req, res) => {
+  try {
+    const sitios = await WaterMember.distinct("address.streetSitioPurok", {
+      "address.streetSitioPurok": { $nin: [null, ""] },
+    });
+    res.json({ sitios: sitios.sort() });
+  } catch (error) {
+    console.error("Error fetching sitios:", error);
+    res.status(500).json({ message: "Failed to fetch sitios" });
   }
 });
 
@@ -103,35 +162,44 @@ router.post("/", ...guard, async (req, res) => {
       exemptionReason
     } = req.body;
 
-    // Validation
-    if (!pnNo || !accountName || !contact?.mobileNumber || !personal?.fullName) {
-      return res.status(400).json({ 
-        message: "Missing required fields: pnNo, accountName, mobileNumber, fullName" 
-      });
+    const isExisting = req.body.isExistingMember === true;
+
+    // Validation. Existing (migrated) members can have minimal info —
+    // accountName is the only hard requirement; everything else is
+    // filled in by the officer later through the UI.
+    if (!accountName) {
+      return res.status(400).json({ message: "Account name is required" });
+    }
+    if (!isExisting) {
+      if (!contact?.mobileNumber || !personal?.fullName) {
+        return res.status(400).json({
+          message: "Missing required fields: mobileNumber, fullName",
+        });
+      }
     }
 
-    // Check for duplicate PN No
-    const existingMember = await WaterMember.findOne({ pnNo: pnNo.toUpperCase() });
-    if (existingMember) {
-      return res.status(409).json({ 
-        message: `PN Number ${pnNo} already exists` 
-      });
+    // pnNo: auto-generate a 6-char alphanumeric account number when the
+    // officer doesn't supply one. New-flow path (always auto-gen) and
+    // legacy-flow path (use what's posted) both work — the officer can
+    // override by typing a value in the form.
+    let finalPnNo = (pnNo || "").trim().toUpperCase();
+    if (!finalPnNo) {
+      finalPnNo = await generateUniquePnNo();
+    } else {
+      const existingMember = await WaterMember.findOne({ pnNo: finalPnNo });
+      if (existingMember) {
+        return res.status(409).json({ message: `Account number ${finalPnNo} already exists` });
+      }
     }
 
     // Validate meters
     if (!meters || !Array.isArray(meters) || meters.length === 0) {
-      return res.status(400).json({ 
-        message: "At least one meter is required" 
-      });
+      return res.status(400).json({ message: "At least one meter is required" });
     }
 
-    for (const meter of meters) {
-      if (!meter.meterNumber || !meter.meterNumber.trim()) {
-        return res.status(400).json({ 
-          message: "Each meter must have a meter number" 
-        });
-      }
-    }
+    // Auto-number meters when the client doesn't supply one. Shared
+    // 5-digit base; per-meter "#N" suffix matches billing sequence.
+    assignAutoMeterNumbers(meters, randomMeterBase());
 
     // FIXED: Clean coordinates before saving
     const cleanAddress = {
@@ -181,28 +249,29 @@ router.post("/", ...guard, async (req, res) => {
 
     // Create member
     const member = new WaterMember({
-      pnNo: pnNo.toUpperCase().trim(),
+      pnNo: finalPnNo,
       accountName: accountName.trim(),
       accountType: accountType || "individual",
       accountStatus: accountStatus || "active",
+      isExistingMember: isExisting,
       personal: {
-        fullName: personal.fullName.trim(),
-        gender: personal.gender || "other",
-        birthdate: personal.birthdate,
-        dateRegistered: personal.dateRegistered ? new Date(personal.dateRegistered) : new Date(),
-        isSeniorCitizen: personal.isSeniorCitizen || false,
-        seniorId: (personal.seniorId || "").trim(),
-        seniorDiscountRate: parseFloat(personal.seniorDiscountRate) || 5,
-        spouseName: (personal.spouseName || "").trim(),
-        spouseIsSenior: personal.spouseIsSenior || false,
-        spouseSeniorId: (personal.spouseSeniorId || "").trim(),
+        fullName: (personal?.fullName || accountName).trim(),
+        gender: personal?.gender || "other",
+        birthdate: personal?.birthdate || "",
+        dateRegistered: personal?.dateRegistered ? new Date(personal.dateRegistered) : new Date(),
+        isSeniorCitizen: personal?.isSeniorCitizen || false,
+        seniorId: (personal?.seniorId || "").trim(),
+        seniorDiscountRate: parseFloat(personal?.seniorDiscountRate) || 5,
+        spouseName: (personal?.spouseName || "").trim(),
+        spouseIsSenior: personal?.spouseIsSenior || false,
+        spouseSeniorId: (personal?.spouseSeniorId || "").trim(),
       },
       address: cleanAddress,
       contact: {
-        mobileNumber: contact.mobileNumber.trim(),
-        mobileNumber2: (contact.mobileNumber2 || "").trim(),
-        email: (contact.email || "").trim(),
-        email2: (contact.email2 || "").trim(),
+        mobileNumber: (contact?.mobileNumber || "").trim(),
+        mobileNumber2: (contact?.mobileNumber2 || "").trim(),
+        email: (contact?.email || "").trim(),
+        email2: (contact?.email2 || "").trim(),
       },
       billing: {
         classification: billing?.classification || "residential",
@@ -518,10 +587,34 @@ router.post("/:id/meters", ...guard, async (req, res) => {
     }
 
     const md = req.body || {};
-    if (!md.meterNumber || !String(md.meterNumber).trim()) {
-      return res.status(400).json({ message: "Meter number is required" });
+
+    // Auto-generate meter number when the officer doesn't supply one.
+    // Reuses the 5-digit base prefix from the account's existing meters
+    // so all meters on one PN share an identifier — only the "#N"
+    // suffix changes.
+    let meterNumber;
+    if (md.meterNumber && String(md.meterNumber).trim()) {
+      meterNumber = String(md.meterNumber).toUpperCase().trim();
+    } else {
+      const existingBase = (() => {
+        for (const m of member.meters) {
+          const match = String(m.meterNumber || "").match(/^(\d{5})#\d+$/);
+          if (match) return match[1];
+        }
+        return null;
+      })();
+      const base = existingBase || randomMeterBase();
+      // Find the next free "#N" suffix on this account.
+      const usedSuffixes = new Set(
+        member.meters
+          .map((m) => String(m.meterNumber || "").match(/^\d{5}#(\d+)$/))
+          .filter(Boolean)
+          .map((m) => parseInt(m[1], 10))
+      );
+      let nextSuffix = 1;
+      while (usedSuffixes.has(nextSuffix)) nextSuffix++;
+      meterNumber = `${base}#${nextSuffix}`;
     }
-    const meterNumber = String(md.meterNumber).toUpperCase().trim();
 
     if (member.meters.some((m) => m.meterNumber === meterNumber)) {
       return res.status(409).json({ message: "That meter number is already on this account" });

@@ -2,9 +2,13 @@ import mongoose from "mongoose";
 
 const PersonalSchema = new mongoose.Schema(
   {
-    fullName: { type: String, required: true, trim: true },
+    // fullName and birthdate are no longer required at the schema layer
+    // for the same reason as mobileNumber — migrated members may have
+    // partial info on day one. The /water/members POST route enforces
+    // them for NEW members; existing members can fill them in later.
+    fullName: { type: String, trim: true, default: "" },
     gender: { type: String, enum: ["male", "female", "other"], default: "other" },
-    birthdate: { type: String, required: true, trim: true }, 
+    birthdate: { type: String, trim: true, default: "" },
     dateRegistered: { type: Date },
     
     // Senior Citizen Fields
@@ -50,7 +54,11 @@ const AddressSchema = new mongoose.Schema(
 
 const ContactSchema = new mongoose.Schema(
   {
-    mobileNumber: { type: String, required: true, trim: true },
+    // Mobile is no longer required at the schema layer — migrated/legacy
+    // members may not have one yet. The /water/members POST route still
+    // enforces it for NEW members (isExistingMember: false); existing
+    // members can leave it blank and the officer fills it in later.
+    mobileNumber: { type: String, trim: true, default: "" },
     mobileNumber2: { type: String, trim: true, default: "" },
     email: { type: String, trim: true },
     email2: { type: String, trim: true, default: "" },
@@ -226,7 +234,14 @@ const MeterSchema = new mongoose.Schema(
     
     // Meter reader notes specific to this meter
     meterReaderNotes: { type: String, trim: true, default: "" },
-    
+
+    // Optional sub-name (tenant / shop label). Migrated accounts often have
+    // multiple meters under one head-of-household name; the parenthesised
+    // names in the legacy list (e.g. "Aguanta, Christopher #1 (susan)" or
+    // "Bitoon, Higinita # 1 (store)") map onto this field per meter so the
+    // reader / cashier can identify whose meter they're looking at.
+    subName: { type: String, trim: true, default: "" },
+
     // Meter specifications
     serialNumber: { type: String, trim: true, default: "" },
     initialReading: { type: Number, default: 0 },
@@ -309,6 +324,15 @@ const WaterMemberSchema = new mongoose.Schema(
     // Account Dates
     connectionDate: { type: Date, default: Date.now },
     disconnectionDate: { type: Date },
+
+    // True for accounts migrated from the legacy paper ledger. Relaxes
+    // the validation rules in the POST /water/members route so officers
+    // can register the head-of-household with minimal info and fill in
+    // mobile / birthdate / full address later. The UI also uses this
+    // flag to label the identifier "Account Number" (vs "PN Number") and
+    // to enable the "first reading enters both previous AND present"
+    // behaviour in Field Mode.
+    isExistingMember: { type: Boolean, default: false },
     
     // Nested Schemas
     personal: { type: PersonalSchema, required: true },

@@ -91,6 +91,8 @@ export default function MembersPanel() {
   const [searchInput, setSearchInput] = useState(""); // immediate input value
   const [page, setPage] = useState(1);
   const [classificationFilter, setClassificationFilter] = useState("");
+  const [sitioFilter, setSitioFilter] = useState("");
+  const [sitios, setSitios] = useState([]);
 
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
@@ -257,7 +259,10 @@ export default function MembersPanel() {
       if (classificationFilter) {
         url += `&classification=${encodeURIComponent(classificationFilter)}`;
       }
-      
+      if (sitioFilter) {
+        url += `&sitio=${encodeURIComponent(sitioFilter)}`;
+      }
+
       const data = await apiFetch(url, { token });
       setItems(data.items || []);
       setTotal(data.total || 0);
@@ -271,7 +276,19 @@ export default function MembersPanel() {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, page, classificationFilter]);
+  }, [q, page, classificationFilter, sitioFilter]);
+
+  // Load distinct sitios once for the filter dropdown.
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await apiFetch("/water/members/sitios", { token });
+        setSitios(res.sitios || []);
+      } catch {
+        /* non-fatal — filter just won't populate */
+      }
+    })();
+  }, [token]);
 
   // Debounce search: only fetch ~400ms after the user stops typing.
   useEffect(() => {
@@ -981,6 +998,18 @@ export default function MembersPanel() {
             <option value="commercial">Commercial</option>
             <option value="institutional">Institutional</option>
             <option value="government">Government</option>
+          </select>
+
+          <select
+            value={sitioFilter}
+            onChange={(e) => { setPage(1); setSitioFilter(e.target.value); }}
+            className="rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm"
+            title="Filter by sitio"
+          >
+            <option value="">All Sitios</option>
+            {sitios.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
           </select>
           
           <button
