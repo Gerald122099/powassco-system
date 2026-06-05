@@ -31,9 +31,21 @@
 
 import mongoose from "mongoose";
 import dotenv from "dotenv";
+import dns from "node:dns";
 import WaterMember from "../models/WaterMember.js";
 
 dotenv.config();
+
+// Force Node's resolver to use a known public DNS server. Some
+// network environments (corporate VPN, sandboxed shells) block the
+// SRV queries that mongodb+srv:// relies on; pinning to Google /
+// Cloudflare avoids "querySrv ECONNREFUSED" without needing a
+// network change.
+try {
+  dns.setServers(["8.8.8.8", "8.8.4.4", "1.1.1.1"]);
+} catch {
+  /* older Node — skip */
+}
 
 // ─── Source data ─────────────────────────────────────────────────────
 
