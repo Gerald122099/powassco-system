@@ -37,9 +37,13 @@ dotenv.config();
 
 // ─── Source data ─────────────────────────────────────────────────────
 
+// Each entry is one accounts-receivable group. Most have a sitio so
+// the address field gets populated; AR-TNPL has no sitio (the user
+// explicitly said "leave the sitio because no sitio assigned").
 const SITIOS = [
   {
     name: "Looc Sur",
+    arCategory: "AR Water - Looc Sur",
     barangay: "OWAK",
     municipalityCity: "ASTURIAS",
     province: "CEBU",
@@ -403,6 +407,7 @@ Villafuerte, Josephine
   },
   {
     name: "Owak Proper",
+    arCategory: "AR Water - Owak Proper",
     barangay: "OWAK",
     municipalityCity: "ASTURIAS",
     province: "CEBU",
@@ -996,6 +1001,7 @@ Zair, Noraisa
   },
   {
     name: "San Miguel",
+    arCategory: "AR Water - San Miguel",
     barangay: "OWAK",
     municipalityCity: "ASTURIAS",
     province: "CEBU",
@@ -1276,6 +1282,7 @@ Vocales, Lourdes
   },
   {
     name: "Baybay",
+    arCategory: "AR Water - Baybay",
     barangay: "OWAK",
     municipalityCity: "ASTURIAS",
     province: "CEBU",
@@ -1472,6 +1479,137 @@ Villegas, Mary Josie
 Yagong, Michael Joshua
 `.trim(),
   },
+  {
+    // AR-TNPL is a separate accounts-receivable ledger with no sitio
+    // assignment. Members import with arCategory="AR-TNPL" and a blank
+    // streetSitioPurok so they show up under that filter group only.
+    name: "",
+    arCategory: "AR-TNPL",
+    barangay: "OWAK",
+    municipalityCity: "ASTURIAS",
+    province: "CEBU",
+    lines: `
+Abellanosa, Jennylyn
+Adlawan, Arlene
+Aguanta, Aniceta
+Aliñabon, Ma. Nona
+Aliviado, Leyneth
+Aliviado, Marinel
+Aliviado, Wendelyn
+Alfornon, Megadelene
+Alsado, Alona
+Aniciete, Arnold
+Aplaya, Shirley
+Aplaya, Wenifreda
+LGU
+Ayala, Meriam
+Bacunawa, Cristy
+Baga, Jessa
+Baguio, Teofila
+Bais, Cherry
+Baliguat, Aprilita
+Baliguat, Charisma
+Bancairen, Clavelita
+Barte, Josephine
+Bataluna, Michelle
+Bitoon, Esperanza
+Bitoon, Higinita
+Bitoon, Tiffany
+Bocales, Renilda
+Bocales, Rosalina
+Caballero, Oliver #2
+Cabilao, Ermelinda
+Cajes, Marilyn
+Canales, Nenida
+Cañada, Anecito
+Canada, Erlinda
+Candol, Maryjane
+Capangpangan, Teresita
+Conserva, Merlita
+Cortes, Ginagene
+Cortes, Rochella
+Cose, Marivel
+Cristoria, Honey Marie
+Cristoria, Rosalie
+Cumad, Princes
+Day Care (San Miguel)
+Dela Peña, Semon Gary
+Dinauto, Gamiel
+Ditchosa, Joselita
+Dolloso, Teresita
+Dumdum, Analuna
+Dupal-ag, Janice
+Empuerto, Lilia
+Espejo, Rosanna
+Espinosa, Rosalia
+Gemarino, Gilbert
+Hermoso, Rosemarie
+Iway, Emily
+Jaime, Jescil
+Jimenez, Raul
+Joseph, Jocelyn
+Juntong, Esterlita
+Lapiña, Junlou #1
+Lanza, Myrna
+Leyson, Antonio
+Libumfacil, Juvelyn
+Loregas, Charie
+Maglasang, Lelita
+Manabat, Cristy
+Mariano, Babylyn
+Marquez, Pedina
+Medalla, Charity
+Mollena, Oliver
+Montebon, Joseph
+Lumuntad, Brendelyn
+Monteron, Jela
+Montero, Milvie
+Monteron, Rea
+Montero, Villarina
+Nardo, Lolita
+Narvasa, Leah
+Navarro, Victorina
+Nobleza, Suzanette
+Oja, Ma. Fe
+Ondoy, Analiza
+Oño, Fritzie
+Ople, Jubert
+Ople, Marivic
+Ople, Tortillano
+Oquiton, Maricriz
+Ostea, Jennifer
+Padin, Eror
+Palange, Kennedy
+Papaya, Ginalyn
+Paradero, Emily
+Pepito, De-Ann
+Perales, Mardy
+Piloto, Givelyn
+Pintoy, Norma #2
+Pintoy, Norma #3
+Portuso, Gloria
+Quismundo, Josefina
+Rojo, Amor Noche
+Ruta, Luchie
+Saludar, Isa
+San Rojo, Grace
+Serad, Luisa Natividad
+Tapil, Mercedita
+Tingal, Magdalina
+Tocaldo, Rosanna
+Torion, Arlinda
+Torion, Lorna
+Torion, Sol Maria
+Torrenueva, Regelita
+Torres, Flordemae
+Tullos, Chad Ahron
+Uypala, Analiza
+Villafuerte, Josephine
+Waskin, Evangeline
+Yray, Emily
+Versoza, Marilou
+`.trim(),
+  },
 ];
 
 // ─── Parsing ────────────────────────────────────────────────────────
@@ -1608,7 +1746,7 @@ async function run() {
   let failed = 0;
 
   for (const sitio of SITIOS) {
-    console.log(`\n=== Sitio: ${sitio.name} ===`);
+    console.log(`\n=== ${sitio.arCategory} ${sitio.name ? `(Sitio: ${sitio.name})` : "(no sitio)"} ===`);
     const parsed = sitio.lines
       .split(/\r?\n/)
       .map((l) => l.trim())
@@ -1634,10 +1772,14 @@ async function run() {
           continue;
         }
 
-        // Skip if already imported (idempotent re-runs).
+        // Skip if already imported (idempotent re-runs). We key on
+        // (accountName + arCategory) so the same name appearing in BOTH
+        // a sitio list AND the TNPL list creates two separate rows —
+        // they're independent ledger entries even when the human is the
+        // same person.
         const dupe = await WaterMember.findOne({
           accountName,
-          "address.streetSitioPurok": sitio.name,
+          arCategory: sitio.arCategory,
         })
           .select("_id")
           .lean();
@@ -1698,11 +1840,14 @@ async function run() {
             isSeniorCitizen: anySenior,
           },
           address: {
-            streetSitioPurok: sitio.name,
-            barangay: sitio.barangay,
-            municipalityCity: sitio.municipalityCity,
-            province: sitio.province,
+            // Blank streetSitioPurok for the AR-TNPL ledger — the user
+            // explicitly said "no sitio assigned" for that group.
+            streetSitioPurok: sitio.name || "",
+            barangay: sitio.name ? sitio.barangay : "",
+            municipalityCity: sitio.name ? sitio.municipalityCity : "",
+            province: sitio.name ? sitio.province : "",
           },
+          arCategory: sitio.arCategory,
           contact: { mobileNumber: "", email: "", mobileNumber2: "" },
           billing: {
             classification: anyCommercial ? "commercial" : "residential",

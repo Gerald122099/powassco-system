@@ -93,6 +93,7 @@ export default function MembersPanel() {
   const [classificationFilter, setClassificationFilter] = useState("");
   const [sitioFilter, setSitioFilter] = useState("");
   const [sitios, setSitios] = useState([]);
+  const [arCategories, setArCategories] = useState([]);
 
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
@@ -259,12 +260,14 @@ export default function MembersPanel() {
       if (classificationFilter) {
         url += `&classification=${encodeURIComponent(classificationFilter)}`;
       }
-      // sitioFilter format is either "" (no filter), a plain sitio name,
-      // or "AR:<Sitio>" — the latter narrows to migrated / accounts-
-      // receivable members in that sitio (isExistingMember=true).
+      // sitioFilter format:
+      //   ""               → no filter
+      //   "<Sitio>"        → plain sitio filter (e.g. "Looc Sur")
+      //   "AR:<Category>"  → narrows to that arCategory (e.g.
+      //                      "AR Water - Looc Sur", "AR-TNPL")
       if (sitioFilter.startsWith("AR:")) {
-        const arSitio = sitioFilter.slice(3);
-        url += `&sitio=${encodeURIComponent(arSitio)}&existing=true`;
+        const cat = sitioFilter.slice(3);
+        url += `&arCategory=${encodeURIComponent(cat)}`;
       } else if (sitioFilter) {
         url += `&sitio=${encodeURIComponent(sitioFilter)}`;
       }
@@ -284,12 +287,13 @@ export default function MembersPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q, page, classificationFilter, sitioFilter]);
 
-  // Load distinct sitios once for the filter dropdown.
+  // Load distinct sitios + AR categories once for the filter dropdown.
   useEffect(() => {
     (async () => {
       try {
         const res = await apiFetch("/water/members/sitios", { token });
         setSitios(res.sitios || []);
+        setArCategories(res.arCategories || []);
       } catch {
         /* non-fatal — filter just won't populate */
       }
@@ -1016,10 +1020,10 @@ export default function MembersPanel() {
             {sitios.map((s) => (
               <option key={s} value={s}>{s}</option>
             ))}
-            {sitios.length > 0 && (
+            {arCategories.length > 0 && (
               <optgroup label="Accounts Receivable">
-                {sitios.map((s) => (
-                  <option key={`ar-${s}`} value={`AR:${s}`}>AR Water — {s}</option>
+                {arCategories.map((c) => (
+                  <option key={`ar-${c}`} value={`AR:${c}`}>{c}</option>
                 ))}
               </optgroup>
             )}

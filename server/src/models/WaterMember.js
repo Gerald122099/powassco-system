@@ -333,6 +333,15 @@ const WaterMemberSchema = new mongoose.Schema(
     // to enable the "first reading enters both previous AND present"
     // behaviour in Field Mode.
     isExistingMember: { type: Boolean, default: false },
+
+    // Accounts-receivable ledger group. Examples:
+    //   "AR Water - Looc Sur"   — sitio-bound water receivables
+    //   "AR Water - Owak Proper"
+    //   "AR Water - San Miguel"
+    //   "AR Water - Baybay"
+    //   "AR-TNPL"               — separate ledger, no sitio
+    // Indexed so the filter dropdown query stays fast at scale.
+    arCategory: { type: String, trim: true, default: "", index: true },
     
     // Nested Schemas
     personal: { type: PersonalSchema, required: true },

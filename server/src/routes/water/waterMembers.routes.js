@@ -50,7 +50,7 @@ const guard = [requireAuth, requireRole(["admin", "water_bill_officer", "meter_r
 // password + 2FA code on the officer's screen).
 const editGuard = [requireAuth, requireRole(["admin", "water_bill_officer", "meter_reader"]), requireAdminAuthz];
 
-// GET /api/water/members?q=&page=&limit=&classification=&status=&sitio=&existing=
+// GET /api/water/members?q=&page=&limit=&classification=&status=&sitio=&existing=&arCategory=
 router.get("/", ...guard, async (req, res) => {
   const q = (req.query.q || "").trim();
   const page = Math.max(1, parseInt(req.query.page || "1", 10));
@@ -59,6 +59,7 @@ router.get("/", ...guard, async (req, res) => {
   const status = (req.query.status || "").trim();
   const sitio = (req.query.sitio || "").trim();
   const existing = (req.query.existing || "").trim(); // "true" | "false" | ""
+  const arCategory = (req.query.arCategory || "").trim();
   const skip = (page - 1) * limit;
 
   const filter = {};
@@ -67,6 +68,7 @@ router.get("/", ...guard, async (req, res) => {
   if (sitio) filter["address.streetSitioPurok"] = sitio;
   if (existing === "true") filter.isExistingMember = true;
   else if (existing === "false") filter.isExistingMember = { $ne: true };
+  if (arCategory) filter.arCategory = arCategory;
 
   if (q) {
     filter.$or = [
@@ -96,14 +98,17 @@ router.get("/", ...guard, async (req, res) => {
   }
 });
 
-// GET /api/water/members/sitios — distinct, sorted sitio (streetSitioPurok)
-// list. Powers the sitio filter dropdown in the Members panel.
+// GET /api/water/members/sitios — distinct sitio + AR-category lists.
+// Powers the two filter dropdowns in the Members panel.
 router.get("/sitios", ...guard, async (req, res) => {
   try {
-    const sitios = await WaterMember.distinct("address.streetSitioPurok", {
-      "address.streetSitioPurok": { $nin: [null, ""] },
-    });
-    res.json({ sitios: sitios.sort() });
+    const [sitios, arCategories] = await Promise.all([
+      WaterMember.distinct("address.streetSitioPurok", {
+        "address.streetSitioPurok": { $nin: [null, ""] },
+      }),
+      WaterMember.distinct("arCategory", { arCategory: { $nin: [null, ""] } }),
+    ]);
+    res.json({ sitios: sitios.sort(), arCategories: arCategories.sort() });
   } catch (error) {
     console.error("Error fetching sitios:", error);
     res.status(500).json({ message: "Failed to fetch sitios" });
