@@ -230,6 +230,23 @@ export default function MemberInquiryPage() {
       .reduce((sum, b) => sum + (b.totalDue || 0), 0);
   }, [bills]);
 
+  // Pick the LATEST unpaid bill so the member sees "what's owed right
+  // now" prominently. The server returns bills sorted by periodCovered
+  // desc — first non-paid is the most recent period that still has dues.
+  const currentBill = useMemo(() => {
+    return bills.find((b) => b.status !== "paid") || null;
+  }, [bills]);
+
+  // Days until due (negative = overdue). Used to label the card.
+  const daysUntilDue = useMemo(() => {
+    if (!currentBill?.dueDate) return null;
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    const due = new Date(currentBill.dueDate);
+    due.setHours(0, 0, 0, 0);
+    return Math.round((due - now) / 86400000);
+  }, [currentBill]);
+
   const billsByYear = useMemo(() => {
     return bills.reduce((acc, bill) => {
       if (!bill.periodCovered) return acc;
@@ -554,6 +571,56 @@ export default function MemberInquiryPage() {
                       ))}
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Current Bill callout — shows the most recent unpaid bill
+                  immediately after the reading is encoded, before the official
+                  collection date. Lets the member plan their payment ahead of
+                  the due date. Hidden when the account is fully settled. */}
+              {currentBill && (
+                <div className={`rounded-3xl shadow-lg p-5 sm:p-6 border-2 ${
+                  daysUntilDue != null && daysUntilDue < 0
+                    ? "bg-gradient-to-br from-red-50 to-rose-50 border-red-200"
+                    : daysUntilDue != null && daysUntilDue <= 5
+                    ? "bg-gradient-to-br from-amber-50 to-yellow-50 border-amber-200"
+                    : "bg-gradient-to-br from-emerald-50 to-teal-50 border-emerald-200"
+                }`}>
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                    <div>
+                      <div className={`text-xs font-bold uppercase tracking-wide ${
+                        daysUntilDue != null && daysUntilDue < 0
+                          ? "text-red-700"
+                          : daysUntilDue != null && daysUntilDue <= 5
+                          ? "text-amber-700"
+                          : "text-emerald-700"
+                      }`}>
+                        {daysUntilDue != null && daysUntilDue < 0
+                          ? `Overdue · ${Math.abs(daysUntilDue)} day${Math.abs(daysUntilDue) === 1 ? "" : "s"} past due`
+                          : daysUntilDue === 0
+                          ? "Due today"
+                          : daysUntilDue != null && daysUntilDue <= 5
+                          ? `Due in ${daysUntilDue} day${daysUntilDue === 1 ? "" : "s"}`
+                          : "Current bill — not yet due"}
+                      </div>
+                      <div className="mt-1 text-lg font-bold text-gray-900">
+                        Period {currentBill.periodCovered}
+                        {currentBill.meterNumber ? <span className="ml-2 text-sm font-mono text-gray-500">· {currentBill.meterNumber}</span> : null}
+                      </div>
+                      <div className="mt-1 text-sm text-gray-600">
+                        Consumed <b>{currentBill.consumed ?? 0} m³</b>
+                        {currentBill.dueDate ? (
+                          <> · Due on <b>{formatDate(currentBill.dueDate)}</b></>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="flex flex-col items-start md:items-end">
+                      <div className="text-3xl font-extrabold text-gray-900">
+                        ₱{money(currentBill.totalDue)}
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1">Total due for this period</div>
+                    </div>
+                  </div>
                 </div>
               )}
 
