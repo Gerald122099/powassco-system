@@ -40,6 +40,12 @@ export default function FieldModePanel() {
   // filter: "all" | "unread" | "blocked"
   const [filter, setFilter] = useState("all");
   const [inputs, setInputs] = useState({});
+  // First-time previous reading inputs — only used when a meter on an
+  // existing-member (migrated) account has no prior reading anywhere.
+  // The plumber types BOTH previous and present on this first encode;
+  // subsequent encodes use the system-tracked previous and only ask
+  // for present.
+  const [prevInputs, setPrevInputs] = useState({});
   const [busy, setBusy] = useState("");
   // { msg, type, sticky? } — sticky toasts stay until dismissed (used for sync failures)
   const [toast, setToast] = useState(null);
@@ -233,7 +239,12 @@ export default function FieldModePanel() {
     // This is what the confirm modal will show the plumber. No DB writes
     // happen until they tap "Confirm & Save".
     const items = toSave.map(({ mt, val }) => {
-      const prev = prevReadingFor(member, mt.meterNumber);
+      const hasPrior = !!member.lastActualReadings?.[mnorm(mt.meterNumber)];
+      const needsPrev = !!member.isExistingMember && !hasPrior;
+      const typedPrev = prevInputs[`${mnorm(member.pnNo)}__${mnorm(mt.meterNumber)}`];
+      const prev = needsPrev && typedPrev !== "" && typedPrev != null
+        ? Number(typedPrev) || 0
+        : prevReadingFor(member, mt.meterNumber);
       const present = parseFloat(val);
       const cons = Number.isFinite(present) ? (present - prev) * (mt.consumptionMultiplier || 1) : 0;
       return { meterNumber: mt.meterNumber, mt, val, prev, present, consumed: cons };
@@ -247,13 +258,17 @@ export default function FieldModePanel() {
     const { member, items } = confirmSave;
     setConfirmSave(null);
     try {
-      for (const { mt, val } of items) {
+      for (const { mt, val, prev } of items) {
         const key = `${mnorm(member.pnNo)}__${mnorm(mt.meterNumber)}`;
         await saveReadingOffline({
           pnNo: member.pnNo,
           meterNumber: mt.meterNumber,
           periodKey,
-          previousReading: prevReadingFor(member, mt.meterNumber),
+          // prev comes from saveMember's per-item compute — it already
+          // prefers the plumber's typed previous when this is a
+          // first-encode of a migrated meter, and falls back to the
+          // system-tracked previous otherwise.
+          previousReading: prev,
           presentReading: val,
           consumptionMultiplier: mt.consumptionMultiplier || 1,
           // If the plumber explicitly edited a synced reading, tell the
@@ -263,6 +278,14 @@ export default function FieldModePanel() {
       }
       flash(`✓ Saved ${items.length} reading(s)${navigator.onLine ? " — syncing…" : " offline (will sync when online)."}`, "success");
       setInputs((p) => {
+        const next = { ...p };
+        for (const { mt } of items) delete next[`${mnorm(member.pnNo)}__${mnorm(mt.meterNumber)}`];
+        return next;
+      });
+      // Drop the typed-previous entries for the just-saved meters —
+      // after sync, lastActualReadings will populate and the UI flips
+      // back to the "present-only" flow automatically.
+      setPrevInputs((p) => {
         const next = { ...p };
         for (const { mt } of items) delete next[`${mnorm(member.pnNo)}__${mnorm(mt.meterNumber)}`];
         return next;
@@ -668,7 +691,17 @@ export default function FieldModePanel() {
                 <div className="mt-3 space-y-2">
                   {meters.map((mt) => {
                     const key = `${mnorm(m.pnNo)}__${mnorm(mt.meterNumber)}`;
-                    const prev = prevReadingFor(m, mt.meterNumber);
+                    const hasPriorReading = !!m.lastActualReadings?.[mnorm(mt.meterNumber)];
+                    // Existing-member meters without ANY prior reading
+                    // need both prev + present on first encode. After
+                    // that first sync, lastActualReadings is populated
+                    // and they fall back to the normal "present-only"
+                    // flow.
+                    const needsPrev = !!m.isExistingMember && !hasPriorReading;
+                    const typedPrev = prevInputs[key];
+                    const prev = needsPrev && typedPrev !== "" && typedPrev != null
+                      ? Number(typedPrev) || 0
+                      : prevReadingFor(m, mt.meterNumber);
                     const read = isRead(m, mt.meterNumber);
                     const val = inputs[key] ?? "";
                     const present = val !== "" ? parseFloat(val) : null;
@@ -713,26 +746,44 @@ export default function FieldModePanel() {
                             )}
                           </div>
                         ) : (
-                        <div className="mt-1.5 flex items-center gap-2">
-                          <input
-                            id={`meter-input-${key}`}
-                            type="number"
-                            inputMode="decimal"
-                            step="0.001"
-                            value={val}
-                            onChange={(e) => setInputs((p) => ({ ...p, [key]: e.target.value }))}
-                            placeholder="present reading"
-                            className="flex-1 rounded-lg border border-slate-200 px-2.5 py-2 font-mono text-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
-                          />
-                          <div className="w-16 shrink-0 text-right text-xs">
-                            {cons != null ? <span className="font-bold text-purple-700">{fmt(cons)} m³</span> : null}
-                          </div>
-                          {thermalSupported() && val !== "" && (
-                            <button onClick={() => printMeter(m, mt)} className="shrink-0 rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50" title="Print bill to thermal printer">
-                              <Printer size={14} />
-                            </button>
+                        <>
+                          {needsPrev && (
+                            <div className="mt-1.5">
+                              <div className="text-[10px] font-bold uppercase tracking-wide text-amber-700 mb-1">
+                                Migrated meter — enter the meter's CURRENT reading on the dial as the "previous" so future bills are correct
+                              </div>
+                              <input
+                                type="number"
+                                inputMode="decimal"
+                                step="0.001"
+                                value={typedPrev ?? ""}
+                                onChange={(e) => setPrevInputs((p) => ({ ...p, [key]: e.target.value }))}
+                                placeholder="previous reading (first time only)"
+                                className="w-full rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-2 font-mono text-sm focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-100"
+                              />
+                            </div>
                           )}
-                        </div>
+                          <div className="mt-1.5 flex items-center gap-2">
+                            <input
+                              id={`meter-input-${key}`}
+                              type="number"
+                              inputMode="decimal"
+                              step="0.001"
+                              value={val}
+                              onChange={(e) => setInputs((p) => ({ ...p, [key]: e.target.value }))}
+                              placeholder="present reading"
+                              className="flex-1 rounded-lg border border-slate-200 px-2.5 py-2 font-mono text-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+                            />
+                            <div className="w-16 shrink-0 text-right text-xs">
+                              {cons != null ? <span className="font-bold text-purple-700">{fmt(cons)} m³</span> : null}
+                            </div>
+                            {thermalSupported() && val !== "" && (
+                              <button onClick={() => printMeter(m, mt)} className="shrink-0 rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50" title="Print bill to thermal printer">
+                                <Printer size={14} />
+                              </button>
+                            )}
+                          </div>
+                        </>
                         )}
                         {calc && !read && (
                           <div className="mt-1 flex items-center justify-between text-[11px]">
