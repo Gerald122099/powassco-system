@@ -5,7 +5,7 @@ import { apiFetch } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
 import { toast } from "../../components/Toast";
 import { Kpi } from "./WaterDuesLookup";
-import { Search, Banknote, Printer, Hourglass, CheckCircle, Wallet, History, TrendingUp } from "lucide-react";
+import { Search, Banknote, Printer, Hourglass, CheckCircle, Wallet, History, TrendingUp, ReceiptText } from "lucide-react";
 
 const RECENT_KEY = "pow_cashier_recent_loan";
 const RECENT_LIMIT = 6;
@@ -201,12 +201,15 @@ export default function LoanDuesLookup() {
 
   return (
     <Card>
-      {/* TODAY'S QUICK STATS for loan postings. */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      {/* TODAY'S QUICK STATS for loan postings — Cash, Online, CBU
+           contributions, plus system-wide outstanding loan balance. */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <Kpi label="Receipts today" value={todayStats?.totals?.loan?.count ?? "—"} icon={CheckCircle} tone="emerald" />
         <Kpi label="Cash collected" value={peso(todayStats?.totals?.loan?.cash ?? 0)} icon={Wallet} tone="amber" />
         <Kpi label="Online posted" value={peso(todayStats?.totals?.loan?.online ?? 0)} icon={Banknote} tone="blue" />
-        <Kpi label="Grand today" value={peso((todayStats?.totals?.loan?.cash || 0) + (todayStats?.totals?.loan?.online || 0))} icon={TrendingUp} tone="violet" big />
+        <Kpi label="CBU collected" value={peso(todayStats?.totals?.loan?.cbu ?? 0)} icon={Wallet} tone="violet" />
+        <Kpi label="Outstanding loans" value={peso(todayStats?.outstanding?.loan?.total ?? 0)} icon={ReceiptText} tone="red" />
+        <Kpi label="Grand today" value={peso((todayStats?.totals?.loan?.cash || 0) + (todayStats?.totals?.loan?.online || 0))} icon={TrendingUp} tone="emerald" big />
       </div>
 
       <div className="mt-6 mx-auto max-w-2xl">

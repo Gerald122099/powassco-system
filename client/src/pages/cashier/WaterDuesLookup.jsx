@@ -4,7 +4,7 @@ import Modal from "../../components/Modal";
 import { apiFetch } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
 import { toast } from "../../components/Toast";
-import { Search, Droplets, Printer, AlertTriangle, MapPin, CheckCircle, Hourglass, Gauge, Banknote, History, Wallet, TrendingUp } from "lucide-react";
+import { Search, Droplets, Printer, AlertTriangle, MapPin, CheckCircle, Hourglass, Gauge, Banknote, History, Wallet, TrendingUp, ReceiptText } from "lucide-react";
 
 // Recently-looked-up PNs are kept in localStorage so the cashier can
 // re-open a customer with one tap (e.g. when they walk back after
@@ -232,12 +232,18 @@ export default function WaterDuesLookup() {
 
   return (
     <Card>
-      {/* TODAY'S QUICK STATS — at-a-glance KPIs for the cashier. */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      {/* TODAY'S QUICK STATS — at-a-glance KPIs for the cashier.
+           Splits the per-day money into Cash, Online, and CBU
+           (Capital Build-Up contributions). The "Outstanding" tile
+           is system-wide unpaid water bills so the cashier knows
+           how much receivable is still in the queue. */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <Kpi label="Receipts today" value={todayStats?.totals?.water?.count ?? "—"} icon={CheckCircle} tone="emerald" />
         <Kpi label="Cash collected" value={peso(todayStats?.totals?.water?.cash ?? 0)} icon={Wallet} tone="amber" />
         <Kpi label="Online posted" value={peso(todayStats?.totals?.water?.online ?? 0)} icon={Banknote} tone="blue" />
-        <Kpi label="Grand today" value={peso((todayStats?.totals?.water?.cash || 0) + (todayStats?.totals?.water?.online || 0))} icon={TrendingUp} tone="violet" big />
+        <Kpi label="CBU collected" value={peso(todayStats?.totals?.water?.cbu ?? 0)} icon={Wallet} tone="violet" />
+        <Kpi label="Outstanding bills" value={peso(todayStats?.outstanding?.water?.total ?? 0)} icon={ReceiptText} tone="red" />
+        <Kpi label="Grand today" value={peso((todayStats?.totals?.water?.cash || 0) + (todayStats?.totals?.water?.online || 0))} icon={TrendingUp} tone="emerald" big />
       </div>
 
       {/* CENTERED SEARCH — primary action, auto-debounced (no button). */}
@@ -637,6 +643,7 @@ export function Kpi({ label, value, icon: Icon, tone = "slate", big = false }) {
     amber: "bg-amber-50 border-amber-200 text-amber-800",
     blue: "bg-blue-50 border-blue-200 text-blue-800",
     violet: "bg-violet-50 border-violet-200 text-violet-800",
+    red: "bg-red-50 border-red-200 text-red-800",
     slate: "bg-slate-50 border-slate-200 text-slate-800",
   }[tone] || "bg-slate-50 border-slate-200 text-slate-800";
   return (
