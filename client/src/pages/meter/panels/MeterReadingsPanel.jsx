@@ -1110,7 +1110,7 @@ export default function MeterReadingsPanel() {
       }
 
       const headers = [
-        "PN No",
+        "Account No.",
         "Account Name",
         "Meter Number",
         "Previous Reading",
@@ -1380,7 +1380,7 @@ export default function MeterReadingsPanel() {
                 className="w-full rounded-xl border border-slate-200 pl-10 pr-4 py-2.5 focus:ring-2 focus:ring-purple-100 focus:border-purple-300 transition-all"
                 value={searchInputValue}
                 onChange={handleSearchChange}
-                placeholder="PN No, Account Name, Meter, Address..."
+                placeholder="Account No., Account Name, Meter, Address..."
               />
               {searchInputValue !== searchTerm && (
                 <div className="absolute right-3 top-3.5">
@@ -1471,7 +1471,7 @@ export default function MeterReadingsPanel() {
               <thead className="border-b border-slate-100 bg-slate-50/70 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">
                 <tr>
                   <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4">PN No.</th>
+                  <th className="py-3 px-4">Account No.</th>
                   <th className="py-3 px-4">Account Name</th>
                   <th className="py-3 px-4">Address</th>
                   <th className="py-3 px-4">Meters</th>
@@ -1748,7 +1748,7 @@ export default function MeterReadingsPanel() {
               </div>
 
               <form onSubmit={(e) => { e.preventDefault(); resolveMeter(manualPn); }} className="space-y-2">
-                <label className="text-xs font-semibold text-slate-600">PN Number</label>
+                <label className="text-xs font-semibold text-slate-600">Account Number</label>
                 <input
                   value={manualPn}
                   onChange={(e) => setManualPn(e.target.value)}
@@ -2196,7 +2196,7 @@ export default function MeterReadingsPanel() {
                   <table>
                     <thead>
                       <tr>
-                        <th>PN No</th>
+                        <th>Account No.</th>
                         <th>Status</th>
                         <th>Message</th>
                       </tr>
@@ -2234,7 +2234,7 @@ export default function MeterReadingsPanel() {
                   <table className="w-full text-xs">
                     <thead className="bg-slate-50">
                       <tr>
-                        <th className="py-2 px-2 text-left">PN No</th>
+                        <th className="py-2 px-2 text-left">Account No.</th>
                         <th className="py-2 px-2 text-center">Status</th>
                         <th className="py-2 px-2 text-left">Message</th>
                       </tr>

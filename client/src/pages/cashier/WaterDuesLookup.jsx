@@ -219,7 +219,7 @@ export default function WaterDuesLookup() {
       </style></head><body>
       <h1>POWASSCO — Water Dues Slip${filterMeter ? ` (Meter ${filterMeter})` : ""}</h1>
       <div class="muted">Generated ${new Date().toLocaleString()} by ${user?.fullName || user?.employeeId || ""}</div>
-      <div class="row"><span>PN No:</span><b>${data.member.pnNo}</b></div>
+      <div class="row"><span>Account No.:</span><b>${data.member.pnNo}</b></div>
       <div class="row"><span>Account:</span><b>${data.member.accountName}</b></div>
       <div class="row"><span>Address:</span><span>${data.member.address || "—"}</span></div>
       <table><thead><tr><th>Period</th><th>Meter</th><th>Status</th><th style="text-align:right">Amount</th></tr></thead><tbody>${rows || `<tr><td colspan="4" style="text-align:center;color:#64748b">No outstanding dues</td></tr>`}</tbody></table>
@@ -313,7 +313,7 @@ export default function WaterDuesLookup() {
             <Droplets size={18} className="text-emerald-600" /> Water Dues Lookup
           </div>
           <div className="mt-0.5 text-xs text-slate-500">
-            Just type — search is automatic. PN No, meter number, or account name.
+            Just type — search is automatic. Account No., meter number, or account name.
           </div>
         </div>
         <div className="mt-3 relative">

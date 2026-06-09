@@ -39,13 +39,13 @@ export default function PaymentsPanel() {
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="text-lg font-black text-slate-900">Payment History</div>
-          <div className="text-xs text-slate-600 mt-1">Search by PN No or OR No.</div>
+          <div className="text-xs text-slate-600 mt-1">Search by Account No. or OR No.</div>
         </div>
 
         <input
           value={q}
           onChange={(e) => { setPage(1); setQ(e.target.value); }}
-          placeholder="Search PN No / OR No"
+          placeholder="Search Account No. / OR No"
           className="w-full sm:w-80 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300"
         />
       </div>
@@ -61,7 +61,7 @@ export default function PaymentsPanel() {
           <thead className="bg-slate-50 text-left text-slate-500">
             <tr>
               <th className="py-3 px-4">Date</th>
-              <th className="py-3 px-4">PN No.</th>
+              <th className="py-3 px-4">Account No.</th>
               <th className="py-3 px-4">OR No.</th>
               <th className="py-3 px-4">Method</th>
               <th className="py-3 px-4">Amount</th>

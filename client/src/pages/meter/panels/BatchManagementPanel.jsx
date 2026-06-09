@@ -515,7 +515,7 @@ export default function BatchManagementPanel() {
                   <table className="w-full text-sm">
                     <thead className="bg-slate-50">
                       <tr>
-                        <th className="py-2 px-3 text-left">PN No</th>
+                        <th className="py-2 px-3 text-left">Account No.</th>
                         <th className="py-2 px-3 text-left">Account Name</th>
                         <th className="py-2 px-3 text-left">Meters</th>
                         <th className="py-2 px-3 text-left">Barangay</th>
@@ -668,7 +668,7 @@ export default function BatchManagementPanel() {
                         disabled={availableMembers.length === 0}
                       />
                     </th>
-                    <th className="py-3 px-3 text-left">PN No</th>
+                    <th className="py-3 px-3 text-left">Account No.</th>
                     <th className="py-3 px-3 text-left">Account Name</th>
                     <th className="py-3 px-3 text-left">Meters</th>
                     <th className="py-3 px-3 text-left">Barangay</th>
@@ -820,7 +820,7 @@ export default function BatchManagementPanel() {
                 <table className="w-full text-xs">
                   <thead className="bg-slate-50 sticky top-0">
                     <tr>
-                      <th className="py-2 px-3 text-left">PN No</th>
+                      <th className="py-2 px-3 text-left">Account No.</th>
                       <th className="py-2 px-3 text-left">Meter</th>
                       <th className="py-2 px-3 text-right">Previous</th>
                       <th className="py-2 px-3 text-right">Present</th>
@@ -888,7 +888,7 @@ export default function BatchManagementPanel() {
                   <table className="w-full text-xs">
                     <thead className="bg-slate-50">
                       <tr>
-                        <th className="py-2 px-2 text-left">PN No</th>
+                        <th className="py-2 px-2 text-left">Account No.</th>
                         <th className="py-2 px-2 text-left">Meter</th>
                         <th className="py-2 px-2 text-center">Status</th>
                         <th className="py-2 px-2 text-left">Message</th>

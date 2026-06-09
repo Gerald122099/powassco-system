@@ -101,7 +101,7 @@ export default function LoanApplyPanel() {
     setPreview(null);
     const pn = pnNo.trim().toUpperCase();
     if (!pn) {
-      setErr("Enter a PN No.");
+      setErr("Enter an Account No.");
       return;
     }
     setChecking(true);
@@ -143,7 +143,7 @@ export default function LoanApplyPanel() {
     setMsg("");
     const principal = Number(form.principal || 0);
     if (!elig?.member) {
-      setErr("Check a member's PN No first.");
+      setErr("Check a member's Account No. first.");
       return;
     }
     if (!(principal > 0)) {
@@ -184,16 +184,16 @@ export default function LoanApplyPanel() {
     <div className="space-y-4">
       <Card>
         <div className="text-lg font-bold tracking-tight text-slate-900">New Loan Application</div>
-        <div className="mt-0.5 text-sm text-slate-500">Enter the member's PN No to check water-bill eligibility.</div>
+        <div className="mt-0.5 text-sm text-slate-500">Enter the member's Account No. to check water-bill eligibility.</div>
 
         <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-end">
           <div className="flex-1">
-            <label className="text-xs font-semibold text-slate-600">PN No.</label>
+            <label className="text-xs font-semibold text-slate-600">Account No.</label>
             <input
               value={pnNo}
               onChange={(e) => setPnNo(e.target.value.toUpperCase())}
               onKeyDown={(e) => e.key === "Enter" && checkEligibility()}
-              placeholder="PN-001"
+              placeholder="e.g. K8M3PQ"
               className={inputCls}
             />
           </div>

@@ -115,7 +115,7 @@ export function printApplication(loan) {
     ${header()}
     <div class="title">LOAN APPLICATION FORM</div>
     <div class="row">
-      <div style="flex:1">${field("PN No.", loan.borrowerPnNo)}</div>
+      <div style="flex:1">${field("Account No.", loan.borrowerPnNo)}</div>
       <div style="flex:1">${field("Reference Code", loan.referenceCode)}</div>
       <div style="flex:1">${field("Loan ID", loan.loanId)}</div>
     </div>
@@ -172,7 +172,7 @@ export function printDisclosure(loan) {
     ${header()}
     <div class="title">DISCLOSURE STATEMENT OF LOAN</div>
     <div class="row">
-      <div style="flex:1">${field("PN No.", loan.borrowerPnNo)}</div>
+      <div style="flex:1">${field("Account No.", loan.borrowerPnNo)}</div>
       <div style="flex:1">${field("Loan ID", loan.loanId)}</div>
       <div style="flex:1">${field("Reference Code", loan.referenceCode)}</div>
     </div>
@@ -223,7 +223,7 @@ export function printPromissory(loan) {
     ${header()}
     <div class="title">PROMISSORY NOTE</div>
     <div class="row">
-      <div style="flex:1">${field("PN No.", loan.borrowerPnNo)}</div>
+      <div style="flex:1">${field("Account No.", loan.borrowerPnNo)}</div>
       <div style="flex:1">${field("Loan ID", loan.loanId)}</div>
       <div style="flex:1">${field("Reference Code", loan.referenceCode)}</div>
     </div>

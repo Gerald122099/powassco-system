@@ -174,10 +174,10 @@ router.post("/inquiry", rateLimit, async (req, res) => {
     const pn = String(pnNo || "").trim().toUpperCase();
 
     if (!pn) {
-      return res.status(400).json({ message: "PN No is required." });
+      return res.status(400).json({ message: "Account No. is required." });
     }
 
-    // Find member by PN No only (no birthdate required)
+    // Find member by Account No. only (no birthdate required)
     const member = await WaterMember.findOne({
       pnNo: pn,
     })
@@ -187,7 +187,7 @@ router.post("/inquiry", rateLimit, async (req, res) => {
     // Still avoid leaking whether PN exists, but give a generic message
     if (!member) {
       return res.status(404).json({ 
-        message: "Account not found. Please check your PN Number and try again." 
+        message: "Account not found. Please check your Account Number and try again." 
       });
     }
 

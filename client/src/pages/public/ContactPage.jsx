@@ -146,7 +146,7 @@ export default function ContactPage() {
                   </>
                 ) : (
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <Field label="Account Number (PN No.)" required>
+                    <Field label="Account Number" required>
                       <input className={inputCls} value={form.accountNumber} onChange={(e) => set("accountNumber", e.target.value)} placeholder="e.g. PN123" />
                     </Field>
                     <Field label="Meter Number" required>

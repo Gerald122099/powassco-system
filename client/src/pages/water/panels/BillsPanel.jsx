@@ -225,7 +225,7 @@ export default function BillsPanel() {
 
   async function searchMember() {
     if (!pnSearch.trim()) {
-      setCreateError("Please enter a PN Number");
+      setCreateError("Please enter an Account Number");
       return;
     }
 
@@ -295,7 +295,7 @@ export default function BillsPanel() {
   async function generatePreview() {
     // required
     if (!createForm.pnNo || !createForm.meterNumber) {
-      setCreateError("PN No and meter are required");
+      setCreateError("Account No. and meter are required");
       return;
     }
     if (createForm.previousReading === "" || createForm.presentReading === "") {
@@ -487,7 +487,7 @@ export default function BillsPanel() {
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-slate-500">
             <tr>
-              <th className="py-3 px-4">PN No.</th>
+              <th className="py-3 px-4">Account No.</th>
               <th className="py-3 px-4">Account Name</th>
               <th className="py-3 px-4">Class</th>
               <th className="py-3 px-4">Period</th>
@@ -709,15 +709,15 @@ export default function BillsPanel() {
         <div className="space-y-4">
           {createStep === "search" && (
             <>
-              <div className="text-sm text-slate-600">Enter the PN Number to start creating a bill.</div>
+              <div className="text-sm text-slate-600">Enter the Account Number to start creating a bill.</div>
 
               <div>
-                <label className="text-sm font-semibold text-slate-700">PN Number</label>
+                <label className="text-sm font-semibold text-slate-700">Account Number</label>
                 <input
                   className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5"
                   value={pnSearch}
                   onChange={(e) => setPnSearch(e.target.value.toUpperCase())}
-                  placeholder="PN-001"
+                  placeholder="e.g. K8M3PQ"
                   onKeyDown={(e) => e.key === "Enter" && searchMember()}
                 />
               </div>
@@ -739,7 +739,7 @@ export default function BillsPanel() {
             <>
               <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
                 <div className="font-bold text-blue-900">{memberInfo.accountName}</div>
-                <div className="text-sm text-blue-700 mt-1">PN No: {memberInfo.pnNo}</div>
+                <div className="text-sm text-blue-700 mt-1">Account No.: {memberInfo.pnNo}</div>
                 <div className="text-sm text-blue-700">Classification: {memberInfo.billing?.classification || "residential"}</div>
               </div>
 
@@ -787,7 +787,7 @@ export default function BillsPanel() {
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <div className="font-bold text-slate-900">{memberInfo.accountName}</div>
                 <div className="mt-1 text-sm text-slate-600">
-                  PN No: {memberInfo.pnNo} • Classification: {memberInfo.billing?.classification || "residential"} • Meter:{" "}
+                  Account No.: {memberInfo.pnNo} • Classification: {memberInfo.billing?.classification || "residential"} • Meter:{" "}
                   <span className="font-bold text-slate-900">{createForm.meterNumber || "—"}</span>
                 </div>
                 {memberInfo.personal?.isSeniorCitizen && (
@@ -895,7 +895,7 @@ export default function BillsPanel() {
               <div className="rounded-2xl border border-slate-200 p-4">
                 <div className="grid grid-cols-2 gap-3">
                   <Info label="Account Name" value={billPreview.accountName} />
-                  <Info label="PN Number" value={billPreview.pnNo} />
+                  <Info label="Account Number" value={billPreview.pnNo} />
                   <Info label="Classification" value={billPreview.classification} />
                   <Info label="Meter Number" value={billPreview.meterNumber} />
                   <Info label="Previous Reading" value={billPreview.previousReading} />

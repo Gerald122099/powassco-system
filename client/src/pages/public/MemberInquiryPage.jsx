@@ -106,7 +106,7 @@ export default function MemberInquiryPage() {
     setData(null);
     const v = String(value || "").trim().toUpperCase();
     if (!v) {
-      setErr(kind === "meter" ? "Please enter the meter number." : "Please enter PN No.");
+      setErr(kind === "meter" ? "Please enter the meter number." : "Please enter Account No.");
       return null;
     }
     try {
@@ -439,7 +439,7 @@ export default function MemberInquiryPage() {
                           Meter {data.meter?.meterNumber}
                         </span>
                       )}
-                      <span>PN No: <span className="font-semibold">{data.member?.pnNo || data.account?.pnNo}</span></span>
+                      <span>Account No.: <span className="font-semibold">{data.member?.pnNo || data.account?.pnNo}</span></span>
                       <span className="text-gray-300">•</span>
                       <span
                         className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold ${
@@ -914,8 +914,8 @@ export default function MemberInquiryPage() {
                   <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-2">
                     <span className="font-bold text-green-700">1</span>
                   </div>
-                  <div className="font-semibold text-gray-700">Enter PN No</div>
-                  <div className="text-xs mt-1 text-gray-500">Find your PN Number on your bill statement</div>
+                  <div className="font-semibold text-gray-700">Enter Account No.</div>
+                  <div className="text-xs mt-1 text-gray-500">Find your Account Number on your bill statement</div>
                 </div>
                 <div className="p-4 bg-white rounded-xl shadow-sm border border-green-100">
                   <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-2">

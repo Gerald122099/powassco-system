@@ -3,7 +3,11 @@ import WaterSettings from "../../models/WaterSettings.js";
 import { requireAuth, requireRole } from "../../middleware/auth.js";
 
 const router = express.Router();
-const guard = [requireAuth, requireRole(["admin", "water_bill_officer", "meter_reader"])];
+// Plumber is included for read access — Field Mode's downloadBatch
+// fetches tariff settings so the thermal bill can be computed offline.
+// Writes are still restricted to admin via the explicit adminGuard
+// on the PUT route.
+const guard = [requireAuth, requireRole(["admin", "water_bill_officer", "meter_reader", "plumber"])];
 
 
 // UPDATED DEFAULTS with all required fields

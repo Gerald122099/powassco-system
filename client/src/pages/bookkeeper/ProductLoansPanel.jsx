@@ -182,7 +182,7 @@ export default function ProductLoansPanel() {
       {/* Application modal */}
       <Modal open={applyOpen} title="New Product-Loan Application" onClose={() => setApplyOpen(false)} size="sm">
         <form onSubmit={submitApplication} className="space-y-3">
-          <div><label className="text-xs font-semibold">Member PN No</label><input value={applyForm.pnNo} onChange={(e) => setApplyForm({ ...applyForm, pnNo: e.target.value.toUpperCase() })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 font-mono" /></div>
+          <div><label className="text-xs font-semibold">Member Account No.</label><input value={applyForm.pnNo} onChange={(e) => setApplyForm({ ...applyForm, pnNo: e.target.value.toUpperCase() })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 font-mono" /></div>
           <div>
             <label className="text-xs font-semibold">Product</label>
             <select value={applyForm.productId} onChange={(e) => setApplyForm({ ...applyForm, productId: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2">

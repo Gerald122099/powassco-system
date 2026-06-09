@@ -403,7 +403,7 @@ router.post("/", ...guard, async (req, res) => {
     
     if (error.code === 11000) {
       return res.status(409).json({ 
-        message: "PN Number already exists. Please use a unique PN Number." 
+        message: "Account Number already exists. Please use a unique Account Number." 
       });
     }
     

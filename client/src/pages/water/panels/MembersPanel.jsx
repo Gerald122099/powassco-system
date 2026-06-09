@@ -356,7 +356,7 @@ export default function MembersPanel() {
 
       <h2>1. Account</h2>
       <div class="row">
-        ${F("PN No. (assigned by office)", "col-2")}
+        ${F("Account No. (assigned by office)", "col-2")}
         ${F("Account Name", "col-2")}
       </div>
       <div class="row">
@@ -938,7 +938,7 @@ export default function MembersPanel() {
     console.error("Save error:", e);
     
     if (e.message.includes("duplicate key") || e.message.includes("already exists")) {
-      setErr("PN Number already exists. Please use a unique PN Number.");
+      setErr("Account Number already exists. Please use a unique Account Number.");
     } else if (e.message.includes("ValidationError")) {
       setErr("Validation failed. Please check all required fields.");
     } else if (e.message.includes("geo keys")) {
@@ -950,7 +950,7 @@ export default function MembersPanel() {
 }
 
   async function removeMember(m) {
-    const ok = confirm(`Delete member PN No. ${m.pnNo}?`);
+    const ok = confirm(`Delete member Account No. ${m.pnNo}?`);
     if (!ok) return;
 
     try {
@@ -983,7 +983,7 @@ export default function MembersPanel() {
         <div>
           <div className="text-lg font-black text-slate-900">Members</div>
           <div className="text-xs text-slate-600 mt-1">
-            Register households/clients. PN No. is unique and used as the account number.
+            Register households/clients. Account No. is unique and used as the account number.
           </div>
         </div>
 
@@ -991,7 +991,7 @@ export default function MembersPanel() {
           <input
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="Search PN No / Account Name"
+            placeholder="Search Account No. / Account Name"
             className="w-full sm:w-80 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300"
           />
           
@@ -1073,7 +1073,7 @@ export default function MembersPanel() {
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-slate-500">
             <tr>
-              <th className="py-3 px-4">PN No.</th>
+              <th className="py-3 px-4">Account No.</th>
               <th className="py-3 px-4">Account Name</th>
               <th className="py-3 px-4">Address</th>
               <th className="py-3 px-4">Class</th>
@@ -1212,7 +1212,7 @@ export default function MembersPanel() {
         {viewing && (
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <Info label="PN No." value={viewing.pnNo} />
+              <Info label="Account No." value={viewing.pnNo} />
               <Info label="Account Name" value={viewing.accountName} />
               <Info label="Classification" value={viewing.billing?.classification || "residential"} />
               <Info label="Account Status" value={viewing.accountStatus} />
@@ -1333,7 +1333,7 @@ export default function MembersPanel() {
             className="space-y-3"
           >
             <div>
-              <label className="text-xs font-semibold text-slate-600">PN Number</label>
+              <label className="text-xs font-semibold text-slate-600">Account Number</label>
               <input value={manualQR.pnNo} onChange={(e) => setManualQR((s) => ({ ...s, pnNo: e.target.value }))} placeholder="e.g. PN123" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100" autoFocus />
             </div>
             <div>
@@ -2124,7 +2124,7 @@ export default function MembersPanel() {
           <div className="space-y-4">
             <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
               <div className="font-bold text-blue-900">{managingMetersFor.accountName}</div>
-              <div className="text-sm text-blue-700 mt-1">PN No: {managingMetersFor.pnNo}</div>
+              <div className="text-sm text-blue-700 mt-1">Account No.: {managingMetersFor.pnNo}</div>
               <div className="text-xs text-blue-700 mt-2">
                 Adding a new meter here does <b>not</b> require admin authorization. To edit an existing meter or other member details, use the <b>Edit</b> action on the row.
               </div>

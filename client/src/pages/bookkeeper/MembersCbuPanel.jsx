@@ -55,7 +55,7 @@ export default function MembersCbuPanel() {
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
             <tr>
-              <th className="px-3 py-2">PN No</th>
+              <th className="px-3 py-2">Account No.</th>
               <th className="px-3 py-2">Account name</th>
               <th className="px-3 py-2">Status</th>
               <th className="px-3 py-2 text-right">CBU balance</th>

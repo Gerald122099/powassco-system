@@ -66,7 +66,7 @@ export function printRouteSheet(members, { periodKey = "", readerName = "" } = {
         <div class="sub">${esc(new Date().toLocaleDateString())}</div>
       </div>
       <table>
-        <thead><tr><th>#</th><th>PN No.</th><th>Account</th><th>Address</th><th>Meter</th><th class="r">Previous</th><th>Present</th></tr></thead>
+        <thead><tr><th>#</th><th>Account No.</th><th>Account</th><th>Address</th><th>Meter</th><th class="r">Previous</th><th>Present</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
     </body></html>`);

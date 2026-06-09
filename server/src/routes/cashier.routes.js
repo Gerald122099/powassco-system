@@ -64,7 +64,7 @@ const norm = (s) => String(s || "").trim().toUpperCase();
 router.get("/water", ...guard, async (req, res) => {
   try {
     const raw = String(req.query.q || "").trim();
-    if (!raw || raw.length < 2) return res.status(400).json({ message: "Enter a PN No, meter number, or account name (at least 2 characters)." });
+    if (!raw || raw.length < 2) return res.status(400).json({ message: "Enter an Account No., meter number, or account name (at least 2 characters)." });
     const q = raw.toUpperCase();
 
     const rxStart = new RegExp("^" + escapeRegex(q), "i");
@@ -183,7 +183,7 @@ router.get("/water", ...guard, async (req, res) => {
 router.get("/loan", ...guard, async (req, res) => {
   try {
     const raw = String(req.query.q || "").trim();
-    if (!raw || raw.length < 2) return res.status(400).json({ message: "Enter a loan ID, reference code, borrower name, or PN No." });
+    if (!raw || raw.length < 2) return res.status(400).json({ message: "Enter a loan ID, reference code, borrower name, or Account No." });
     const q = raw.toUpperCase();
     const rx = new RegExp(escapeRegex(raw), "i");
 

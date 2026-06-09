@@ -115,7 +115,7 @@ export async function printWaterReceipt({ member, meter, previous, present, cons
     CMD.boldOff,
     CMD.left,
     row("Account", String(member.accountName || "").slice(0, 22)),
-    row("PN No.", member.pnNo),
+    row("Account No.", member.pnNo),
     row("Meter", meter.meterNumber),
     row("Period", periodKey),
     LINE(),

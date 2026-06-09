@@ -12,7 +12,7 @@ import CollectionTodayPanel from "../../components/CollectionTodayPanel";
 import { Droplets, Banknote, ReceiptText } from "lucide-react";
 
 const items = [
-  { key: "water", label: "Water Dues", icon: Droplets, desc: "Lookup by PN No or meter number — collect cash, give OR" },
+  { key: "water", label: "Water Dues", icon: Droplets, desc: "Lookup by Account No. or meter number — collect cash, give OR" },
   { key: "loan", label: "Loan Dues", icon: Banknote, desc: "Lookup by loan ID, reference, borrower name, or PN" },
   { key: "collections", label: "Today's Collection", icon: ReceiptText, desc: "Cash + online totals for any date — for daily audit" },
 ];
