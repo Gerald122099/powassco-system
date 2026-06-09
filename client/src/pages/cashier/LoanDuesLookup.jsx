@@ -485,20 +485,30 @@ export default function LoanDuesLookup() {
                 <div className="mt-1 text-[10px] text-slate-500">Optional. Extra for Capital Build-Up.</div>
               </div>
             </div>
-            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5">
-              <div className="flex items-center justify-between text-sm">
-                <span className="font-semibold text-emerald-900">Total Cash Collected</span>
-                <span className="font-mono text-lg font-extrabold text-emerald-900">
-                  {peso((Number(payReceived) || 0) + Math.max(0, Number(payCbu) || 0))}
-                </span>
-              </div>
-              {Math.max(0, Number(payCbu) || 0) > 0 && (
-                <div className="mt-1 text-[11px] text-emerald-800">
-                  <Wallet size={11} className="-mt-0.5 mr-1 inline" />
-                  Includes <b>{peso(Math.max(0, Number(payCbu) || 0))}</b> going to {payLoan.borrowerName}'s CBU.
+            {/* Same three-line breakdown as the Water side: total
+                cash from the member, posted-to-loan portion, CBU
+                extracted. Live-updates with the inputs. */}
+            {(() => {
+              const billNum = Number(payReceived) || 0;
+              const cbuNum = Math.max(0, Number(payCbu) || 0);
+              const totalNum = billNum + cbuNum;
+              return (
+                <div className="rounded-xl border-2 border-emerald-300 bg-emerald-50 p-3 space-y-1.5">
+                  <div className="flex items-center justify-between border-b border-emerald-200 pb-1.5">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-800">Amount received from member</span>
+                    <span className="font-mono text-xl font-extrabold text-emerald-900">{peso(totalNum)}</span>
+                  </div>
+                  <div className="flex items-center justify-between pl-3">
+                    <span className="text-xs text-slate-700">↳ Posted to loan</span>
+                    <span className="font-mono text-sm font-bold text-slate-800">{peso(billNum)}</span>
+                  </div>
+                  <div className={`flex items-center justify-between pl-3 ${cbuNum > 0 ? "" : "opacity-50"}`}>
+                    <span className="text-xs text-violet-700"><Wallet size={11} className="-mt-0.5 mr-1 inline" />↳ Extracted to CBU</span>
+                    <span className="font-mono text-sm font-bold text-violet-800">+{peso(cbuNum)}</span>
+                  </div>
                 </div>
-              )}
-            </div>
+              );
+            })()}
             <div className="flex justify-end gap-2 pt-2">
               <button type="button" onClick={() => setPayLoan(null)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold">Cancel</button>
               <button disabled={paying || Number(payReceived) < installmentTotal || !payOR.trim()} className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">

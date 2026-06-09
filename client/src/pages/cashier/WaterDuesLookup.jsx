@@ -553,27 +553,37 @@ export default function WaterDuesLookup() {
                 <div className="mt-1 text-[10px] text-slate-500">Optional. Extra cash for Capital Build-Up.</div>
               </div>
             </div>
-            {/* Combined total — what the cashier actually collects in
-                hand from the member. Sum of the bill portion and any
-                CBU contribution. */}
-            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5">
-              <div className="flex items-center justify-between text-sm">
-                <span className="font-semibold text-emerald-900">Total Cash Collected</span>
-                <span className="font-mono text-lg font-extrabold text-emerald-900">
-                  {peso((Number(payReceived) || 0) + Math.max(0, Number(payCbu) || 0))}
-                </span>
-              </div>
-              {Math.max(0, Number(payCbu) || 0) > 0 && (
-                <div className="mt-1 text-[11px] text-emerald-800">
-                  Includes <b>{peso(Math.max(0, Number(payCbu) || 0))}</b> going to {data?.member?.accountName}'s CBU.
+            {/* Three-line breakdown so the cashier sees exactly how
+                the money splits before posting. Top-line is the cash
+                the member hands over; the indented rows show how much
+                lands against the bill and how much is extracted to
+                CBU. Updates live as the inputs change. */}
+            {(() => {
+              const billNum = Number(payReceived) || 0;
+              const cbuNum = Math.max(0, Number(payCbu) || 0);
+              const totalNum = billNum + cbuNum;
+              return (
+                <div className="rounded-xl border-2 border-emerald-300 bg-emerald-50 p-3 space-y-1.5">
+                  <div className="flex items-center justify-between border-b border-emerald-200 pb-1.5">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-800">Amount received from member</span>
+                    <span className="font-mono text-xl font-extrabold text-emerald-900">{peso(totalNum)}</span>
+                  </div>
+                  <div className="flex items-center justify-between pl-3">
+                    <span className="text-xs text-slate-700">↳ Posted to bill</span>
+                    <span className="font-mono text-sm font-bold text-slate-800">{peso(billNum)}</span>
+                  </div>
+                  <div className={`flex items-center justify-between pl-3 ${cbuNum > 0 ? "" : "opacity-50"}`}>
+                    <span className="text-xs text-violet-700">↳ Extracted to CBU</span>
+                    <span className="font-mono text-sm font-bold text-violet-800">+{peso(cbuNum)}</span>
+                  </div>
+                  {Number(payReceived) < Number(payTarget.totalDue) && (
+                    <div className="mt-1 rounded-lg bg-red-50 border border-red-200 px-2 py-1 text-[11px] font-semibold text-red-800">
+                      Bill amount must be ≥ ₱{Number(payTarget.totalDue).toFixed(2)}.
+                    </div>
+                  )}
                 </div>
-              )}
-              {Number(payReceived) < Number(payTarget.totalDue) && (
-                <div className="mt-1 rounded-lg bg-red-50 border border-red-200 px-2 py-1 text-[11px] font-semibold text-red-800">
-                  Bill amount must be ≥ ₱{Number(payTarget.totalDue).toFixed(2)}.
-                </div>
-              )}
-            </div>
+              );
+            })()}
             <div className="flex justify-end gap-2 pt-2">
               <button type="button" onClick={() => setPayTarget(null)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold">Cancel</button>
               <button disabled={paying || Number(payReceived) < Number(payTarget.totalDue) || !payOR.trim()} className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">
