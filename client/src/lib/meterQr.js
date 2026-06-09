@@ -45,10 +45,12 @@ export function parseMeterQR(text) {
     };
   }
   // 3) Bare meter number — single non-empty token, alphanumeric-ish.
-  // Reject obvious garbage (URLs, sentences, etc.) so we don't try to
-  // resolve "https://example.com" as a meter.
+  // Includes '#' so the new auto-generated format <5-digit>#<N>
+  // (e.g. 23842#1) is accepted. Rejects obvious garbage like URLs
+  // or sentences so we don't try to resolve "https://example.com"
+  // as a meter.
   const token = parts[0];
-  if (/^[A-Z0-9_-]{3,32}$/i.test(token)) {
+  if (/^[A-Z0-9_#-]{3,32}$/i.test(token)) {
     return {
       pnNo: "",
       meterNumber: token.toUpperCase(),
