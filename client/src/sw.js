@@ -7,6 +7,9 @@
 import { precacheAndRoute } from "workbox-precaching";
 import { NavigationRoute, registerRoute } from "workbox-routing";
 import { clientsClaim } from "workbox-core";
+import { CacheFirst, StaleWhileRevalidate } from "workbox-strategies";
+import { ExpirationPlugin } from "workbox-expiration";
+import { CacheableResponsePlugin } from "workbox-cacheable-response";
 
 // 1) Precache everything Vite included in the build manifest. The
 //    self.__WB_MANIFEST array is injected at build time.
@@ -25,6 +28,49 @@ registerRoute(navigationRoute);
 //    configuration).
 self.skipWaiting();
 clientsClaim();
+
+// 3a) Map tile caching — the Meter Map fetches a lot of small PNGs
+// from external tile providers (OSM, Esri Imagery, Carto). Without
+// caching, every map open re-downloads the same tiles over the same
+// cell signal, making the satellite layer feel slow and burning the
+// reader's data plan. CacheFirst on tiles gives an instant paint;
+// expiration plugin caps the cache so it doesn't grow without bound.
+//
+// Three separate caches so we can tune / clear each provider
+// independently. maxEntries chosen for a single barangay coverage
+// at zooms 14–19 (the range the operator actually uses).
+function tileRoute(matcher, cacheName, maxEntries = 400, maxAgeDays = 30) {
+  registerRoute(
+    matcher,
+    new CacheFirst({
+      cacheName,
+      plugins: [
+        new CacheableResponsePlugin({ statuses: [0, 200] }),
+        new ExpirationPlugin({
+          maxEntries,
+          maxAgeSeconds: maxAgeDays * 24 * 60 * 60,
+          // Prevent ballooning quota on devices with limited storage.
+          purgeOnQuotaError: true,
+        }),
+      ],
+    })
+  );
+}
+tileRoute(/^https:\/\/[a-c]\.tile\.openstreetmap\.org\//, "osm-tiles");
+tileRoute(/^https:\/\/server\.arcgisonline\.com\/ArcGIS\/rest\/services\/World_Imagery\//, "esri-imagery", 600);
+tileRoute(/^https:\/\/[a-d]\.basemaps\.cartocdn\.com\//, "carto-tiles");
+
+// 3b) Leaflet's marker glyph PNGs (the default pin) and any inline
+// assets it pulls from /leaflet/dist/images/. StaleWhileRevalidate
+// lets the icon paint instantly while a fresh copy quietly fetches
+// in the background.
+registerRoute(
+  ({ url }) => url.pathname.includes("/leaflet/dist/images/"),
+  new StaleWhileRevalidate({
+    cacheName: "leaflet-assets",
+    plugins: [new ExpirationPlugin({ maxEntries: 30, maxAgeSeconds: 90 * 24 * 60 * 60 })],
+  })
+);
 
 // 4) Push handler. The server sends a JSON payload:
 //      { title, body, url, tag? }

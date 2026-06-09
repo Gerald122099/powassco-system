@@ -122,13 +122,12 @@ function HeatLayer({ pins, enabled }) {
   return null;
 }
 
-// Map home — currently anchored at the Owak Barangay Gymnasium
-// (Asturias, Cebu). Used as the default view + the destination for
-// the "Centre on Gym" button. Coordinates are approximate; edit
-// when the exact GPS is captured by a plumber syncing a reading
-// from the gymnasium grounds. Zoom 18 = tight neighbourhood view,
-// individual lot lines visible on satellite.
-const MAP_HOME = { lat: 10.5712, lng: 123.7245, zoom: 18, label: "Gym" };
+// Map home — anchored at the POWASSCO co-op centre (Poblacion Owak
+// Water & Sanitation Service Cooperative office / Barangay Gymnasium
+// grounds in Asturias, Cebu). Coordinates copied from the Google
+// Maps place marker on 2026-06-09. Zoom 18 = tight neighbourhood
+// view, individual lot lines visible on satellite.
+const MAP_HOME = { lat: 10.5417828, lng: 123.7165593, zoom: 18, label: "POWASSCO" };
 
 // Centre + fit the map on the FIRST useful anchor:
 //   1. an imported member account whose name matches "Owak Barangay
@@ -235,9 +234,9 @@ export default function MeterMapPanel() {
             type="button"
             onClick={flyToHome}
             className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100"
-            title="Re-centre on Owak Barangay Gymnasium"
+            title="Re-centre on POWASSCO / Owak Barangay Gymnasium"
           >
-            Centre on Gym
+            Centre on POWASSCO
           </button>
         </div>
       </div>
