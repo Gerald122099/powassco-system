@@ -65,6 +65,20 @@ function buildIcon(pin) {
   });
 }
 
+// Recentre button — exposes a "fly back to Owak Barangay Hall" action
+// outside the MapContainer via a callback ref pattern. The map
+// component below stores its instance on this ref so the button in
+// the header (sibling DOM, not a child of MapContainer) can call
+// map.flyTo() without re-rendering.
+function MapRefCapture({ refSetter }) {
+  const map = useMap();
+  useEffect(() => {
+    refSetter(map);
+    return () => refSetter(null);
+  }, [map, refSetter]);
+  return null;
+}
+
 // Heatmap overlay using leaflet.heat — fed by consumption m³ per pin
 // so a hot zone visually corresponds to high water usage.
 function HeatLayer({ pins, enabled }) {
@@ -90,11 +104,28 @@ function HeatLayer({ pins, enabled }) {
   return null;
 }
 
-// Centre + fit the map on the first batch of pins so the user lands
-// looking at their actual barangay, not the global default.
+// Approximate centre of Owak Barangay Hall (Asturias, Cebu). Used as
+// the default view + as the "home" the recentre button flies back to.
+// If the actual GPS of the hall is known later, just edit this pair.
+const OWAK_HALL = { lat: 10.5710, lng: 123.7240, zoom: 16 };
+
+// Centre + fit the map on the FIRST useful anchor:
+//   1. the imported "Owak Barangay Hall" pin (if it has coordinates), so
+//      the user lands looking at the heart of the barangay
+//   2. otherwise the bounding box of every pin
+//   3. otherwise the OWAK_HALL constant above (used by the initial
+//      MapContainer center prop too)
 function FitToPins({ pins }) {
   const map = useMap();
   useEffect(() => {
+    const hall = pins.find(
+      (p) => /owak.*hall|barangay.*hall/i.test(p.accountName || "") &&
+        Number.isFinite(p.lat) && Number.isFinite(p.lng)
+    );
+    if (hall) {
+      map.setView([hall.lat, hall.lng], OWAK_HALL.zoom, { animate: false });
+      return;
+    }
     if (pins.length === 0) return;
     const bounds = L.latLngBounds(pins.map((p) => [p.lat, p.lng]));
     if (bounds.isValid()) map.fitBounds(bounds.pad(0.15));
@@ -109,6 +140,19 @@ export default function MeterMapPanel() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [heatOn, setHeatOn] = useState(false);
+  const mapRef = useRef(null);
+
+  const flyToHall = () => {
+    if (!mapRef.current) return;
+    // Prefer the actual hall pin's GPS if a plumber has already tagged
+    // it; otherwise fall back to the hard-coded OWAK_HALL approximation.
+    const hall = pins.find(
+      (p) => /owak.*hall|barangay.*hall/i.test(p.accountName || "") &&
+        Number.isFinite(p.lat) && Number.isFinite(p.lng)
+    );
+    const target = hall ? [hall.lat, hall.lng] : [OWAK_HALL.lat, OWAK_HALL.lng];
+    mapRef.current.flyTo(target, OWAK_HALL.zoom, { duration: 0.8 });
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -133,9 +177,11 @@ export default function MeterMapPanel() {
     return c;
   }, [pins]);
 
-  // Default map view: Asturias, Cebu (best fit until pins load).
-  const defaultCenter = [10.5639, 123.7136];
-  const defaultZoom = 14;
+  // Default view: Owak Barangay Hall area. FitToPins overrides this
+  // once data loads — preferring the hall pin if it's been geotagged,
+  // otherwise the bounding box of every pin.
+  const defaultCenter = [OWAK_HALL.lat, OWAK_HALL.lng];
+  const defaultZoom = OWAK_HALL.zoom;
 
   return (
     <Card className="!p-0 overflow-hidden">
@@ -161,6 +207,14 @@ export default function MeterMapPanel() {
             />
             Consumption heatmap
           </label>
+          <button
+            type="button"
+            onClick={flyToHall}
+            className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100"
+            title="Re-centre on Owak Barangay Hall"
+          >
+            Centre on Hall
+          </button>
         </div>
       </div>
 
@@ -200,6 +254,7 @@ export default function MeterMapPanel() {
               />
             </LayersControl.BaseLayer>
           </LayersControl>
+          <MapRefCapture refSetter={(m) => { mapRef.current = m; }} />
           <FitToPins pins={pins} />
           <HeatLayer pins={pins} enabled={heatOn} />
           {pins.map((p) => (
