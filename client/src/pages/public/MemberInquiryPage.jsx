@@ -159,24 +159,20 @@ export default function MemberInquiryPage() {
       setErr("Please enter your Account Number or Meter Number.");
       return;
     }
-    // Try PN first — that's the most common case (a member checking
-    // their whole account). If the server says "not found", retry the
-    // meter-scoped endpoint. Whichever wins becomes the active view.
-    setLoading(true);
-    setErr("");
-    try {
-      try {
-        await runInquiry("pn", v);
-        return;
-      } catch (e1) {
-        const msg = String(e1?.message || "").toLowerCase();
-        if (!/not found/.test(msg)) throw e1;
-      }
+    // Format detection avoids a wasted round-trip:
+    //   "23842#1"     → meter (auto-generated meter numbers contain '#')
+    //   anything else → assume Account Number, fall back to meter if
+    //                   the server replies 404. runInquiry catches
+    //                   errors internally and returns null on miss,
+    //                   so we branch on the return value (not on a
+    //                   throw — there isn't one).
+    if (v.includes("#")) {
       await runInquiry("meter", v);
-    } catch (e2) {
-      setErr(e2.message || "Account not found. Check the number and try again.");
-    } finally {
-      setLoading(false);
+      return;
+    }
+    const ok = await runInquiry("pn", v);
+    if (!ok) {
+      await runInquiry("meter", v);
     }
   }
 
