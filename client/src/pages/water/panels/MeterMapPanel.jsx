@@ -122,29 +122,31 @@ function HeatLayer({ pins, enabled }) {
   return null;
 }
 
-// Approximate centre of the Owak Municipal / Barangay Hall (Asturias,
-// Cebu). Used as the default view + as the "home" the recentre button
-// flies back to. Zoom 18 = "tight neighbourhood view" — close enough
-// to read individual lot lines on satellite, while still showing
-// nearby pins. Edit lat/lng when the exact GPS is captured.
-const OWAK_HALL = { lat: 10.5710, lng: 123.7240, zoom: 18 };
+// Map home — currently anchored at the Owak Barangay Gymnasium
+// (Asturias, Cebu). Used as the default view + the destination for
+// the "Centre on Gym" button. Coordinates are approximate; edit
+// when the exact GPS is captured by a plumber syncing a reading
+// from the gymnasium grounds. Zoom 18 = tight neighbourhood view,
+// individual lot lines visible on satellite.
+const MAP_HOME = { lat: 10.5712, lng: 123.7245, zoom: 18, label: "Gym" };
 
 // Centre + fit the map on the FIRST useful anchor:
-//   1. the imported "Owak Barangay Hall" / "Owak Municipal Hall" pin
-//      (if it has coordinates), so the user lands looking at the
-//      heart of the barangay
+//   1. an imported member account whose name matches "Owak Barangay
+//      Gymnasium" (or any "gym"/"gymnasium" entry near Owak) AND has
+//      real coordinates set by a field plumber — that's the
+//      ground-truth pin we want to anchor on
 //   2. otherwise the bounding box of every pin
-//   3. otherwise the OWAK_HALL constant above (used by the initial
-//      MapContainer center prop too)
+//   3. otherwise the MAP_HOME constant above (also the initial
+//      MapContainer center prop)
 function FitToPins({ pins }) {
   const map = useMap();
   useEffect(() => {
-    const hall = pins.find(
-      (p) => /owak.*(municipal|barangay).*hall|(municipal|barangay).*hall/i.test(p.accountName || "") &&
+    const gym = pins.find(
+      (p) => /\b(gym|gymnasium)\b/i.test(p.accountName || "") &&
         Number.isFinite(p.lat) && Number.isFinite(p.lng)
     );
-    if (hall) {
-      map.setView([hall.lat, hall.lng], OWAK_HALL.zoom, { animate: false });
+    if (gym) {
+      map.setView([gym.lat, gym.lng], MAP_HOME.zoom, { animate: false });
       return;
     }
     if (pins.length === 0) return;
@@ -163,16 +165,17 @@ export default function MeterMapPanel() {
   const [heatOn, setHeatOn] = useState(false);
   const mapRef = useRef(null);
 
-  const flyToHall = () => {
+  const flyToHome = () => {
     if (!mapRef.current) return;
-    // Prefer the actual hall pin's GPS if a plumber has already tagged
-    // it; otherwise fall back to the hard-coded OWAK_HALL approximation.
-    const hall = pins.find(
-      (p) => /owak.*hall|barangay.*hall/i.test(p.accountName || "") &&
+    // Prefer the actual Owak Barangay Gymnasium pin's GPS if a
+    // plumber has already tagged it; otherwise fall back to the
+    // hard-coded MAP_HOME approximation.
+    const gym = pins.find(
+      (p) => /\b(gym|gymnasium)\b/i.test(p.accountName || "") &&
         Number.isFinite(p.lat) && Number.isFinite(p.lng)
     );
-    const target = hall ? [hall.lat, hall.lng] : [OWAK_HALL.lat, OWAK_HALL.lng];
-    mapRef.current.flyTo(target, OWAK_HALL.zoom, { duration: 0.8 });
+    const target = gym ? [gym.lat, gym.lng] : [MAP_HOME.lat, MAP_HOME.lng];
+    mapRef.current.flyTo(target, MAP_HOME.zoom, { duration: 0.8 });
   };
 
   useEffect(() => {
@@ -201,8 +204,8 @@ export default function MeterMapPanel() {
   // Default view: Owak Barangay Hall area. FitToPins overrides this
   // once data loads — preferring the hall pin if it's been geotagged,
   // otherwise the bounding box of every pin.
-  const defaultCenter = [OWAK_HALL.lat, OWAK_HALL.lng];
-  const defaultZoom = OWAK_HALL.zoom;
+  const defaultCenter = [MAP_HOME.lat, MAP_HOME.lng];
+  const defaultZoom = MAP_HOME.zoom;
 
   return (
     <Card className="!p-0 overflow-hidden">
@@ -230,11 +233,11 @@ export default function MeterMapPanel() {
           </label>
           <button
             type="button"
-            onClick={flyToHall}
+            onClick={flyToHome}
             className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100"
-            title="Re-centre on Owak Barangay Hall"
+            title="Re-centre on Owak Barangay Gymnasium"
           >
-            Centre on Hall
+            Centre on Gym
           </button>
         </div>
       </div>
