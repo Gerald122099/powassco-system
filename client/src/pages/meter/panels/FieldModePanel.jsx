@@ -5,7 +5,7 @@ const QRScannerView = lazy(() => import("../../../components/QRScannerView"));
 import { useAuth } from "../../../context/AuthContext";
 import { parseMeterQR } from "../../../lib/meterQr";
 import * as odb from "../../../lib/offlineDb";
-import { downloadBatch, saveReadingOffline, syncQueue, currentPeriodKey } from "../../../lib/fieldSync";
+import { downloadBatch, saveReadingOffline, syncQueue, currentPeriodKey, getCurrentLocation } from "../../../lib/fieldSync";
 import { connectPrinter, printerConnected, printWaterReceipt, thermalSupported } from "../../../lib/thermalPrint";
 import { calculateWaterBillLocal } from "../../../lib/waterBillingLocal";
 import { printRouteSheet } from "../../../lib/routeSheet";
@@ -258,6 +258,11 @@ export default function FieldModePanel() {
     const { member, items } = confirmSave;
     setConfirmSave(null);
     try {
+      // Capture GPS once for this whole confirm-save batch — every
+      // meter on this PN is at the same physical address, so a single
+      // fix is fine. Best-effort; if denied/unavailable the readings
+      // sync without coords and the map pin stays at its prior position.
+      const coords = await getCurrentLocation(8000);
       for (const { mt, val, prev } of items) {
         const key = `${mnorm(member.pnNo)}__${mnorm(mt.meterNumber)}`;
         await saveReadingOffline({
@@ -274,6 +279,7 @@ export default function FieldModePanel() {
           // If the plumber explicitly edited a synced reading, tell the
           // server to overwrite the existing row.
           forceUpdate: !!editUnlocked[key],
+          coords,
         });
       }
       flash(`✓ Saved ${items.length} reading(s)${navigator.onLine ? " — syncing…" : " offline (will sync when online)."}`, "success");

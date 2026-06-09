@@ -815,6 +815,49 @@ router.post("/import-readings", ...guard, async (req, res) => {
           results.success++;
         }
       }
+      // GPS pin update — every successful reading whose payload carried
+      // { coords: { lat, lng, accuracy? } } updates the matching meter's
+      // location.coordinates so the Meter Map sees a fresh pin. One
+      // bulkWrite covers the whole batch, with the positional operator
+      // targeting the right meter in the meters[] array.
+      {
+        const pinOps = [];
+        for (const item of _insertBuffer) {
+          const detail = results.details[item.detailIndex];
+          if (detail.status !== "success") continue;
+          const c = item.reading?.coords;
+          const lat = Number(c?.lat);
+          const lng = Number(c?.lng);
+          if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+          pinOps.push({
+            updateOne: {
+              filter: {
+                pnNo: String(item.reading.pnNo).toUpperCase(),
+                "meters.meterNumber": String(item.reading.meterNumber).toUpperCase(),
+              },
+              update: {
+                $set: {
+                  "meters.$.location.coordinates": {
+                    latitude: lat,
+                    longitude: lng,
+                    accuracy: Number.isFinite(Number(c?.accuracy)) ? Number(c.accuracy) : null,
+                  },
+                  "meters.$.updatedAt": new Date(),
+                  "meters.$.updatedBy": actorLabel,
+                },
+              },
+            },
+          });
+        }
+        if (pinOps.length > 0) {
+          try {
+            await WaterMember.bulkWrite(pinOps, { ordered: false });
+          } catch (e) {
+            console.error("Meter pin update failed:", e.message);
+          }
+        }
+      }
+
       // Bulk-generate bills for every successful insert in ONE bulkWrite
       // instead of N upsert roundtrips. With the unique compound index on
       // (pnNo, periodKey, meterNumber), MongoDB upserts each in O(log n).

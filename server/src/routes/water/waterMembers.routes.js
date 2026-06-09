@@ -98,6 +98,85 @@ router.get("/", ...guard, async (req, res) => {
   }
 });
 
+// GET /api/water/members/map?periodKey=YYYY-MM
+// Returns every active meter that has GPS coordinates, decorated with
+// the data the Meter Map UI needs (owner, status flags, current-period
+// bill state, consumption). Powers the "Meter Map" tab in the Water
+// Bill Officer + Admin dashboards.
+router.get("/map", ...guard, async (req, res) => {
+  try {
+    const periodKey = (req.query.periodKey || new Date().toISOString().slice(0, 7)).trim();
+
+    const members = await WaterMember.find({ accountStatus: { $ne: "inactive" } })
+      .select("pnNo accountName personal billing meters arCategory address")
+      .lean();
+
+    // Pull the current-period bills + readings in one go so each marker
+    // can answer "have I been read this period?" and "am I unpaid?".
+    const [periodBills, periodReadings] = await Promise.all([
+      WaterBill.find({ periodKey })
+        .select("pnNo meterNumber status totalDue consumed")
+        .lean(),
+      // We only need to know whether (pn, meter) has a reading this
+      // period; selecting just the keys keeps the payload tiny.
+      (await import("../../models/WaterReading.js")).default
+        .find({ periodKey })
+        .select("pnNo meterNumber consumed")
+        .lean(),
+    ]);
+
+    const billByKey = new Map();
+    for (const b of periodBills) {
+      billByKey.set(`${b.pnNo}__${String(b.meterNumber).toUpperCase().trim()}`, b);
+    }
+    const readingByKey = new Map();
+    for (const r of periodReadings) {
+      readingByKey.set(`${r.pnNo}__${String(r.meterNumber).toUpperCase().trim()}`, r);
+    }
+
+    const pins = [];
+    for (const m of members) {
+      const isSeniorAccount = !!m.personal?.isSeniorCitizen;
+      const meters = (m.meters || []).filter(
+        (mt) => mt.meterStatus === "active" && mt.isBillingActive
+      );
+      for (const mt of meters) {
+        const lat = Number(mt.location?.coordinates?.latitude);
+        const lng = Number(mt.location?.coordinates?.longitude);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+        const key = `${m.pnNo}__${String(mt.meterNumber).toUpperCase().trim()}`;
+        const bill = billByKey.get(key);
+        const reading = readingByKey.get(key);
+        pins.push({
+          pnNo: m.pnNo,
+          accountName: m.accountName,
+          meterNumber: mt.meterNumber,
+          subName: mt.subName || "",
+          lat,
+          lng,
+          // status flags the marker uses to pick its icon
+          isSenior: isSeniorAccount || !!mt.isDiscountMeter,
+          isSubjectForDisconnection: !!mt.disconnectionRemarks || mt.meterStatus === "disconnected",
+          meterStatus: mt.meterStatus,
+          // current-period state
+          hasReading: !!reading,
+          consumed: reading?.consumed ?? bill?.consumed ?? 0,
+          billStatus: bill?.status || (reading ? "unpaid" : "none"),
+          totalDue: bill?.totalDue ?? 0,
+          classification: m.billing?.classification || "residential",
+          sitio: m.address?.streetSitioPurok || "",
+          arCategory: m.arCategory || "",
+        });
+      }
+    }
+
+    res.json({ periodKey, pins, total: pins.length });
+  } catch (error) {
+    console.error("Error fetching meter map:", error);
+    res.status(500).json({ message: "Failed to fetch meter map" });
+  }
+});
+
 // GET /api/water/members/sitios — distinct sitio + AR-category lists.
 // Powers the two filter dropdowns in the Members panel.
 router.get("/sitios", ...guard, async (req, res) => {

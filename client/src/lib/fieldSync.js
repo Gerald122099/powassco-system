@@ -44,7 +44,10 @@ export async function downloadBatch({ token, periodKey = currentPeriodKey() }) {
 // Save a reading locally (works fully offline). `forceUpdate` is true
 // when the plumber explicitly edited an already-synced row after
 // password step-up — the server will overwrite the existing reading.
-export async function saveReadingOffline({ pnNo, meterNumber, periodKey, previousReading, presentReading, consumptionMultiplier = 1, forceUpdate = false }) {
+// `coords` is optional { lat, lng, accuracy } from the plumber's
+// browser geolocation — when present, the server pins/updates that
+// meter's location in the Meter Map.
+export async function saveReadingOffline({ pnNo, meterNumber, periodKey, previousReading, presentReading, consumptionMultiplier = 1, forceUpdate = false, coords = null }) {
   const prev = Number(previousReading) || 0;
   const pres = Number(presentReading);
   if (!(pres >= prev)) throw new Error("Present reading must be ≥ previous reading.");
@@ -59,8 +62,41 @@ export async function saveReadingOffline({ pnNo, meterNumber, periodKey, previou
     consumed,
     readDate: String(Date.now()),
     forceUpdate: !!forceUpdate,
+    coords: coords && Number.isFinite(coords.lat) && Number.isFinite(coords.lng)
+      ? { lat: coords.lat, lng: coords.lng, accuracy: coords.accuracy ?? null }
+      : null,
   });
   return { consumed };
+}
+
+// Best-effort geolocation. Returns { lat, lng, accuracy } or null on
+// any failure (denied, unavailable, timeout). Field Mode calls this
+// just before commitSave so each synced reading carries the plumber's
+// position at the time of encoding.
+export function getCurrentLocation(timeoutMs = 8000) {
+  return new Promise((resolve) => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      resolve(null);
+      return;
+    }
+    let settled = false;
+    const fail = () => { if (!settled) { settled = true; resolve(null); } };
+    const t = setTimeout(fail, timeoutMs + 1000);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(t);
+        resolve({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy ?? null,
+        });
+      },
+      fail,
+      { enableHighAccuracy: true, maximumAge: 30000, timeout: timeoutMs }
+    );
+  });
 }
 
 let syncing = false; // guard against concurrent syncs (interval + manual + online event)
@@ -110,6 +146,7 @@ async function runSync({ token, user }) {
       presentReading: r.presentReading,
       consumptionMultiplier: r.consumptionMultiplier,
       readDate: r.readDate,
+      coords: r.coords || null,
     }));
     const res = await apiFetch("/water/batches/import-readings", {
       method: "POST",

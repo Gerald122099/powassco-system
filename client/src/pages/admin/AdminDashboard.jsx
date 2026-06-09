@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import DashboardLayout from "../../components/DashboardLayout";
-import { Users, Settings, BarChart3, Banknote, Wallet, FileBarChart, UserCog, ScrollText, ShieldCheck, Inbox, CalendarClock, Megaphone, Boxes, CreditCard, ReceiptText, AlertTriangle } from "lucide-react";
+import { Users, Settings, BarChart3, Banknote, Wallet, FileBarChart, UserCog, ScrollText, ShieldCheck, Inbox, CalendarClock, Megaphone, Boxes, CreditCard, ReceiptText, AlertTriangle, MapPin } from "lucide-react";
 import CollectionTodayPanel from "../../components/CollectionTodayPanel";
 import MembersPanel from "../water/panels/MembersPanel";
+import MeterMapPanel from "../water/panels/MeterMapPanel";
 import DangerZonePanel from "./DangerZonePanel";
 import Card from "../../components/Card";
 import Modal from "../../components/Modal";
@@ -89,6 +90,7 @@ function IconButton({ children, onClick, tone = "default", title }) {
 const adminNavItems = [
   { key: "users", label: "User Management", icon: Users, desc: "Create employees, assign roles, manage accounts" },
   { key: "members", label: "Water Members", icon: UserCog, desc: "View, edit, and delete water member accounts" },
+  { key: "metermap", label: "Meter Map", icon: MapPin, desc: "Map of every meter pinned by field plumbers — colour-coded by status" },
   { key: "water", label: "Water Settings", icon: Settings, desc: "Tariffs, due dates, penalties, and discounts" },
   { key: "analytics", label: "Water Analytics", icon: BarChart3, desc: "Water billing analytics and summaries" },
   { key: "loans", label: "Loan Analytics", icon: Banknote, desc: "Capital, interest profit, collections, and outstanding" },
@@ -394,6 +396,7 @@ export default function AdminDashboard() {
 
         {/* Water Members Tab — full CRUD; admin bypasses the dual-control gate */}
         {activeTab === "members" && <MembersPanel />}
+        {activeTab === "metermap" && <MeterMapPanel />}
 
         {/* Water Settings Tab */}
         {activeTab === "water" && <WaterSettingsPanel />}
