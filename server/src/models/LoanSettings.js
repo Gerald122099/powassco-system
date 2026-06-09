@@ -27,6 +27,11 @@ const LoanSettingsSchema = new mongoose.Schema(
     penaltyValue: { type: Number, default: 12 },
     penaltyFrequency: { type: String, enum: ["once", "monthly"], default: "monthly" },
 
+    // Minimum Capital Build-Up balance the borrower must hold on their
+    // water account before a loan can be approved. Editable from the
+    // admin Loan Settings panel; default ₱3,000 per co-op policy.
+    minCbuForLoan: { type: Number, default: 3000, min: 0 },
+
     updatedBy: { type: String, default: "" },
   },
   { timestamps: true }

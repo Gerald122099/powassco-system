@@ -217,6 +217,25 @@ export default function LoanApplyPanel() {
               <span className="text-xs text-slate-500">PN {elig.member.pnNo}</span>
             </div>
             <div className={`mt-1 text-sm font-medium ${elig.eligible ? "text-emerald-700" : "text-red-700"}`}>{elig.reason}</div>
+            {/* CBU snapshot — surfaced from the eligibility endpoint so
+                the officer sees the exact balance and the minimum the
+                co-op policy requires. */}
+            {typeof elig.cbuBalance === "number" && (
+              <div className="mt-3 grid grid-cols-2 gap-3 rounded-xl bg-white/60 px-3 py-2 text-sm">
+                <div>
+                  <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">CBU balance</div>
+                  <div className={`font-mono text-lg font-extrabold ${elig.cbuBalance >= (elig.minCbuRequired || 0) ? "text-emerald-700" : "text-red-700"}`}>
+                    ₱{Number(elig.cbuBalance).toFixed(2)}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Minimum required</div>
+                  <div className="font-mono text-lg font-extrabold text-slate-800">
+                    ₱{Number(elig.minCbuRequired || 0).toFixed(2)}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </Card>

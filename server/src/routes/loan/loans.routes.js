@@ -46,13 +46,24 @@ router.get("/eligibility/:pnNo", guard, async (req, res) => {
     return res.status(404).json({ eligible: false, reason: "Water member not found" });
   }
   const outstanding = await outstandingWaterBills(pnNo);
-  const eligible = outstanding === 0;
+  const s = await getSettings();
+  const minCbu = Number(s.minCbuForLoan ?? 3000);
+  const cbu = Number(member.cbuBalance || 0);
+
+  // Two gates: no outstanding water bills AND CBU at-or-above the
+  // co-op's minimum. Both have to pass; bookkeeper can override at
+  // POST time with body.override.
+  const reasons = [];
+  if (outstanding > 0) reasons.push(`${outstanding} unpaid/overdue water bill(s) must be settled first`);
+  if (cbu < minCbu) reasons.push(`CBU balance ₱${cbu.toFixed(2)} is below the ₱${minCbu.toFixed(2)} minimum required for a loan`);
+  const eligible = reasons.length === 0;
+
   res.json({
     eligible,
-    reason: eligible
-      ? "No outstanding water bills"
-      : `${outstanding} unpaid/overdue water bill(s) must be settled first`,
+    reason: eligible ? "Eligible — no outstanding bills and CBU above minimum" : reasons.join("; "),
     outstandingBills: outstanding,
+    cbuBalance: cbu,
+    minCbuRequired: minCbu,
     member: {
       pnNo: member.pnNo,
       accountName: member.accountName,
@@ -184,6 +195,21 @@ router.post("/applications", guard, async (req, res) => {
   if (!(principal > 0)) return res.status(400).json({ message: "Principal (amount applied) must be greater than 0" });
 
   const s = await getSettings();
+
+  // CBU eligibility gate. Co-op policy: borrower must hold at least
+  // `minCbuForLoan` (default ₱3,000) in their Capital Build-Up before
+  // we'll release a new loan. Bookkeeper can override with
+  // body.override (same flag the outstanding-bills check uses).
+  const minCbu = Number(s.minCbuForLoan ?? 3000);
+  const cbu = Number(member.cbuBalance || 0);
+  if (cbu < minCbu && !b.override) {
+    return res.status(409).json({
+      message: `CBU balance ₱${cbu.toFixed(2)} is below the ₱${minCbu.toFixed(2)} minimum required for a loan.`,
+      cbuBalance: cbu,
+      minCbuRequired: minCbu,
+      shortfall: Number((minCbu - cbu).toFixed(2)),
+    });
+  }
   const rate = Number(b.interestRatePerMonth ?? s.interestRatePerMonth ?? 2.5);
   const term = Math.max(1, Number(b.termMonths || s.defaultTermMonths || 6));
 
