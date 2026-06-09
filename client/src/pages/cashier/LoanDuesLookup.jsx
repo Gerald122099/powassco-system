@@ -227,6 +227,42 @@ export default function LoanDuesLookup() {
         </div>
       </div>
 
+      {/* CBU LEDGER RECONCILIATION — sibling of the water view, same data. */}
+      {todayStats?.cbuOnFile && (
+        <div className={`mt-2 rounded-2xl border p-3 ${
+          Math.abs(Number(todayStats.cbuOnFile.drift || 0)) < 0.01
+            ? "border-slate-200 bg-slate-50"
+            : "border-red-300 bg-red-50"
+        }`}>
+          <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="font-bold uppercase tracking-widest text-slate-600">
+              CBU Ledger (matches bookkeeper)
+            </div>
+            <div className="flex flex-wrap items-center gap-3 font-mono">
+              <span className="text-emerald-700">
+                Credits +₱{Number(todayStats.cbuOnFile.ledger?.credits || 0).toFixed(2)}
+                <span className="text-slate-500"> ({todayStats.cbuOnFile.ledger?.creditCount || 0})</span>
+              </span>
+              <span className="text-red-700">
+                Debits −₱{Number(todayStats.cbuOnFile.ledger?.debits || 0).toFixed(2)}
+                <span className="text-slate-500"> ({todayStats.cbuOnFile.ledger?.debitCount || 0})</span>
+              </span>
+              <span className="text-slate-800 font-bold">
+                Net ₱{Number(todayStats.cbuOnFile.ledger?.net || 0).toFixed(2)}
+              </span>
+              <span className="text-slate-800 font-bold">
+                On file ₱{Number(todayStats.cbuOnFile.total || 0).toFixed(2)}
+              </span>
+              {Math.abs(Number(todayStats.cbuOnFile.drift || 0)) >= 0.01 && (
+                <span className="rounded-full bg-red-600 px-2 py-0.5 font-bold text-white">
+                  Drift ₱{Number(todayStats.cbuOnFile.drift).toFixed(2)} — tell bookkeeper
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="mt-6 mx-auto max-w-2xl">
         <div className="text-center">
           <div className="inline-flex items-center gap-2 text-base font-bold text-slate-900">

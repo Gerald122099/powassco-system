@@ -13,6 +13,7 @@ import WaterPayment from "../models/WaterPayment.js";
 import LoanPayment from "../models/LoanPayment.js";
 import WaterBill from "../models/WaterBill.js";
 import WaterMember from "../models/WaterMember.js";
+import CbuTransaction from "../models/CbuTransaction.js";
 import LoanApplication from "../models/LoanApplication.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
@@ -107,8 +108,12 @@ router.get("/today", ...guard, async (req, res) => {
             { $group: { _id: null, total: { $sum: "$balance" }, count: { $sum: 1 } } },
           ])
         : Promise.resolve([]),
+      // Total CBU held across EVERY member with a non-zero balance —
+      // intentionally NO accountStatus filter so we match the
+      // bookkeeper's /members-cbu view. Inactive accounts can still
+      // hold CBU until it's refunded or applied.
       WaterMember.aggregate([
-        { $match: { accountStatus: { $ne: "inactive" }, cbuBalance: { $gt: 0 } } },
+        { $match: { cbuBalance: { $ne: 0 } } },
         { $group: { _id: null, total: { $sum: "$cbuBalance" }, count: { $sum: 1 } } },
       ]),
     ]);
@@ -118,6 +123,31 @@ router.get("/today", ...guard, async (req, res) => {
     const loanOutstandingCount = Number(loanOutstandingAgg[0]?.count || 0);
     const cbuOnFile = Number(cbuOnFileAgg[0]?.total || 0);
     const cbuOnFileMembers = Number(cbuOnFileAgg[0]?.count || 0);
+
+    // CBU ledger reconciliation. Sums credits and debits across the
+    // entire CbuTransaction history; (credits - debits) should equal
+    // the snapshot above to the centavo. If it doesn't, something
+    // wrote to member.cbuBalance without a corresponding ledger entry
+    // (or vice versa) — the dashboard surfaces the drift so the
+    // bookkeeper can investigate.
+    const ledgerAgg = await CbuTransaction.aggregate([
+      { $group: { _id: "$type", total: { $sum: "$amount" }, count: { $sum: 1 } } },
+    ]);
+    let ledgerCredits = 0;
+    let ledgerDebits = 0;
+    let ledgerCreditCount = 0;
+    let ledgerDebitCount = 0;
+    for (const row of ledgerAgg) {
+      if (row._id === "credit") {
+        ledgerCredits = Number(row.total || 0);
+        ledgerCreditCount = Number(row.count || 0);
+      } else if (row._id === "debit") {
+        ledgerDebits = Number(row.total || 0);
+        ledgerDebitCount = Number(row.count || 0);
+      }
+    }
+    const ledgerNet = Number((ledgerCredits - ledgerDebits).toFixed(2));
+    const cbuDrift = Number((cbuOnFile - ledgerNet).toFixed(2));
 
     // Per-collector breakdown (handy for the bill officer view to see who posted what).
     const byCollector = {};
@@ -177,6 +207,17 @@ router.get("/today", ...guard, async (req, res) => {
       cbuOnFile: {
         total: cbuOnFile,
         members: cbuOnFileMembers,
+        // Ledger view — every CBU movement ever recorded. The net
+        // (credits − debits) should equal `total` above; `drift` is
+        // the gap, expected to be 0.
+        ledger: {
+          credits: ledgerCredits,
+          creditCount: ledgerCreditCount,
+          debits: ledgerDebits,
+          debitCount: ledgerDebitCount,
+          net: ledgerNet,
+        },
+        drift: cbuDrift,
       },
       counts: {
         water: { total: waterDocs.length, cash: countBy(waterDocs, isCash), online: countBy(waterDocs, isOnline) },
