@@ -39,6 +39,91 @@ async function outstandingWaterBills(pnNo) {
 }
 
 // ---- Eligibility: member exists + no unpaid/overdue water bills ----
+// GET /api/loan/eligibility/search?q=... — fuzzy lookup that accepts
+// any of:
+//   - exact Account Number (6-char alphanumeric, after pnNo migration)
+//   - exact meter number (NNNNN#N or legacy bare numeric)
+//   - account name (case-insensitive substring)
+// Returns either ONE matched member with full eligibility (when the
+// query resolves unambiguously) or a list of candidates (when the
+// name search produces multiple hits).
+router.get("/eligibility/search", guard, async (req, res) => {
+  try {
+    const q = String(req.query.q || "").trim();
+    if (!q) return res.status(400).json({ message: "q is required" });
+    const qUpper = q.toUpperCase();
+
+    // 1) Exact Account Number match (pnNo)
+    let hits = await WaterMember.find({ pnNo: qUpper }).limit(5).lean();
+
+    // 2) Exact meter number — multikey index match
+    if (hits.length === 0) {
+      hits = await WaterMember.find({ "meters.meterNumber": qUpper }).limit(5).lean();
+    }
+
+    // 3) Fuzzy account name (case-insensitive substring). Anchor on
+    //    the start so "Aguanta" doesn't match "Daguanta" — Mongo's
+    //    regex with /^.../i hits the indexed prefix when there's one.
+    if (hits.length === 0) {
+      const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+      hits = await WaterMember.find({
+        $or: [{ accountName: re }, { "personal.fullName": re }],
+      })
+        .limit(25)
+        .lean();
+    }
+
+    if (hits.length === 0) return res.status(404).json({ message: "No matching account found." });
+
+    // Multiple name hits → return the candidate list so the UI can
+    // show a picker. No eligibility computed yet — that's only when
+    // a single member is resolved.
+    if (hits.length > 1) {
+      return res.json({
+        multiple: true,
+        candidates: hits.map((m) => ({
+          pnNo: m.pnNo,
+          accountName: m.accountName,
+          address: [m.address?.streetSitioPurok, m.address?.barangay].filter(Boolean).join(", ") || "",
+          classification: m.billing?.classification || "residential",
+          meters: (m.meters || []).filter((mt) => mt.meterStatus === "active").map((mt) => mt.meterNumber),
+          cbuBalance: Number(m.cbuBalance || 0),
+        })),
+      });
+    }
+
+    // Single match — compute full eligibility (same gates as the
+    // direct /eligibility/:pnNo endpoint).
+    const member = hits[0];
+    const outstanding = await outstandingWaterBills(member.pnNo);
+    const s = await getSettings();
+    const minCbu = Number(s.minCbuForLoan ?? 3000);
+    const cbu = Number(member.cbuBalance || 0);
+    const reasons = [];
+    if (outstanding > 0) reasons.push(`${outstanding} unpaid/overdue water bill(s) must be settled first`);
+    if (cbu < minCbu) reasons.push(`CBU balance ₱${cbu.toFixed(2)} is below the ₱${minCbu.toFixed(2)} minimum required for a loan`);
+    const eligible = reasons.length === 0;
+
+    res.json({
+      eligible,
+      reason: eligible ? "Eligible — no outstanding bills and CBU above minimum" : reasons.join("; "),
+      outstandingBills: outstanding,
+      cbuBalance: cbu,
+      minCbuRequired: minCbu,
+      member: {
+        pnNo: member.pnNo,
+        accountName: member.accountName,
+        accountStatus: member.accountStatus,
+        address: member.fullAddress || "",
+        classification: member.billing?.classification || "residential",
+      },
+    });
+  } catch (e) {
+    console.error("eligibility/search error:", e);
+    res.status(500).json({ message: "Eligibility search failed." });
+  }
+});
+
 router.get("/eligibility/:pnNo", guard, async (req, res) => {
   const pnNo = normPN(req.params.pnNo);
   const member = await WaterMember.findOne({ pnNo });

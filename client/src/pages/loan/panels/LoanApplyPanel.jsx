@@ -94,17 +94,47 @@ export default function LoanApplyPanel() {
     setForm((p) => ({ ...p, sourceOfIncome: [...p.sourceOfIncome, { source: "", amount: "", frequency: "monthly" }] }));
   }
 
+  // Candidates returned when a name search resolves to >1 member.
+  // Cleared as soon as the user picks one.
+  const [candidates, setCandidates] = useState([]);
+
   async function checkEligibility() {
     setErr("");
     setMsg("");
     setElig(null);
     setPreview(null);
-    const pn = pnNo.trim().toUpperCase();
-    if (!pn) {
-      setErr("Enter an Account No.");
+    setCandidates([]);
+    const q = pnNo.trim();
+    if (!q) {
+      setErr("Enter an Account No., Meter No., or Name.");
       return;
     }
     setChecking(true);
+    try {
+      const e = await apiFetch(`/loan/eligibility/search?q=${encodeURIComponent(q)}`, { token });
+      if (e.multiple) {
+        setCandidates(e.candidates || []);
+      } else {
+        setElig(e);
+        setForm((p) => ({
+          ...p,
+          applicant: { ...p.applicant, name: e.member?.accountName || "", homeAddress: e.member?.address || "" },
+        }));
+      }
+    } catch (e2) {
+      setErr(e2.message);
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  // After the user picks one of the multi-candidate results, fetch the
+  // full eligibility by the resolved Account Number.
+  async function pickCandidate(pn) {
+    setCandidates([]);
+    setPnNo(pn);
+    setChecking(true);
+    setErr("");
     try {
       const e = await apiFetch(`/loan/eligibility/${encodeURIComponent(pn)}`, { token });
       setElig(e);
@@ -184,16 +214,16 @@ export default function LoanApplyPanel() {
     <div className="space-y-4">
       <Card>
         <div className="text-lg font-bold tracking-tight text-slate-900">New Loan Application</div>
-        <div className="mt-0.5 text-sm text-slate-500">Enter the member's Account No. to check water-bill eligibility.</div>
+        <div className="mt-0.5 text-sm text-slate-500">Search by Account No., Meter No., or member name to check water-bill eligibility.</div>
 
         <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-end">
           <div className="flex-1">
-            <label className="text-xs font-semibold text-slate-600">Account No.</label>
+            <label className="text-xs font-semibold text-slate-600">Account No., Meter No., or Name</label>
             <input
               value={pnNo}
-              onChange={(e) => setPnNo(e.target.value.toUpperCase())}
+              onChange={(e) => setPnNo(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && checkEligibility()}
-              placeholder="e.g. K8M3PQ"
+              placeholder="K8M3PQ · 23842#1 · Dela Cruz"
               className={inputCls}
             />
           </div>
@@ -205,6 +235,41 @@ export default function LoanApplyPanel() {
             <Search size={16} /> {checking ? "Checking…" : "Check Eligibility"}
           </button>
         </div>
+
+        {/* Multi-match picker — only shown when a name search returns
+            more than one candidate. Picking a row triggers the full
+            eligibility fetch by Account Number. */}
+        {candidates.length > 0 && (
+          <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50/40 p-3">
+            <div className="text-xs font-semibold text-blue-800 mb-2">
+              {candidates.length} matches — pick the right account:
+            </div>
+            <div className="space-y-1.5">
+              {candidates.map((c) => (
+                <button
+                  key={c.pnNo}
+                  type="button"
+                  onClick={() => pickCandidate(c.pnNo)}
+                  className="w-full text-left rounded-xl border border-blue-200 bg-white px-3 py-2 hover:bg-blue-50 transition"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-bold text-slate-900 truncate">{c.accountName}</div>
+                      <div className="text-[11px] text-slate-500 truncate">
+                        {c.address || "—"} · {c.classification}
+                        {c.meters?.length > 0 && <> · meters: <span className="font-mono">{c.meters.join(", ")}</span></>}
+                      </div>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <div className="font-mono text-sm font-bold text-blue-700">{c.pnNo}</div>
+                      <div className="text-[10px] text-slate-500">CBU ₱{Number(c.cbuBalance || 0).toFixed(2)}</div>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {err && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{err}</div>}
         {msg && <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">{msg}</div>}
