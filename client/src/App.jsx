@@ -8,6 +8,7 @@ import InstallPrompt from "./components/InstallPrompt";
 import Toaster from "./components/Toast";
 import OnlineStatus from "./components/OnlineStatus";
 import AdminAuthzGate from "./components/AdminAuthzGate";
+import StagingBanner from "./components/StagingBanner";
 
 // Role dashboards + public sub-pages are lazy-loaded so each user only
 // downloads the code they need (much faster startup, esp. on phones).
@@ -72,6 +73,7 @@ function Protected({ roles, children }) {
 export default function App() {
   return (
     <AuthProvider>
+      <StagingBanner />
       <InstallPrompt />
       <OnlineStatus />
       <Toaster />

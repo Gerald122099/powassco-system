@@ -5,8 +5,14 @@ node_modules/
 .env
 .env.local
 .env.*.local
+.env.staging
+.env.production
 client/.env
+client/.env.staging
+client/.env.production
 server/.env
+server/.env.staging
+server/.env.production
 
 # keystores / certs (keep these out of the repo)
 jkspowasssco

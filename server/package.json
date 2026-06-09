@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "nodemon src/index.js",
     "start": "node src/index.js",
+    "dev:staging": "nodemon --env-file=.env.staging src/index.js",
+    "start:staging": "node --env-file=.env.staging src/index.js",
     "seed": "node src/seed.js",
     "import-existing": "node src/scripts/importExistingMembers.js",
     "test": "vitest run"
