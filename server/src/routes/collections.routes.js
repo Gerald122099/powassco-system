@@ -88,7 +88,31 @@ router.get("/today", ...guard, async (req, res) => {
 
     const cashTotal = waterCashGross + loanCashGross;
     const onlineTotal = waterOnlineGross + loanOnlineGross;
-    const cbuTotal = waterCbu + loanCbu;
+    // Today's CBU movements straight from the ledger — this is the
+    // SAME data the bookkeeper sees. Covers credits the cashier made
+    // (water_overpay / loan_overpay) AND credits/debits the bookkeeper
+    // typed in (manual_adjust, product_loan_charge, withdrawal). When
+    // cashier-only metrics are needed, .water.cbu / .loan.cbu below
+    // still split by module.
+    const ledgerToday = await CbuTransaction.aggregate([
+      { $match: { createdAt: { $gte: start, $lt: end } } },
+      { $group: { _id: { type: "$type", source: "$source" }, total: { $sum: "$amount" }, count: { $sum: 1 } } },
+    ]);
+    let cbuTodayCredits = 0;
+    let cbuTodayDebits = 0;
+    const cbuTodayBySource = {};
+    for (const row of ledgerToday) {
+      const amt = Number(row.total || 0);
+      if (row._id.type === "credit") cbuTodayCredits += amt;
+      else if (row._id.type === "debit") cbuTodayDebits += amt;
+      cbuTodayBySource[row._id.source || "unknown"] = (cbuTodayBySource[row._id.source || "unknown"] || 0) + (row._id.type === "credit" ? amt : -amt);
+    }
+    // Net CBU added today — this is what the cashier display matches
+    // against the bookkeeper. Falls back to the payment-based sum if
+    // the ledger is empty (legacy data before CbuTransaction existed).
+    const cbuTotal = cbuTodayCredits > 0 || cbuTodayDebits > 0
+      ? Number((cbuTodayCredits - cbuTodayDebits).toFixed(2))
+      : Number((waterCbu + loanCbu).toFixed(2));
     const billCollectedTotal = waterBillCollected + loanBillCollected;
     const grand = cashTotal + onlineTotal;
 
@@ -218,6 +242,14 @@ router.get("/today", ...guard, async (req, res) => {
           net: ledgerNet,
         },
         drift: cbuDrift,
+      },
+      // Today's CBU activity straight from the CbuTransaction ledger —
+      // matches what the bookkeeper sees on the same date.
+      cbuToday: {
+        credits: Number(cbuTodayCredits.toFixed(2)),
+        debits: Number(cbuTodayDebits.toFixed(2)),
+        net: Number((cbuTodayCredits - cbuTodayDebits).toFixed(2)),
+        bySource: cbuTodayBySource,
       },
       counts: {
         water: { total: waterDocs.length, cash: countBy(waterDocs, isCash), online: countBy(waterDocs, isOnline) },
