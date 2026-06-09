@@ -34,7 +34,10 @@ export default function LoanDuesLookup() {
   const [payLoan, setPayLoan] = useState(null);
   const [periods, setPeriods] = useState(1);
   const [payOR, setPayOR] = useState("");
+  // Same two-input cash-collected pattern as the water side —
+  // explicit bill vs CBU portions.
   const [payReceived, setPayReceived] = useState("");
+  const [payCbu, setPayCbu] = useState("");
   const [paying, setPaying] = useState(false);
   const [justPaid, setJustPaid] = useState(null);
   const [todayStats, setTodayStats] = useState(null);
@@ -46,6 +49,7 @@ export default function LoanDuesLookup() {
     setPeriods(1);
     setPayOR("");
     setPayReceived(String(loan.monthlyPayment || ""));
+    setPayCbu("");
   }
 
   const installmentTotal = payLoan ? Number(payLoan.monthlyPayment || 0) * Number(periods || 1) : 0;
@@ -53,9 +57,11 @@ export default function LoanDuesLookup() {
   async function submitPay(e) {
     e?.preventDefault?.();
     if (!payLoan) return;
-    const received = Number(payReceived) || 0;
+    const billPortion = Number(payReceived) || 0;
+    const cbuPortion = Math.max(0, Number(payCbu) || 0);
+    const totalReceived = billPortion + cbuPortion;
     if (!payOR.trim()) return toast.error("Enter the OR number.");
-    if (received < installmentTotal) return toast.error(`Amount received must be at least ₱${installmentTotal.toFixed(2)}.`);
+    if (billPortion < installmentTotal) return toast.error(`Loan amount must be at least ₱${installmentTotal.toFixed(2)}.`);
     setPaying(true);
     const target = payLoan;
     const orNo = payOR.trim().toUpperCase();
@@ -67,7 +73,7 @@ export default function LoanDuesLookup() {
         body: {
           loanId: target.loanId,
           orNo,
-          amountReceived: received,
+          amountReceived: totalReceived,
           periodsCovered: periodsPaid,
           method: "cash",
         },
@@ -80,7 +86,7 @@ export default function LoanDuesLookup() {
         borrowerName: target.borrowerName,
         borrowerPnNo: target.borrowerPnNo,
         amountDue: installmentTotal,
-        amountReceived: received,
+        amountReceived: totalReceived,
         periodsCovered: res.periodsCovered || periodsPaid,
         cbuExcess: res.cbuExcess || 0,
         newCbu: res.newCbuBalance || 0,
@@ -398,12 +404,44 @@ export default function LoanDuesLookup() {
               <label className="text-xs font-semibold text-slate-700">OR Number (paper receipt)</label>
               <input value={payOR} onChange={(e) => setPayOR(e.target.value.toUpperCase())} placeholder="e.g. 0010234" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-mono uppercase" />
             </div>
-            <div>
-              <label className="text-xs font-semibold text-slate-700">Amount Received (₱)</label>
-              <input type="number" step="0.01" min={installmentTotal} value={payReceived} onChange={(e) => setPayReceived(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-mono text-right" />
-              {Number(payReceived) > installmentTotal && (
-                <div className="mt-1 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-1.5 text-[11px] font-semibold text-emerald-800">
-                  <Wallet size={11} className="-mt-0.5 mr-1 inline" /> Excess <b>{peso(Number(payReceived) - installmentTotal)}</b> will be added to {payLoan.borrowerName}'s CBU.
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-semibold text-slate-700">Amount for Loan (₱)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min={installmentTotal}
+                  value={payReceived}
+                  onChange={(e) => setPayReceived(e.target.value)}
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-mono text-right"
+                />
+                <div className="mt-1 text-[10px] text-slate-500">Must be ≥ ₱{installmentTotal.toFixed(2)}.</div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-700">Add to CBU (₱)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={payCbu}
+                  onChange={(e) => setPayCbu(e.target.value)}
+                  placeholder="0.00"
+                  className="mt-1 w-full rounded-xl border border-amber-200 bg-amber-50/40 px-3 py-2.5 font-mono text-right"
+                />
+                <div className="mt-1 text-[10px] text-slate-500">Optional. Extra for Capital Build-Up.</div>
+              </div>
+            </div>
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5">
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-semibold text-emerald-900">Total Cash Collected</span>
+                <span className="font-mono text-lg font-extrabold text-emerald-900">
+                  {peso((Number(payReceived) || 0) + Math.max(0, Number(payCbu) || 0))}
+                </span>
+              </div>
+              {Math.max(0, Number(payCbu) || 0) > 0 && (
+                <div className="mt-1 text-[11px] text-emerald-800">
+                  <Wallet size={11} className="-mt-0.5 mr-1 inline" />
+                  Includes <b>{peso(Math.max(0, Number(payCbu) || 0))}</b> going to {payLoan.borrowerName}'s CBU.
                 </div>
               )}
             </div>

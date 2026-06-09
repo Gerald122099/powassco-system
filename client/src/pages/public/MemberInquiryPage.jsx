@@ -38,8 +38,13 @@ function persistSaved(list) {
 }
 
 export default function MemberInquiryPage() {
-  // 'pn' (default) or 'meter' — toggles which input + endpoint we use.
-  const [mode, setMode] = useState("pn");
+  // Single auto-detect search. The user types either an Account
+  // Number (6-char alphanumeric) or a Meter Number (NNNNN#N or legacy
+  // numeric) into one box; submit() tries PN first and falls back to
+  // meter on 404 so they never have to pick which one they're looking
+  // up. State is kept under the old pn/meter names so existing
+  // callers (saved-handle loaders, push-subscribe helpers) still work.
+  const [searchInput, setSearchInput] = useState("");
   const [pnNo, setPnNo] = useState("");
   const [meterNo, setMeterNo] = useState("");
   const [loading, setLoading] = useState(false);
@@ -149,8 +154,30 @@ export default function MemberInquiryPage() {
 
   async function submit(e) {
     e.preventDefault();
-    const v = mode === "meter" ? meterNo : pnNo;
-    await runInquiry(mode, v);
+    const v = (searchInput || "").trim().toUpperCase();
+    if (!v) {
+      setErr("Please enter your Account Number or Meter Number.");
+      return;
+    }
+    // Try PN first — that's the most common case (a member checking
+    // their whole account). If the server says "not found", retry the
+    // meter-scoped endpoint. Whichever wins becomes the active view.
+    setLoading(true);
+    setErr("");
+    try {
+      try {
+        await runInquiry("pn", v);
+        return;
+      } catch (e1) {
+        const msg = String(e1?.message || "").toLowerCase();
+        if (!/not found/.test(msg)) throw e1;
+      }
+      await runInquiry("meter", v);
+    } catch (e2) {
+      setErr(e2.message || "Account not found. Check the number and try again.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   // Auto-open the most-recently-saved entry on page mount so a returning
@@ -158,7 +185,7 @@ export default function MemberInquiryPage() {
   useEffect(() => {
     if (saved.length === 0) return;
     const first = saved[0];
-    setMode(first.kind);
+    setSearchInput(first.value);
     if (first.kind === "meter") setMeterNo(first.value);
     else setPnNo(first.value);
     runInquiry(first.kind, first.value);
@@ -205,7 +232,7 @@ export default function MemberInquiryPage() {
     persistSaved(next);
   }
   function openSaved(s) {
-    setMode(s.kind);
+    setSearchInput(s.value);
     if (s.kind === "meter") setMeterNo(s.value);
     else setPnNo(s.value);
     runInquiry(s.kind, s.value);
@@ -301,46 +328,23 @@ export default function MemberInquiryPage() {
                 <div className="text-xs font-semibold uppercase tracking-wide text-green-600">POWASSCO</div>
                 <div className="text-2xl font-bold text-gray-900">Member Bill Inquiry</div>
                 <div className="mt-1 text-sm text-gray-500">
-                  Search by your PN No to see the full account, or by your meter number to see that meter only.
+                  Enter your Account Number or Meter Number — we figure out which is which.
                 </div>
               </div>
-            </div>
-
-            {/* Mode toggle — PN (whole account) vs single meter (tenant view). */}
-            <div className="mb-3 inline-flex rounded-2xl border border-green-200 bg-green-50 p-1 text-sm font-semibold">
-              <button type="button" onClick={() => setMode("pn")}
-                className={`px-4 py-2 rounded-xl transition ${mode === "pn" ? "bg-green-600 text-white shadow-sm" : "text-green-700 hover:bg-green-100"}`}>
-                PN / Account
-              </button>
-              <button type="button" onClick={() => setMode("meter")}
-                className={`px-4 py-2 rounded-xl transition ${mode === "meter" ? "bg-green-600 text-white shadow-sm" : "text-green-700 hover:bg-green-100"}`}>
-                Meter Number
-              </button>
             </div>
 
             <form onSubmit={submit} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="md:col-span-2">
                   <label className="mb-2 block text-sm font-semibold text-gray-700">
-                    {mode === "meter" ? "Meter Number" : "PN No (Account Number)"}
+                    Account Number or Meter Number
                   </label>
-                  {mode === "meter" ? (
-                    <input
-                      key="meter"
-                      className="w-full rounded-2xl border border-green-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-green-400 focus:border-transparent transition-all"
-                      value={meterNo}
-                      onChange={(e) => setMeterNo(e.target.value.toUpperCase())}
-                      placeholder="e.g. 0009876"
-                    />
-                  ) : (
-                    <input
-                      key="pn"
-                      className="w-full rounded-2xl border border-green-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-green-400 focus:border-transparent transition-all"
-                      value={pnNo}
-                      onChange={(e) => setPnNo(e.target.value.toUpperCase())}
-                      placeholder="e.g. PN-000123"
-                    />
-                  )}
+                  <input
+                    className="w-full rounded-2xl border border-green-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-green-400 focus:border-transparent transition-all"
+                    value={searchInput}
+                    onChange={(e) => setSearchInput(e.target.value.toUpperCase())}
+                    placeholder="e.g. K8M3PQ or 23842#1"
+                  />
                 </div>
 
                 <div className="flex items-end">
@@ -355,9 +359,7 @@ export default function MemberInquiryPage() {
               </div>
 
               <div className="rounded-xl bg-slate-50 p-3 text-xs text-gray-500">
-                {mode === "meter"
-                  ? "Tip: tenants can search by their meter number to see only their meter's bills, not the whole account."
-                  : "Enter your PN Number exactly as it appears on your bill statement."}
+                Tip: typing a 6-character Account Number shows the whole account; typing a Meter Number (with the <span className="font-mono">#1</span> / <span className="font-mono">#2</span> suffix) shows only that meter — useful for tenants.
               </div>
 
               {/* Saved-locally chips — open with one tap, auto-displayed

@@ -36,7 +36,16 @@ export default function WaterDuesLookup() {
   // Payment modal: { bill, totalDue }
   const [payTarget, setPayTarget] = useState(null);
   const [payOR, setPayOR] = useState("");
+  // Two-input cash-collected model:
+  //   payReceived       = the bill portion the cashier is collecting
+  //                       (defaults to the full totalDue on open).
+  //   payCbu            = optional ADDITIONAL cash the member is paying
+  //                       into their CBU on top of the bill. Defaults
+  //                       to 0. Cashier types whatever extra was handed
+  //                       over for CBU and the modal shows the combined
+  //                       total to collect.
   const [payReceived, setPayReceived] = useState("");
+  const [payCbu, setPayCbu] = useState("");
   const [paying, setPaying] = useState(false);
   // Highlight the just-paid bill + post-pay receipt info for printing.
   const [justPaid, setJustPaid] = useState(null); // { orNo, period, meter, amountDue, amountReceived, cbuExcess, newCbu, accountName, pnNo }
@@ -51,21 +60,26 @@ export default function WaterDuesLookup() {
     setPayTarget(bill);
     setPayOR("");
     setPayReceived(String(bill.totalDue || ""));
+    setPayCbu("");
   }
 
   async function submitPay(e) {
     e?.preventDefault?.();
     if (!payTarget) return;
     const due = Number(payTarget.totalDue) || 0;
-    const received = Number(payReceived) || 0;
+    const billPortion = Number(payReceived) || 0;
+    const cbuPortion = Math.max(0, Number(payCbu) || 0);
+    // amountReceived sent to the server is the COMBINED cash collected.
+    // Anything beyond the bill portion is treated as CBU contribution
+    // server-side via the existing excess-to-CBU path, so no API change
+    // is needed — the UI just makes the split explicit.
+    const totalReceived = billPortion + cbuPortion;
     if (!payOR.trim()) return toast.error("Enter the OR number.");
-    if (received < due) return toast.error(`Amount received must be at least ₱${due.toFixed(2)}.`);
+    if (billPortion < due) return toast.error(`Bill amount must be at least ₱${due.toFixed(2)}.`);
     setPaying(true);
     const target = payTarget;
     const orNo = payOR.trim().toUpperCase();
     try {
-      // Always send periodKey (canonical YYYY-MM) so the server's compound
-      // index lookup never misses on the human-readable periodCovered label.
       const res = await apiFetch("/cashier/pay-water", {
         method: "POST",
         token,
@@ -74,7 +88,7 @@ export default function WaterDuesLookup() {
           meterNumber: target.meterNumber,
           periodKey: target.periodKey || target.periodCovered,
           orNo,
-          amountReceived: received,
+          amountReceived: totalReceived,
           method: "cash",
         },
       });
@@ -87,7 +101,7 @@ export default function WaterDuesLookup() {
         period: target.periodCovered || target.periodKey,
         meter: target.meterNumber,
         amountDue: due,
-        amountReceived: received,
+        amountReceived: totalReceived,
         cbuExcess: res.cbuExcess || 0,
         newCbu: res.newCbuBalance || 0,
         accountName: data.member.accountName,
@@ -446,17 +460,51 @@ export default function WaterDuesLookup() {
               <label className="text-xs font-semibold text-slate-700">OR Number (paper receipt)</label>
               <input value={payOR} onChange={(e) => setPayOR(e.target.value.toUpperCase())} autoFocus placeholder="e.g. 0010234" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-mono uppercase" />
             </div>
-            <div>
-              <label className="text-xs font-semibold text-slate-700">Amount Received (₱)</label>
-              <input type="number" step="0.01" min={payTarget.totalDue} value={payReceived} onChange={(e) => setPayReceived(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-mono text-right" />
-              {Number(payReceived) > Number(payTarget.totalDue) && (
-                <div className="mt-1 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-1.5 text-[11px] font-semibold text-emerald-800">
-                  Excess <b>{peso(Number(payReceived) - Number(payTarget.totalDue))}</b> will be added to {data?.member?.accountName}'s CBU (Capital Build-Up).
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-semibold text-slate-700">Amount for Bill (₱)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min={payTarget.totalDue}
+                  value={payReceived}
+                  onChange={(e) => setPayReceived(e.target.value)}
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-mono text-right"
+                />
+                <div className="mt-1 text-[10px] text-slate-500">Pre-filled to total due. Must be ≥ ₱{Number(payTarget.totalDue).toFixed(2)}.</div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-700">Add to CBU (₱)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={payCbu}
+                  onChange={(e) => setPayCbu(e.target.value)}
+                  placeholder="0.00"
+                  className="mt-1 w-full rounded-xl border border-amber-200 bg-amber-50/40 px-3 py-2.5 font-mono text-right"
+                />
+                <div className="mt-1 text-[10px] text-slate-500">Optional. Extra cash for Capital Build-Up.</div>
+              </div>
+            </div>
+            {/* Combined total — what the cashier actually collects in
+                hand from the member. Sum of the bill portion and any
+                CBU contribution. */}
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5">
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-semibold text-emerald-900">Total Cash Collected</span>
+                <span className="font-mono text-lg font-extrabold text-emerald-900">
+                  {peso((Number(payReceived) || 0) + Math.max(0, Number(payCbu) || 0))}
+                </span>
+              </div>
+              {Math.max(0, Number(payCbu) || 0) > 0 && (
+                <div className="mt-1 text-[11px] text-emerald-800">
+                  Includes <b>{peso(Math.max(0, Number(payCbu) || 0))}</b> going to {data?.member?.accountName}'s CBU.
                 </div>
               )}
               {Number(payReceived) < Number(payTarget.totalDue) && (
-                <div className="mt-1 rounded-lg bg-red-50 border border-red-200 px-3 py-1.5 text-[11px] font-semibold text-red-800">
-                  Amount received must be ≥ ₱{Number(payTarget.totalDue).toFixed(2)}.
+                <div className="mt-1 rounded-lg bg-red-50 border border-red-200 px-2 py-1 text-[11px] font-semibold text-red-800">
+                  Bill amount must be ≥ ₱{Number(payTarget.totalDue).toFixed(2)}.
                 </div>
               )}
             </div>
