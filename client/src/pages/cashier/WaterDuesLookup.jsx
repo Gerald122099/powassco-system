@@ -233,17 +233,37 @@ export default function WaterDuesLookup() {
   return (
     <Card>
       {/* TODAY'S QUICK STATS — at-a-glance KPIs for the cashier.
-           Splits the per-day money into Cash, Online, and CBU
-           (Capital Build-Up contributions). The "Outstanding" tile
-           is system-wide unpaid water bills so the cashier knows
-           how much receivable is still in the queue. */}
+           Reads from /collections/today, broken out into four
+           categories so the cashier can reconcile the drawer at the
+           end of the shift:
+             Bills paid       = bill-portion of payments (cash + online)
+             CBU collected    = extra cash pushed into Capital Build-Up
+             Total cash       = drawer total (bills cash + CBU cash)
+             Total CBU on file = system-wide CBU balance snapshot
+             Outstanding bills = system-wide unsettled water receivable
+             Grand today      = everything received in this module
+        */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <Kpi label="Receipts today" value={todayStats?.totals?.water?.count ?? "—"} icon={CheckCircle} tone="emerald" />
-        <Kpi label="Cash collected" value={peso(todayStats?.totals?.water?.cash ?? 0)} icon={Wallet} tone="amber" />
-        <Kpi label="Online posted" value={peso(todayStats?.totals?.water?.online ?? 0)} icon={Banknote} tone="blue" />
-        <Kpi label="CBU collected" value={peso(todayStats?.totals?.water?.cbu ?? 0)} icon={Wallet} tone="violet" />
+        <Kpi label="Bills paid today" value={peso(todayStats?.totals?.water?.billCollected ?? 0)} icon={ReceiptText} tone="blue" />
+        <Kpi label="CBU collected today" value={peso(todayStats?.totals?.water?.cbu ?? 0)} icon={Wallet} tone="violet" />
+        <Kpi label="Total cash in drawer" value={peso(todayStats?.totals?.water?.cash ?? 0)} icon={Wallet} tone="amber" />
+        <Kpi label="Total CBU on file" value={peso(todayStats?.cbuOnFile?.total ?? 0)} icon={Banknote} tone="emerald" />
         <Kpi label="Outstanding bills" value={peso(todayStats?.outstanding?.water?.total ?? 0)} icon={ReceiptText} tone="red" />
-        <Kpi label="Grand today" value={peso((todayStats?.totals?.water?.cash || 0) + (todayStats?.totals?.water?.online || 0))} icon={TrendingUp} tone="emerald" big />
+      </div>
+      {/* GRAND TOTAL strip — explicit sum of bill + CBU, emphasised. */}
+      <div className="mt-2 rounded-2xl border-2 border-emerald-300 bg-gradient-to-r from-emerald-50 to-teal-50 p-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-widest text-emerald-700">Grand total today (Water)</div>
+            <div className="text-[11px] text-emerald-800/70">
+              Bills paid ₱{Number(todayStats?.totals?.water?.billCollected || 0).toFixed(2)} + CBU ₱{Number(todayStats?.totals?.water?.cbu || 0).toFixed(2)}
+            </div>
+          </div>
+          <div className="font-mono text-2xl font-extrabold text-emerald-700">
+            {peso((todayStats?.totals?.water?.cash || 0) + (todayStats?.totals?.water?.online || 0))}
+          </div>
+        </div>
       </div>
 
       {/* CENTERED SEARCH — primary action, auto-debounced (no button). */}

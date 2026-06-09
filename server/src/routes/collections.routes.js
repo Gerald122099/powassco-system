@@ -12,6 +12,7 @@ import express from "express";
 import WaterPayment from "../models/WaterPayment.js";
 import LoanPayment from "../models/LoanPayment.js";
 import WaterBill from "../models/WaterBill.js";
+import WaterMember from "../models/WaterMember.js";
 import LoanApplication from "../models/LoanApplication.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
@@ -56,26 +57,44 @@ router.get("/today", ...guard, async (req, res) => {
     const isOnline = (d) => d.method === "online";
     const isCash = (d) => !isOnline(d);
 
-    const waterCash = sumBy(waterDocs, isCash);
-    const waterOnline = sumBy(waterDocs, isOnline);
-    const loanCash = sumBy(loanDocs, isCash);
-    const loanOnline = sumBy(loanDocs, isOnline);
+    // Bill portion only (the "amountPaid" the payment posted against
+    // the bill / loan installment). For most receipts this matches
+    // the totalDue exactly.
+    const waterCashBill = sumBy(waterDocs, isCash);
+    const waterOnlineBill = sumBy(waterDocs, isOnline);
+    const loanCashBill = sumBy(loanDocs, isCash);
+    const loanOnlineBill = sumBy(loanDocs, isOnline);
 
-    // CBU portion already stored per payment as cbuExcess — the
-    // amount the cashier added to the member's Capital Build-Up on
-    // top of the bill / loan installment.
-    const sumCbu = (docs) => docs.reduce((s, d) => s + (Number(d.cbuExcess) || 0), 0);
-    const waterCbu = sumCbu(waterDocs);
-    const loanCbu = sumCbu(loanDocs);
+    // CBU portion (extra cash beyond the bill that the cashier
+    // credited to the member's Capital Build-Up).
+    const sumCbuBy = (docs, pred) => docs.filter(pred).reduce((s, d) => s + (Number(d.cbuExcess) || 0), 0);
+    const waterCbuCash = sumCbuBy(waterDocs, isCash);
+    const waterCbuOnline = sumCbuBy(waterDocs, isOnline);
+    const loanCbuCash = sumCbuBy(loanDocs, isCash);
+    const loanCbuOnline = sumCbuBy(loanDocs, isOnline);
 
-    const grand = waterCash + waterOnline + loanCash + loanOnline;
-    const cashTotal = waterCash + loanCash;
-    const onlineTotal = waterOnline + loanOnline;
+    // True cash drawer = bill cash + CBU cash. This is what the
+    // cashier physically holds at end of shift.
+    const waterCashGross = waterCashBill + waterCbuCash;
+    const waterOnlineGross = waterOnlineBill + waterCbuOnline;
+    const loanCashGross = loanCashBill + loanCbuCash;
+    const loanOnlineGross = loanOnlineBill + loanCbuOnline;
+
+    const waterBillCollected = waterCashBill + waterOnlineBill;
+    const loanBillCollected = loanCashBill + loanOnlineBill;
+    const waterCbu = waterCbuCash + waterCbuOnline;
+    const loanCbu = loanCbuCash + loanCbuOnline;
+
+    const cashTotal = waterCashGross + loanCashGross;
+    const onlineTotal = waterOnlineGross + loanOnlineGross;
     const cbuTotal = waterCbu + loanCbu;
+    const billCollectedTotal = waterBillCollected + loanBillCollected;
+    const grand = cashTotal + onlineTotal;
 
-    // System-wide outstanding (unsettled receivables). Cheap aggregate
-    // queries — both collections have status indexes.
-    const [waterOutstandingAgg, loanOutstandingAgg] = await Promise.all([
+    // System-wide outstanding (unsettled receivables) + total CBU
+    // held across every active member account. All three are cheap
+    // single-pass aggregates over indexed fields.
+    const [waterOutstandingAgg, loanOutstandingAgg, cbuOnFileAgg] = await Promise.all([
       wantWater
         ? WaterBill.aggregate([
             { $match: { status: { $in: ["unpaid", "overdue"] } } },
@@ -88,11 +107,17 @@ router.get("/today", ...guard, async (req, res) => {
             { $group: { _id: null, total: { $sum: "$balance" }, count: { $sum: 1 } } },
           ])
         : Promise.resolve([]),
+      WaterMember.aggregate([
+        { $match: { accountStatus: { $ne: "inactive" }, cbuBalance: { $gt: 0 } } },
+        { $group: { _id: null, total: { $sum: "$cbuBalance" }, count: { $sum: 1 } } },
+      ]),
     ]);
     const waterOutstanding = Number(waterOutstandingAgg[0]?.total || 0);
     const waterOutstandingCount = Number(waterOutstandingAgg[0]?.count || 0);
     const loanOutstanding = Number(loanOutstandingAgg[0]?.total || 0);
     const loanOutstandingCount = Number(loanOutstandingAgg[0]?.count || 0);
+    const cbuOnFile = Number(cbuOnFileAgg[0]?.total || 0);
+    const cbuOnFileMembers = Number(cbuOnFileAgg[0]?.count || 0);
 
     // Per-collector breakdown (handy for the bill officer view to see who posted what).
     const byCollector = {};
@@ -111,17 +136,47 @@ router.get("/today", ...guard, async (req, res) => {
       date: start.toISOString().slice(0, 10),
       scope: { module: moduleParam, mine, actor: actorId },
       totals: {
-        cash: cashTotal,
-        online: onlineTotal,
-        grand,
-        cbu: cbuTotal,
-        water: { cash: waterCash, online: waterOnline, cbu: waterCbu, total: waterCash + waterOnline, count: waterDocs.length },
-        loan: { cash: loanCash, online: loanOnline, cbu: loanCbu, total: loanCash + loanOnline, count: loanDocs.length },
+        // Aggregates across BOTH modules
+        cash: cashTotal,            // drawer total (bill cash + CBU cash)
+        online: onlineTotal,        // online total (bill online + CBU online)
+        cbu: cbuTotal,              // CBU portion (cash + online)
+        billCollected: billCollectedTotal, // bill portion (cash + online)
+        grand,                      // cash + online (== bill + cbu)
+        water: {
+          // backward-compatible aliases
+          cash: waterCashGross,     // total cash drawer water
+          online: waterOnlineGross, // total online water
+          // explicit splits
+          cashBill: waterCashBill,
+          cashCbu: waterCbuCash,
+          onlineBill: waterOnlineBill,
+          onlineCbu: waterCbuOnline,
+          billCollected: waterBillCollected,
+          cbu: waterCbu,
+          total: waterCashGross + waterOnlineGross,
+          count: waterDocs.length,
+        },
+        loan: {
+          cash: loanCashGross,
+          online: loanOnlineGross,
+          cashBill: loanCashBill,
+          cashCbu: loanCbuCash,
+          onlineBill: loanOnlineBill,
+          onlineCbu: loanCbuOnline,
+          billCollected: loanBillCollected,
+          cbu: loanCbu,
+          total: loanCashGross + loanOnlineGross,
+          count: loanDocs.length,
+        },
       },
       outstanding: {
         water: { total: waterOutstanding, count: waterOutstandingCount },
         loan: { total: loanOutstanding, count: loanOutstandingCount },
         grand: waterOutstanding + loanOutstanding,
+      },
+      cbuOnFile: {
+        total: cbuOnFile,
+        members: cbuOnFileMembers,
       },
       counts: {
         water: { total: waterDocs.length, cash: countBy(waterDocs, isCash), online: countBy(waterDocs, isOnline) },
