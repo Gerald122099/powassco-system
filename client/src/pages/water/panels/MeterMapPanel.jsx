@@ -41,27 +41,45 @@ const COLOR = {
   disconnect: "#7c3aed", // purple — pending disconnection alert
 };
 
-// Build a circle marker SVG icon. Tiny inline SVG so we don't ship a
-// dozen PNG variants — color + senior badge are composed at runtime.
+// Build a water-meter marker icon. Inline SVG so colour + senior
+// badge + disconnection alert can be composed per-pin without
+// shipping a dozen PNG variants. The shape is a meter face — round
+// dial with a centred droplet — sitting on a short rectangular
+// housing that points at the lat/lng, so the bottom of the icon is
+// the anchor.
 function buildIcon(pin) {
   const status = statusFor(pin);
   const fill = COLOR[status];
-  const stroke = status === "unread" ? "#475569" : "#0f172a";
-  const senior = pin.isSenior ? '<circle cx="20" cy="6" r="5" fill="#f59e0b" stroke="#fff" stroke-width="1.5"/>' : "";
-  const alert = status === "disconnect"
-    ? '<text x="12" y="17" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="bold" fill="#fff">!</text>'
+  const dark = status === "unread";       // white background needs dark detail strokes
+  const stroke = dark ? "#475569" : "#0f172a";
+  const dialDetail = dark ? "#475569" : "#ffffff";
+  const droplet = dark ? "#0ea5e9" : "#ffffff";
+  // Senior badge — small gold dot on the top-right of the dial
+  const senior = pin.isSenior
+    ? '<circle cx="28" cy="6" r="5" fill="#f59e0b" stroke="#fff" stroke-width="1.5"/>'
     : "";
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">
-    <circle cx="12" cy="12" r="10" fill="${fill}" stroke="${stroke}" stroke-width="2"/>
-    ${alert}
-    ${senior}
-  </svg>`;
+  // Disconnection alert — overlay "!" in the dial when flagged
+  const alert = status === "disconnect"
+    ? `<text x="16" y="22" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="900" fill="${droplet}">!</text>`
+    : "";
+  const svg = `
+<svg xmlns="http://www.w3.org/2000/svg" width="34" height="38" viewBox="0 0 34 38">
+  <!-- meter housing pipe stub at the bottom -->
+  <rect x="13" y="28" width="8" height="8" fill="${stroke}" rx="1"/>
+  <!-- meter housing/dial outer ring -->
+  <circle cx="17" cy="17" r="14" fill="${fill}" stroke="${stroke}" stroke-width="2.5"/>
+  <!-- inner gauge ring -->
+  <circle cx="17" cy="17" r="9" fill="none" stroke="${dialDetail}" stroke-width="1.5" opacity="0.85"/>
+  ${alert || `<!-- centred water droplet glyph -->
+  <path d="M17 9 C 13 14, 11 17, 13 20 C 15 23, 19 23, 21 20 C 23 17, 21 14, 17 9 Z" fill="${droplet}" opacity="0.95"/>`}
+  ${senior}
+</svg>`;
   return L.divIcon({
     className: "",
     html: svg,
-    iconSize: [28, 28],
-    iconAnchor: [12, 12],
-    popupAnchor: [0, -12],
+    iconSize: [34, 38],
+    iconAnchor: [17, 36],   // anchor at the bottom of the housing stub
+    popupAnchor: [0, -32],
   });
 }
 
@@ -104,14 +122,17 @@ function HeatLayer({ pins, enabled }) {
   return null;
 }
 
-// Approximate centre of Owak Barangay Hall (Asturias, Cebu). Used as
-// the default view + as the "home" the recentre button flies back to.
-// If the actual GPS of the hall is known later, just edit this pair.
-const OWAK_HALL = { lat: 10.5710, lng: 123.7240, zoom: 16 };
+// Approximate centre of the Owak Municipal / Barangay Hall (Asturias,
+// Cebu). Used as the default view + as the "home" the recentre button
+// flies back to. Zoom 18 = "tight neighbourhood view" — close enough
+// to read individual lot lines on satellite, while still showing
+// nearby pins. Edit lat/lng when the exact GPS is captured.
+const OWAK_HALL = { lat: 10.5710, lng: 123.7240, zoom: 18 };
 
 // Centre + fit the map on the FIRST useful anchor:
-//   1. the imported "Owak Barangay Hall" pin (if it has coordinates), so
-//      the user lands looking at the heart of the barangay
+//   1. the imported "Owak Barangay Hall" / "Owak Municipal Hall" pin
+//      (if it has coordinates), so the user lands looking at the
+//      heart of the barangay
 //   2. otherwise the bounding box of every pin
 //   3. otherwise the OWAK_HALL constant above (used by the initial
 //      MapContainer center prop too)
@@ -119,7 +140,7 @@ function FitToPins({ pins }) {
   const map = useMap();
   useEffect(() => {
     const hall = pins.find(
-      (p) => /owak.*hall|barangay.*hall/i.test(p.accountName || "") &&
+      (p) => /owak.*(municipal|barangay).*hall|(municipal|barangay).*hall/i.test(p.accountName || "") &&
         Number.isFinite(p.lat) && Number.isFinite(p.lng)
     );
     if (hall) {
@@ -233,24 +254,40 @@ export default function MeterMapPanel() {
       )}
 
       <div className="h-[70vh]">
-        <MapContainer center={defaultCenter} zoom={defaultZoom} className="h-full w-full" scrollWheelZoom>
+        {/* maxZoom 22 lifts the cap above what the tile providers
+            natively serve; tiles will auto-upsample beyond their
+            native zoom (set on each TileLayer) so the operator can
+            crank in close on satellite without the map stalling. */}
+        <MapContainer
+          center={defaultCenter}
+          zoom={defaultZoom}
+          maxZoom={22}
+          className="h-full w-full"
+          scrollWheelZoom
+        >
           <LayersControl position="topright">
-            <LayersControl.BaseLayer checked name="Streets (OSM)">
+            <LayersControl.BaseLayer name="Streets (OSM)">
               <TileLayer
                 attribution='&copy; OpenStreetMap'
                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                maxNativeZoom={19}
+                maxZoom={22}
               />
             </LayersControl.BaseLayer>
-            <LayersControl.BaseLayer name="Satellite (Esri)">
+            <LayersControl.BaseLayer checked name="Satellite (Esri)">
               <TileLayer
                 attribution="Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics, USDA, USGS, AeroGRID, IGN, and the GIS User Community"
                 url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                maxNativeZoom={19}
+                maxZoom={22}
               />
             </LayersControl.BaseLayer>
             <LayersControl.BaseLayer name="Light (Carto)">
               <TileLayer
                 attribution='&copy; OpenStreetMap, &copy; CARTO'
                 url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+                maxNativeZoom={19}
+                maxZoom={22}
               />
             </LayersControl.BaseLayer>
           </LayersControl>
