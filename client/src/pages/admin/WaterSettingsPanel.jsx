@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import Card from "../../components/Card";
 import { apiFetch } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
+import Swal from "sweetalert2";
 
 export default function WaterSettingsPanel() {
   const { token } = useAuth();
@@ -15,7 +16,10 @@ export default function WaterSettingsPanel() {
 
   // Collapsible states
   const [open, setOpen] = useState(true);
-  const [tariffOpen, setTariffOpen] = useState(false);
+  // Default open so the operator can see the tariff editor + Save
+  // button immediately. Previously this was collapsed and the Save
+  // button stayed out of sight until the user expanded the section.
+  const [tariffOpen, setTariffOpen] = useState(true);
 
   // BASIC SETTINGS STATE
   const [penaltyType, setPenaltyType] = useState("flat");
@@ -219,12 +223,26 @@ export default function WaterSettingsPanel() {
         graceDays: saved.graceDays ?? payload.graceDays,
         readingStartDayOfMonth: saved.readingStartDayOfMonth ?? payload.readingStartDayOfMonth,
         readingWindowDays: saved.readingWindowDays ?? payload.readingWindowDays,
+        penaltyDailyAmount: saved.penaltyDailyAmount ?? payload.penaltyDailyAmount,
+        penaltyGraceDays: saved.penaltyGraceDays ?? payload.penaltyGraceDays,
+        penaltyAfterGraceAmount: saved.penaltyAfterGraceAmount ?? payload.penaltyAfterGraceAmount,
       });
 
-      setToast("✅ Basic settings saved");
-      setTimeout(() => setToast(""), 2000);
+      await Swal.fire({
+        icon: "success",
+        title: "Basic settings saved",
+        text: "Penalty, due-date, and reading-window values have been updated.",
+        confirmButtonColor: "#059669",
+        timer: 2500,
+        timerProgressBar: true,
+      });
     } catch (e) {
-      setErr(e.message);
+      await Swal.fire({
+        icon: "error",
+        title: "Could not save basic settings",
+        text: e.message || "The server returned an error. Check the network tab for details.",
+        confirmButtonColor: "#dc2626",
+      });
     } finally {
       setSaving(false);
     }
@@ -302,11 +320,29 @@ export default function WaterSettingsPanel() {
       setTariffs(saved.tariffs || cleanTariffs);
       setSeniorSettings(saved.seniorDiscount || cleanSeniorSettings);
 
-      setToast("✅ Tariff settings saved");
-      setTimeout(() => setToast(""), 2000);
+      // The server reports any rows it had to skip (blank tier name,
+      // bad numbers) in `_skipped`. Surface it as a warning so the
+      // operator notices the gap.
+      const skipped = saved._skipped || {};
+      const totalSkipped = (Number(skipped.residential) || 0) + (Number(skipped.commercial) || 0);
+      await Swal.fire({
+        icon: totalSkipped > 0 ? "warning" : "success",
+        title: totalSkipped > 0 ? "Saved (with skipped rows)" : "Tariff settings saved",
+        text: totalSkipped > 0
+          ? `${totalSkipped} tariff row(s) were skipped because the tier label was blank or the consumption range was invalid.`
+          : "Tariff tiers and senior-discount settings are now active.",
+        confirmButtonColor: totalSkipped > 0 ? "#d97706" : "#059669",
+        timer: totalSkipped > 0 ? undefined : 2500,
+        timerProgressBar: totalSkipped === 0,
+      });
     } catch (error) {
       console.error("Save error:", error);
-      setErr(error.message || "Failed to save tariff settings");
+      await Swal.fire({
+        icon: "error",
+        title: "Could not save tariff settings",
+        text: error.message || "The server rejected the tariff payload. Check that every row has a tier label and valid consumption range.",
+        confirmButtonColor: "#dc2626",
+      });
     } finally {
       setTariffSaving(false);
     }
@@ -608,9 +644,10 @@ export default function WaterSettingsPanel() {
                 <button
                   onClick={() => setConfirmOpen(true)}
                   disabled={!isDirty || saving}
-                  className="rounded-xl bg-blue-600 px-6 py-2 text-sm font-black text-white hover:bg-blue-700"
+                  title={!isDirty ? "Edit any field above to enable Save" : ""}
+                  className="rounded-xl bg-blue-600 px-6 py-2 text-sm font-black text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {saving ? "Saving..." : "💾 Save Basic Settings"}
+                  {saving ? "Saving..." : isDirty ? "💾 Save Basic Settings" : "No changes to save"}
                 </button>
               </div>
             </div>
@@ -946,9 +983,10 @@ export default function WaterSettingsPanel() {
                       <button
                         onClick={() => setTariffConfirmOpen(true)}
                         disabled={!isTariffDirty || tariffSaving}
-                        className="rounded-xl bg-purple-600 px-6 py-2.5 text-sm font-black text-white hover:bg-purple-700"
+                        title={!isTariffDirty ? "Edit any tariff row above to enable Save" : ""}
+                        className="rounded-xl bg-purple-600 px-6 py-2.5 text-sm font-black text-white hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        {tariffSaving ? "Saving..." : "💾 Save Tariff Settings"}
+                        {tariffSaving ? "Saving..." : isTariffDirty ? "💾 Save Tariff Settings" : "No changes to save"}
                       </button>
                     </div>
                   </div>
