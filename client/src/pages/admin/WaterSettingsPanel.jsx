@@ -465,10 +465,16 @@ export default function WaterSettingsPanel() {
         <div className="mt-4 text-slate-600">Loading settings...</div>
       ) : (
         <>
-          {/* BASIC SETTINGS */}
+          {/* BASIC SETTINGS — collapse wrapper.
+              IMPORTANT: do NOT use a fixed max-h here. The whole
+              settings block (basic + tariff + senior + examples)
+              easily exceeds 2000px and the previous cap silently
+              hid the Tariff Save button below the fold. Use a
+              simple display toggle when collapsed so the open state
+              expands to its natural height. */}
           <div className={[
-            "overflow-hidden transition-all duration-300 ease-out",
-            open ? "max-h-[2000px] opacity-100 mt-4" : "max-h-0 opacity-0 mt-0",
+            "transition-opacity duration-300 ease-out",
+            open ? "opacity-100 mt-4" : "opacity-0 mt-0 hidden",
           ].join(" ")}>
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
