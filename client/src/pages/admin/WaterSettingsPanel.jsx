@@ -740,7 +740,9 @@ export default function WaterSettingsPanel() {
                             <th className="py-3 px-4 text-left">Tier</th>
                             <th className="py-3 px-4 text-left">Min (m³)</th>
                             <th className="py-3 px-4 text-left">Max (m³)</th>
-                            <th className="py-3 px-4 text-left">Rate (₱/m³)</th>
+                            <th className="py-3 px-4 text-left" title="Choose Flat for minimum-charge brackets (e.g. 0-5 residential ₱74). Per-cubic for tiers that bill per m³ of excess.">Type</th>
+                            <th className="py-3 px-4 text-left" title="Used when Type = Flat. The whole bracket bills at this amount regardless of consumption within it.">Flat (₱)</th>
+                            <th className="py-3 px-4 text-left" title="Used when Type = Per-cubic. Applied to each m³ of consumption in this tier (or to the excess above the minimum bracket).">Rate (₱/m³)</th>
                             <th className="py-3 px-4 text-left">Description</th>
                             <th className="py-3 px-4 text-left">Status</th>
                             <th className="py-3 px-4 text-left"></th>
@@ -779,13 +781,37 @@ export default function WaterSettingsPanel() {
                                 />
                               </td>
                               <td className="py-3 px-4">
+                                <select
+                                  className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
+                                  value={tariff.chargeType || "per_cubic"}
+                                  onChange={(e) => updateTariff("residential", index, 'chargeType', e.target.value)}
+                                >
+                                  <option value="flat">Flat</option>
+                                  <option value="per_cubic">Per-cubic</option>
+                                </select>
+                              </td>
+                              <td className="py-3 px-4">
                                 <input
                                   type="number"
                                   min="0"
                                   step="0.01"
-                                  className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
+                                  className={`w-full rounded-lg border px-2 py-1.5 text-sm ${tariff.chargeType === "flat" ? "border-amber-300 bg-amber-50 font-bold" : "border-slate-200 opacity-50"}`}
+                                  value={tariff.flatAmount}
+                                  onChange={(e) => updateTariff("residential", index, 'flatAmount', e.target.value)}
+                                  placeholder={tariff.chargeType === "flat" ? "e.g. 135" : "—"}
+                                  disabled={tariff.chargeType !== "flat"}
+                                />
+                              </td>
+                              <td className="py-3 px-4">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  className={`w-full rounded-lg border px-2 py-1.5 text-sm ${tariff.chargeType !== "flat" ? "border-emerald-300 bg-emerald-50 font-bold" : "border-slate-200 opacity-50"}`}
                                   value={tariff.ratePerCubic}
                                   onChange={(e) => updateTariff("residential", index, 'ratePerCubic', e.target.value)}
+                                  placeholder={tariff.chargeType !== "flat" ? "e.g. 16.20" : "—"}
+                                  disabled={tariff.chargeType === "flat"}
                                 />
                               </td>
                               <td className="py-3 px-4">
@@ -839,7 +865,9 @@ export default function WaterSettingsPanel() {
                               <th className="py-3 px-4 text-left">Tier</th>
                               <th className="py-3 px-4 text-left">Min (m³)</th>
                               <th className="py-3 px-4 text-left">Max (m³)</th>
-                              <th className="py-3 px-4 text-left">Rate (₱/m³)</th>
+                              <th className="py-3 px-4 text-left" title="Flat for the minimum-charge bracket (e.g. 0-15 commercial ₱442.50). Per-cubic for tiers billing by m³.">Type</th>
+                              <th className="py-3 px-4 text-left" title="Used when Type = Flat. The whole bracket bills at this amount.">Flat (₱)</th>
+                              <th className="py-3 px-4 text-left" title="Used when Type = Per-cubic. Per-m³ rate applied to excess consumption.">Rate (₱/m³)</th>
                               <th className="py-3 px-4 text-left">Description</th>
                               <th className="py-3 px-4 text-left">Status</th>
                               <th className="py-3 px-4 text-left"></th>
@@ -877,13 +905,37 @@ export default function WaterSettingsPanel() {
                                   />
                                 </td>
                                 <td className="py-3 px-4">
+                                  <select
+                                    className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
+                                    value={tariff.chargeType || "per_cubic"}
+                                    onChange={(e) => updateTariff("commercial", index, 'chargeType', e.target.value)}
+                                  >
+                                    <option value="flat">Flat</option>
+                                    <option value="per_cubic">Per-cubic</option>
+                                  </select>
+                                </td>
+                                <td className="py-3 px-4">
                                   <input
                                     type="number"
                                     min="0"
                                     step="0.01"
-                                    className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
+                                    className={`w-full rounded-lg border px-2 py-1.5 text-sm ${tariff.chargeType === "flat" ? "border-amber-300 bg-amber-50 font-bold" : "border-slate-200 opacity-50"}`}
+                                    value={tariff.flatAmount}
+                                    onChange={(e) => updateTariff("commercial", index, 'flatAmount', e.target.value)}
+                                    placeholder={tariff.chargeType === "flat" ? "e.g. 442.50" : "—"}
+                                    disabled={tariff.chargeType !== "flat"}
+                                  />
+                                </td>
+                                <td className="py-3 px-4">
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    className={`w-full rounded-lg border px-2 py-1.5 text-sm ${tariff.chargeType !== "flat" ? "border-emerald-300 bg-emerald-50 font-bold" : "border-slate-200 opacity-50"}`}
                                     value={tariff.ratePerCubic}
                                     onChange={(e) => updateTariff("commercial", index, 'ratePerCubic', e.target.value)}
+                                    placeholder={tariff.chargeType !== "flat" ? "e.g. 32.50" : "—"}
+                                    disabled={tariff.chargeType === "flat"}
                                   />
                                 </td>
                                 <td className="py-3 px-4">
