@@ -30,7 +30,13 @@ export function calculateWaterBillLocal(consumption, classification, member, met
     .sort((a, b) => Number(a.minConsumption) - Number(b.minConsumption));
   if (activeTiers.length === 0) return null;
   const minTier = activeTiers[0];
-  const tariff = activeTiers.find((t) => consumption >= t.minConsumption && consumption <= t.maxConsumption);
+  // Open-ended last tier — anything above the highest configured
+  // maxConsumption bills at the last tier's rate. Mirrors the
+  // server's behaviour so an offline thermal receipt for >500 m³
+  // still renders instead of going blank.
+  const lastTier = activeTiers[activeTiers.length - 1];
+  let tariff = activeTiers.find((t) => consumption >= t.minConsumption && consumption <= t.maxConsumption);
+  if (!tariff && consumption > lastTier.maxConsumption) tariff = lastTier;
   if (!tariff) return null;
 
   // Honor each tier's chargeType: "flat" → flatAmount; "per_cubic" →

@@ -47,9 +47,18 @@ export async function calculateWaterBill(consumption, classification, member = n
       throw new Error(`No active tariff configured for ${classification}`);
     }
     const minTier = activeTiers[0];
-    const tariff = activeTiers.find(
+    // Treat the LAST active tier as open-ended on the upper bound —
+    // a tier labelled "41+" with maxConsumption 500 should still be
+    // the rate used for anything above 500. Without this any
+    // consumption past the last tier's max bombs the bill preview
+    // with a 500 ("No tariff found for residential 600m³").
+    const lastTier = activeTiers[activeTiers.length - 1];
+    let tariff = activeTiers.find(
       (t) => consumption >= t.minConsumption && consumption <= t.maxConsumption
     );
+    if (!tariff && consumption > lastTier.maxConsumption) {
+      tariff = lastTier;
+    }
     if (!tariff) {
       throw new Error(`No tariff found for ${classification} consumption of ${consumption}m³`);
     }
@@ -200,12 +209,14 @@ export function getTariffExamples(classification) {
 
 
 export function validateConsumption(consumption, classification) {
-  if (classification === "residential") {
+  // The previous "max 500 m³" cap was a hardcoded relic — the open-
+  // ended "41+" tier (or whatever the last configured tier is) bills
+  // anything above its declared max, so there's no real ceiling.
+  // Keep a sanity upper bound to catch obvious typos (e.g. millions
+  // of m³ from a fat-fingered present reading).
+  if (classification === "residential" || classification === "commercial") {
     if (consumption < 0) return { valid: false, message: "Consumption cannot be negative" };
-    if (consumption > 500) return { valid: false, message: "Maximum consumption for residential is 500 m³" };
-  } else if (classification === "commercial") {
-    if (consumption < 0) return { valid: false, message: "Consumption cannot be negative" };
-    if (consumption > 500) return { valid: false, message: "Maximum consumption for commercial is 500 m³" };
+    if (consumption > 100000) return { valid: false, message: "Consumption is unreasonably high; double-check the reading." };
   }
   
   return { valid: true, message: "OK" };
