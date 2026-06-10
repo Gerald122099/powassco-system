@@ -76,6 +76,10 @@ const NAME_TO_PN = {
   "Gemarino, Vivincia":"QPNC2G",  // Gemarino, Vivencia
   "Quinones, Marlyn":  "6U6VQX",  // Quiñones, Marlyn
   "Aliviado, Marinel": "ED3VMY",  // Aliviado, Mareniel
+  // Two Bocales, Teodoro members exist (#1 and #2 on the migrated
+  // ledger). Operator confirmed the Jan-22 ₱6,000 loan belongs to
+  // Teodoro #1 (PT4ZK6).
+  "Bocales, Teodoro":  "PT4ZK6",
 };
 
 // Normalise diacritics so "España" and "Espana" can find each other.
