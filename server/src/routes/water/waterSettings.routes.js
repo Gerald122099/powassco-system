@@ -3,11 +3,13 @@ import WaterSettings from "../../models/WaterSettings.js";
 import { requireAuth, requireRole } from "../../middleware/auth.js";
 
 const router = express.Router();
-// Plumber is included for read access — Field Mode's downloadBatch
+// Plumber is included for READ access — Field Mode's downloadBatch
 // fetches tariff settings so the thermal bill can be computed offline.
-// Writes are still restricted to admin via the explicit adminGuard
-// on the PUT route.
 const guard = [requireAuth, requireRole(["admin", "water_bill_officer", "meter_reader", "plumber"])];
+// Writes (PUT / reset) are restricted to admin so a field plumber can't
+// change tariffs from their phone. Mounted explicitly on the mutator
+// routes below.
+const adminGuard = [requireAuth, requireRole(["admin"])];
 
 
 // UPDATED DEFAULTS with all required fields
@@ -138,8 +140,8 @@ router.get("/", ...guard, async (req, res) => {
   }
 });
 
-// UPDATE settings
-router.put("/", ...guard, async (req, res) => {
+// UPDATE settings — admin only.
+router.put("/", ...adminGuard, async (req, res) => {
   try {
     const {
       penaltyType,
@@ -175,63 +177,81 @@ router.put("/", ...guard, async (req, res) => {
     if (readingWindowDays !== undefined)
       settings.readingWindowDays = Math.min(31, Math.max(1, Number(readingWindowDays)));
 
-    // Update tariffs if provided
-    if (tariffs) {
-      // Validate and clean tariff data with all required fields
-      const cleanTariffs = {
-        residential: Array.isArray(tariffs.residential) ? tariffs.residential.map(t => ({
-          tier: String(t.tier || '').trim(),
-          minConsumption: Number(t.minConsumption) || 0,
-          maxConsumption: Number(t.maxConsumption) || 0,
-          chargeType: t.chargeType || "per_cubic",
-          ratePerCubic: Number(t.ratePerCubic) || 0,
-          flatAmount: Number(t.flatAmount) || 0,
-          description: String(t.description || '').trim(),
-          isActive: Boolean(t.isActive)
-        })) : settings.tariffs.residential,
-        
-        commercial: Array.isArray(tariffs.commercial) ? tariffs.commercial.map(t => ({
-          tier: String(t.tier || '').trim(),
-          minConsumption: Number(t.minConsumption) || 0,
-          maxConsumption: Number(t.maxConsumption) || 0,
-          chargeType: t.chargeType || "per_cubic",
-          ratePerCubic: Number(t.ratePerCubic) || 0,
-          flatAmount: Number(t.flatAmount) || 0,
-          description: String(t.description || '').trim(),
-          isActive: Boolean(t.isActive)
-        })) : settings.tariffs.commercial
+    // Update tariffs if provided. cleanTier filters out rows that
+    // can't survive Mongoose validation (empty tier label, NaN
+    // numbers) so one bad row in the table doesn't take down the
+    // whole save. The officer sees the rows it skipped via the
+    // `skipped` field on the response — UI can surface that as a
+    // warning if it wants.
+    const skipped = { residential: 0, commercial: 0 };
+    const cleanTier = (t, kind) => {
+      const tier = String(t.tier || "").trim();
+      const min = Number(t.minConsumption);
+      const max = Number(t.maxConsumption);
+      if (!tier || !Number.isFinite(min) || !Number.isFinite(max)) {
+        skipped[kind]++;
+        return null;
+      }
+      return {
+        tier,
+        minConsumption: min,
+        maxConsumption: max,
+        chargeType: t.chargeType || "per_cubic",
+        ratePerCubic: Number(t.ratePerCubic) || 0,
+        flatAmount: Number(t.flatAmount) || 0,
+        description: String(t.description || "").trim(),
+        isActive: t.isActive !== false,
       };
-      
+    };
+    if (tariffs) {
+      const cleanTariffs = {
+        residential: Array.isArray(tariffs.residential)
+          ? tariffs.residential.map((t) => cleanTier(t, "residential")).filter(Boolean)
+          : settings.tariffs?.residential || [],
+        commercial: Array.isArray(tariffs.commercial)
+          ? tariffs.commercial.map((t) => cleanTier(t, "commercial")).filter(Boolean)
+          : settings.tariffs?.commercial || [],
+      };
       settings.tariffs = cleanTariffs;
     }
 
-    // Update senior discount if provided
+    // Update senior discount if provided. settings.seniorDiscount
+    // can legitimately be undefined on a freshly-created doc; guard
+    // against that so we don't dereference a null.
     if (seniorDiscount) {
+      const existing = settings.seniorDiscount || {};
       settings.seniorDiscount = {
-        discountRate: typeof seniorDiscount.discountRate === 'number' 
-          ? seniorDiscount.discountRate 
-          : settings.seniorDiscount.discountRate,
-        applicableTiers: Array.isArray(seniorDiscount.applicableTiers) 
-          ? seniorDiscount.applicableTiers.map(t => String(t).trim()).filter(t => t)
-          : settings.seniorDiscount.applicableTiers
+        discountRate: Number.isFinite(Number(seniorDiscount.discountRate))
+          ? Number(seniorDiscount.discountRate)
+          : Number(existing.discountRate) || 5,
+        applicableTiers: Array.isArray(seniorDiscount.applicableTiers)
+          ? seniorDiscount.applicableTiers.map((t) => String(t).trim()).filter(Boolean)
+          : existing.applicableTiers || ["31-40", "41+"],
       };
     }
 
     await settings.save();
-    console.log("Settings saved successfully:", settings._id);
-    res.json(settings);
+    console.log("Settings saved:", settings._id, "skipped:", skipped);
+    res.json({ ...settings.toObject(), _skipped: skipped });
   } catch (error) {
     console.error("Error updating settings:", error);
-    res.status(500).json({ 
-      message: "Failed to update settings", 
+    // Mongoose validation errors include field-level messages — surface
+    // them in `message` so the toast tells the operator what to fix.
+    const validationMsg = error?.errors
+      ? Object.entries(error.errors)
+          .map(([k, e]) => `${k}: ${e.message || e}`)
+          .join("; ")
+      : null;
+    res.status(400).json({
+      message: validationMsg || error.message || "Failed to update settings",
       error: error.message,
-      details: error.errors || {}
+      details: error.errors || {},
     });
   }
 });
 
-// RESET to defaults
-router.post("/reset", ...guard, async (req, res) => {
+// RESET to defaults — admin only.
+router.post("/reset", ...adminGuard, async (req, res) => {
   try {
     await WaterSettings.deleteMany({});
     const settings = await WaterSettings.create(DEFAULTS);
