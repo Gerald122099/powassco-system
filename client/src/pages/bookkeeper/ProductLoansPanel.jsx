@@ -8,7 +8,28 @@ import { Package, Plus, RefreshCw, Trash2, Edit3, ShoppingBag, CheckCircle, XCir
 
 const peso = (n) => "₱" + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-const EMPTY = { name: "", category: "", unitPrice: "", stock: 0, description: "", minCbuRequired: 0, isActive: true };
+const CATEGORIES = [
+  { value: "frozen_goods", label: "Frozen goods" },
+  { value: "rice", label: "Rice" },
+  { value: "materials", label: "Materials" },
+  { value: "rental", label: "Rental (borrow/return)" },
+  { value: "appliance", label: "Appliance" },
+  { value: "construction", label: "Construction" },
+  { value: "other", label: "Other" },
+];
+const EMPTY = {
+  name: "",
+  category: "other",
+  unitPrice: "",
+  capital: 0,
+  profit: 0,
+  stock: 0,
+  description: "",
+  minCbuRequired: 0,
+  isRental: false,
+  rentFee: 0,
+  isActive: true,
+};
 
 export default function ProductLoansPanel() {
   const { token } = useAuth();
@@ -163,14 +184,86 @@ export default function ProductLoansPanel() {
       {/* Catalogue add/edit modal */}
       <Modal open={catalogModalOpen} title={editing ? `Edit ${editing.name}` : "Add Product"} onClose={closeCatalog} size="sm">
         <form onSubmit={saveProduct} className="space-y-3">
-          <div><label className="text-xs font-semibold">Name *</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" /></div>
-          <div className="grid grid-cols-2 gap-2">
-            <div><label className="text-xs font-semibold">Category</label><input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} placeholder="e.g. rice, meter" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" /></div>
-            <div><label className="text-xs font-semibold">Unit Price (₱) *</label><input type="number" step="0.01" value={form.unitPrice} onChange={(e) => setForm({ ...form, unitPrice: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" /></div>
-            <div><label className="text-xs font-semibold">Stock</label><input type="number" value={form.stock} onChange={(e) => setForm({ ...form, stock: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" /></div>
-            <div><label className="text-xs font-semibold">Min CBU required (₱)</label><input type="number" step="0.01" value={form.minCbuRequired} onChange={(e) => setForm({ ...form, minCbuRequired: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" /></div>
+          <div>
+            <label className="text-xs font-semibold">Name *</label>
+            <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" />
           </div>
-          <div><label className="text-xs font-semibold">Description</label><textarea rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" /></div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-xs font-semibold">Category</label>
+              <select
+                value={form.category}
+                onChange={(e) => {
+                  const cat = e.target.value;
+                  setForm({ ...form, category: cat, isRental: cat === "rental" });
+                }}
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2"
+              >
+                {CATEGORIES.map((c) => (
+                  <option key={c.value} value={c.value}>{c.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-semibold">Unit Price (₱) *</label>
+              <input type="number" step="0.01" value={form.unitPrice} onChange={(e) => setForm({ ...form, unitPrice: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" />
+            </div>
+            <div>
+              <label className="text-xs font-semibold">Capital (₱)</label>
+              <input
+                type="number"
+                step="0.01"
+                value={form.capital}
+                onChange={(e) => {
+                  const cap = e.target.value;
+                  // Auto-compute profit when capital changes (admin
+                  // can override below). unitPrice − capital = profit.
+                  const price = Number(form.unitPrice) || 0;
+                  setForm({ ...form, capital: cap, profit: Math.max(0, price - (Number(cap) || 0)).toFixed(2) });
+                }}
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2"
+              />
+              <div className="mt-0.5 text-[10px] text-slate-500">Co-op's cost basis</div>
+            </div>
+            <div>
+              <label className="text-xs font-semibold">Profit (₱)</label>
+              <input
+                type="number"
+                step="0.01"
+                value={form.profit}
+                onChange={(e) => setForm({ ...form, profit: e.target.value })}
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2"
+              />
+              <div className="mt-0.5 text-[10px] text-slate-500">Auto-fills from price − capital; editable</div>
+            </div>
+            <div>
+              <label className="text-xs font-semibold">Stock</label>
+              <input type="number" value={form.stock} onChange={(e) => setForm({ ...form, stock: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" />
+            </div>
+            <div>
+              <label className="text-xs font-semibold">Min CBU required (₱)</label>
+              <input type="number" step="0.01" value={form.minCbuRequired} onChange={(e) => setForm({ ...form, minCbuRequired: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" />
+            </div>
+            {/* Rental-only fee. Shown only when category is "rental"
+                so the form doesn't clutter for regular products. */}
+            {(form.category === "rental" || form.isRental) && (
+              <div className="col-span-2">
+                <label className="text-xs font-semibold text-purple-700">Rental Fee (₱)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={form.rentFee}
+                  onChange={(e) => setForm({ ...form, rentFee: e.target.value })}
+                  className="mt-1 w-full rounded-xl border border-purple-300 bg-purple-50 px-3 py-2"
+                />
+                <div className="mt-0.5 text-[10px] text-purple-700">Charged at borrow time. Late-return penalty (per day) is set in Admin → Loan Settings.</div>
+              </div>
+            )}
+          </div>
+          <div>
+            <label className="text-xs font-semibold">Description</label>
+            <textarea rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" />
+          </div>
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={!!form.isActive} onChange={(e) => setForm({ ...form, isActive: e.target.checked })} /> Active</label>
           <div className="flex justify-end gap-2">
             <button type="button" onClick={closeCatalog} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold">Cancel</button>

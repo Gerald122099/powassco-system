@@ -33,6 +33,21 @@ const LoanSettingsSchema = new mongoose.Schema(
     // admin Loan Settings panel; default ₱3,000 per co-op policy.
     minCbuForLoan: { type: Number, default: 3000, min: 0 },
 
+    // Product transactions — per-category default term in DAYS, and
+    // the per-day late-return penalty for rentals. Empty by default;
+    // admin fills these in via the Loan Settings panel before the
+    // cashier UI can compute due dates / penalties.
+    productTerms: {
+      frozen_goods: { type: Number, default: 0, min: 0 },  // e.g. 7
+      rice:         { type: Number, default: 0, min: 0 },  // e.g. 30
+      materials:    { type: Number, default: 0, min: 0 },
+      rental:       { type: Number, default: 0, min: 0 },  // e.g. 14
+      appliance:    { type: Number, default: 0, min: 0 },
+      construction: { type: Number, default: 0, min: 0 },
+      other:        { type: Number, default: 0, min: 0 },
+      rentalLatePenaltyPerDay: { type: Number, default: 0, min: 0 },
+    },
+
     updatedBy: { type: String, default: "" },
   },
   { timestamps: true }

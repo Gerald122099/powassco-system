@@ -20,10 +20,15 @@ import LoanPayment from "../models/LoanPayment.js";
 import WaterMember from "../models/WaterMember.js";
 import CbuTransaction from "../models/CbuTransaction.js";
 import { ProductLoanCatalog, ProductLoanApplication } from "../models/ProductLoan.js";
+import LoanSettings from "../models/LoanSettings.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
 const router = express.Router();
 const guard = [requireAuth, requireRole(["admin", "bookkeeper"])];
+// Cashier shares product transaction posting (sales, loan payments,
+// rental returns) — they're at the counter when those happen. The
+// read-only audit endpoints + catalog mutations stay bookkeeper-only.
+const cashierGuard = [requireAuth, requireRole(["admin", "bookkeeper", "cashier"])];
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
 function dateRange(fromStr, toStr) {
@@ -198,15 +203,28 @@ router.get("/product-catalog", ...guard, async (req, res) => {
 router.post("/product-catalog", ...guard, async (req, res) => {
   try {
     const b = req.body || {};
-    if (!b.name || !(Number(b.unitPrice) > 0)) return res.status(400).json({ message: "name and unitPrice are required." });
+    if (!b.name || !(Number(b.unitPrice) >= 0)) return res.status(400).json({ message: "name and unitPrice are required." });
+    const unitPrice = round2(b.unitPrice);
+    const capital = Math.max(0, round2(b.capital || 0));
+    // Profit defaults to unitPrice − capital when not explicitly
+    // sent. Letting the admin override it lets them post a markup
+    // that includes handling/storage costs without re-pricing capital.
+    const profit = round2("profit" in b ? Number(b.profit) : (unitPrice - capital));
+    const allowedCategories = ["frozen_goods", "rice", "materials", "rental", "appliance", "construction", "other"];
+    const category = allowedCategories.includes(b.category) ? b.category : "other";
+    const isRental = category === "rental" || !!b.isRental;
     const doc = await ProductLoanCatalog.create({
       name: String(b.name).trim(),
-      category: String(b.category || "").trim(),
-      unitPrice: round2(b.unitPrice),
+      category,
+      unitPrice,
+      capital,
+      profit,
       stock: Number(b.stock) || 0,
       description: String(b.description || ""),
       imageBase64: String(b.imageBase64 || ""),
       minCbuRequired: Number(b.minCbuRequired) || 0,
+      isRental,
+      rentFee: isRental ? Math.max(0, round2(b.rentFee || 0)) : 0,
       isActive: b.isActive !== false,
       createdBy: req.user?.fullName || req.user?.employeeId || "",
     });
@@ -215,9 +233,12 @@ router.post("/product-catalog", ...guard, async (req, res) => {
 });
 
 router.put("/product-catalog/:id", ...guard, async (req, res) => {
-  const allow = ["name", "category", "unitPrice", "stock", "description", "imageBase64", "minCbuRequired", "isActive"];
+  const allow = ["name", "category", "unitPrice", "capital", "profit", "stock", "description", "imageBase64", "minCbuRequired", "isRental", "rentFee", "isActive"];
   const patch = {};
   for (const k of allow) if (k in req.body) patch[k] = req.body[k];
+  // Auto-flip isRental when category becomes "rental" — keeps the
+  // two fields in sync regardless of which the form updates.
+  if (patch.category === "rental") patch.isRental = true;
   const doc = await ProductLoanCatalog.findByIdAndUpdate(req.params.id, patch, { new: true });
   if (!doc) return res.status(404).json({ message: "Product not found." });
   res.json(doc);
@@ -236,35 +257,230 @@ router.get("/product-applications", ...guard, async (req, res) => {
   res.json(apps);
 });
 
-router.post("/product-applications", ...guard, async (req, res) => {
+// Create a product transaction (sale / loan / rental). The shape of
+// the request body determines which:
+//   transactionType: "sale"   — pnNo OR (customerName + customerContact)
+//                               required; balance closes immediately;
+//                               a single payment record is appended.
+//   transactionType: "loan"   — pnNo required (members only);
+//                               termDays comes from LoanSettings.
+//                               productTerms[category]; balance >0.
+//   transactionType: "rental" — pnNo required; borrowDate +
+//                               returnDate required; charges rentFee
+//                               upfront; status stays "active" until
+//                               POST /:id/return.
+router.post("/product-applications", ...cashierGuard, async (req, res) => {
   try {
     const b = req.body || {};
-    const pnNo = String(b.pnNo || "").toUpperCase().trim();
+    const transactionType = ["sale", "loan", "rental"].includes(b.transactionType) ? b.transactionType : "loan";
     const productId = String(b.productId || "");
     const quantity = Math.max(1, Number(b.quantity) || 1);
 
-    const member = await WaterMember.findOne({ pnNo });
-    if (!member) return res.status(404).json({ message: "Member not found." });
     const product = await ProductLoanCatalog.findById(productId);
     if (!product) return res.status(404).json({ message: "Product not found." });
     if (!product.isActive) return res.status(400).json({ message: "Product is inactive." });
-    if (product.stock > 0 && quantity > product.stock) return res.status(400).json({ message: "Insufficient stock." });
-
-    const totalPrice = round2(product.unitPrice * quantity);
-    if (totalPrice < Number(product.minCbuRequired || 0) && Number(member.cbuBalance || 0) < Number(product.minCbuRequired || 0)) {
-      return res.status(400).json({ message: `Member's CBU (₱${member.cbuBalance}) is below required ₱${product.minCbuRequired}.` });
+    if (product.stock > 0 && quantity > product.stock) {
+      return res.status(400).json({ message: "Insufficient stock." });
     }
 
+    // Member resolution. Sales accept either a member or walk-in
+    // (customerName + optional customerContact). Loans and rentals
+    // require a member (we need an account to bill against).
+    const pnNo = String(b.pnNo || "").toUpperCase().trim();
+    let member = null;
+    if (pnNo) {
+      member = await WaterMember.findOne({ pnNo });
+      if (!member) return res.status(404).json({ message: `Member ${pnNo} not found.` });
+    }
+    if (transactionType !== "sale" && !member) {
+      return res.status(400).json({ message: "Loans and rentals require a registered member (Account Number)." });
+    }
+    const customerName = String(b.customerName || "").trim();
+    const customerContact = String(b.customerContact || "").trim();
+    if (transactionType === "sale" && !member && !customerName) {
+      return res.status(400).json({ message: "Walk-in sales need either a member Account Number or a customer name." });
+    }
+
+    const unitPrice = round2(product.unitPrice);
+    const totalPrice = round2(unitPrice * quantity);
+    const unitCapital = round2(product.capital || 0);
+    const totalCapital = round2(unitCapital * quantity);
+    const profitRecorded = round2(totalPrice - totalCapital);
+
+    if (transactionType === "loan" && member) {
+      // CBU eligibility on loans (existing behaviour).
+      if (Number(member.cbuBalance || 0) < Number(product.minCbuRequired || 0)) {
+        return res.status(400).json({
+          message: `Member's CBU (₱${member.cbuBalance}) is below required ₱${product.minCbuRequired}.`,
+        });
+      }
+    }
+
+    // Per-category term lookup for loans and rentals.
+    const s = await LoanSettings.findOne();
+    const termDays =
+      transactionType === "loan" || transactionType === "rental"
+        ? Number(s?.productTerms?.[product.category] || 0)
+        : 0;
+
+    const now = new Date();
+    const dueDate = termDays > 0 ? new Date(now.getTime() + termDays * 86400000) : null;
+
+    // Rental-specific fields. rentFee is charged at borrow time and
+    // becomes the only "amount" the member owes upfront unless the
+    // operator overrides it (b.rentFee). Late penalty is computed
+    // on return.
+    const isRental = transactionType === "rental";
+    const rentFee = isRental ? Math.max(0, round2(b.rentFee ?? product.rentFee ?? 0)) : 0;
+    const borrowDate = isRental ? (b.borrowDate ? new Date(b.borrowDate) : now) : undefined;
+    const returnDate = isRental
+      ? (b.returnDate ? new Date(b.returnDate) : dueDate)
+      : undefined;
+
+    // Initial balance: sale closes immediately; loan = totalPrice;
+    // rental = rentFee (penalty accrues on return).
+    const initialBalance =
+      transactionType === "sale" ? 0
+        : transactionType === "rental" ? rentFee
+        : totalPrice;
+
     const doc = await ProductLoanApplication.create({
-      pnNo: member.pnNo, accountName: member.accountName,
-      productId: product._id, productName: product.name, productCategory: product.category,
-      quantity, unitPrice: product.unitPrice, totalPrice, balance: totalPrice,
-      status: "approved",
-      approvedAt: new Date(), approvedBy: req.user?.fullName || req.user?.employeeId || "",
+      pnNo: member?.pnNo || "",
+      accountName: member?.accountName || "",
+      customerName: member ? "" : customerName,
+      customerContact: member ? "" : customerContact,
+      transactionType,
+      productId: product._id,
+      productName: product.name,
+      productCategory: product.category,
+      quantity,
+      unitPrice,
+      totalPrice,
+      unitCapital,
+      totalCapital,
+      profitRecorded,
+      termDays,
+      dueDate,
+      rentFee,
+      borrowDate,
+      returnDate,
+      balance: initialBalance,
+      // Sale: record the full payment now; status closes immediately.
+      totalPaid: transactionType === "sale" ? totalPrice : 0,
+      payments:
+        transactionType === "sale"
+          ? [{
+              orNo: String(b.orNo || "").toUpperCase().trim(),
+              amount: totalPrice,
+              method: b.method || "cash",
+              paidAt: now,
+              receivedBy: req.user?.fullName || req.user?.employeeId || "",
+              note: "Walk-in sale",
+            }]
+          : [],
+      status:
+        transactionType === "sale" ? "fully_paid"
+          : transactionType === "rental" ? "active"
+          : "approved",
+      approvedAt: now,
+      approvedBy: req.user?.fullName || req.user?.employeeId || "",
+      releasedAt: transactionType === "sale" || transactionType === "rental" ? now : null,
+      releasedBy:
+        transactionType === "sale" || transactionType === "rental"
+          ? (req.user?.fullName || req.user?.employeeId || "")
+          : "",
       remarks: String(b.remarks || ""),
     });
+
+    // Stock decrement for sales / loans (rentals come back, so no
+    // permanent stock loss).
+    if (transactionType !== "rental" && product.stock > 0) {
+      await ProductLoanCatalog.findByIdAndUpdate(product._id, { $inc: { stock: -quantity } });
+    }
+
     res.status(201).json(doc);
-  } catch (e) { res.status(500).json({ message: e.message || "Failed to create application." }); }
+  } catch (e) {
+    console.error("product-applications create error:", e);
+    res.status(500).json({ message: e.message || "Failed to create transaction." });
+  }
+});
+
+// Record a payment against a product LOAN. Cashier-accessible so the
+// counter can post catch-up payments without going through the
+// bookkeeper screen.
+router.post("/product-applications/:id/pay", ...cashierGuard, async (req, res) => {
+  try {
+    const amount = round2(Number(req.body?.amount || 0));
+    if (!(amount > 0)) return res.status(400).json({ message: "Amount must be > 0." });
+    const app = await ProductLoanApplication.findById(req.params.id);
+    if (!app) return res.status(404).json({ message: "Transaction not found." });
+    if (app.transactionType === "sale") {
+      return res.status(400).json({ message: "Sales close at the counter — they don't accept additional payments." });
+    }
+    if (app.balance <= 0) {
+      return res.status(400).json({ message: "No outstanding balance." });
+    }
+    const applied = Math.min(amount, app.balance);
+    app.payments.push({
+      orNo: String(req.body?.orNo || "").toUpperCase().trim(),
+      amount: applied,
+      method: req.body?.method || "cash",
+      paidAt: new Date(),
+      receivedBy: req.user?.fullName || req.user?.employeeId || "",
+      note: String(req.body?.note || ""),
+    });
+    app.totalPaid = round2((app.totalPaid || 0) + applied);
+    app.balance = round2(app.balance - applied);
+    if (app.balance <= 0) {
+      app.status = app.transactionType === "rental" ? "returned" : "fully_paid";
+    }
+    await app.save();
+    res.json({ ok: true, application: app, applied });
+  } catch (e) {
+    console.error("product-applications pay error:", e);
+    res.status(500).json({ message: e.message || "Payment failed." });
+  }
+});
+
+// Mark a rental returned. Computes any late-return penalty and adds
+// it to the balance; cashier then posts a payment for the full
+// (rentFee + penalty − already_paid) amount via /pay.
+router.post("/product-applications/:id/return", ...cashierGuard, async (req, res) => {
+  try {
+    const app = await ProductLoanApplication.findById(req.params.id);
+    if (!app) return res.status(404).json({ message: "Transaction not found." });
+    if (app.transactionType !== "rental") {
+      return res.status(400).json({ message: "Only rentals can be returned." });
+    }
+    if (app.returnedAt) {
+      return res.status(400).json({ message: "Already returned." });
+    }
+    const now = new Date();
+    const due = app.returnDate ? new Date(app.returnDate) : null;
+    let penalty = 0;
+    if (due && now > due) {
+      const lateDays = Math.ceil((now - due) / 86400000);
+      const s = await LoanSettings.findOne();
+      const rate = Number(s?.productTerms?.rentalLatePenaltyPerDay || 0);
+      penalty = round2(lateDays * rate);
+    }
+    app.returnedAt = now;
+    app.latePenalty = penalty;
+    app.balance = round2(Math.max(0, app.balance + penalty));
+    // If still owes money (rentFee not paid yet OR new penalty),
+    // status stays "overdue" / "active" so the cashier knows to
+    // collect. If everything's paid, mark returned.
+    if (app.balance <= 0) {
+      app.status = "returned";
+    } else {
+      app.status = penalty > 0 ? "overdue" : "active";
+    }
+    await app.save();
+    res.json({ ok: true, application: app, lateDays: penalty > 0 ? Math.ceil((now - due) / 86400000) : 0, penalty });
+  } catch (e) {
+    console.error("product-applications return error:", e);
+    res.status(500).json({ message: e.message || "Return failed." });
+  }
 });
 
 // Release a product loan — optionally apply CBU as down/full payment.
