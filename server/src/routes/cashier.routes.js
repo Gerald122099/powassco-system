@@ -18,6 +18,7 @@ import WaterBill from "../models/WaterBill.js";
 import WaterPayment from "../models/WaterPayment.js";
 import LoanApplication from "../models/LoanApplication.js";
 import LoanPayment from "../models/LoanPayment.js";
+import { ProductLoanApplication } from "../models/ProductLoan.js";
 import OnlinePayment from "../models/OnlinePayment.js";
 import CbuTransaction from "../models/CbuTransaction.js";
 import WaterSettings from "../models/WaterSettings.js";
@@ -154,6 +155,19 @@ router.get("/water", ...guard, async (req, res) => {
     const unpaid = bills.filter((b) => b.status !== "paid");
     const totalDue = unpaid.reduce((sum, b) => sum + (Number(b.totalDue) || 0), 0);
 
+    // Open product-loan / rental balances for the SAME member, so the
+    // cashier can include them in a single OR with the water payment.
+    // Only loans + rentals with an outstanding balance are returned;
+    // fully-paid and never-released items are skipped.
+    const productLoans = await ProductLoanApplication.find({
+      pnNo: member.pnNo,
+      transactionType: { $in: ["loan", "rental"] },
+      balance: { $gt: 0 },
+    })
+      .select("_id transactionType productName productCategory quantity totalPrice balance dueDate borrowDate returnDate rentFee latePenalty status")
+      .sort({ dueDate: 1, createdAt: -1 })
+      .lean();
+
     res.json({
       member: {
         pnNo: member.pnNo,
@@ -171,6 +185,7 @@ router.get("/water", ...guard, async (req, res) => {
       totalDue,
       recentPayments: payments,
       pendingOnline,
+      productLoans,
     });
   } catch (e) {
     console.error("Cashier water lookup error:", e);
@@ -208,7 +223,11 @@ router.get("/loan", ...guard, async (req, res) => {
 
     const loanIds = loans.map((l) => l.loanId);
 
-    const [recentPayments, pendingOnline] = await Promise.all([
+    // Pull open product-loan / rental balances for the borrowers
+    // returned, so the cashier sees them next to the loan and can
+    // bundle into the same OR.
+    const borrowerPnNos = [...new Set(loans.map((l) => l.borrowerPnNo).filter(Boolean))];
+    const [recentPayments, pendingOnline, productLoans] = await Promise.all([
       LoanPayment.find({ loanId: { $in: loanIds } })
         .sort({ paidAt: -1 })
         // Bumped to 500 so a multi-month catch-up on a legacy loan
@@ -220,9 +239,19 @@ router.get("/loan", ...guard, async (req, res) => {
       OnlinePayment.find({ module: "loan", loanId: { $in: loanIds }, status: "pending" })
         .select("loanId amountToPay referenceId createdAt")
         .lean(),
+      borrowerPnNos.length > 0
+        ? ProductLoanApplication.find({
+            pnNo: { $in: borrowerPnNos },
+            transactionType: { $in: ["loan", "rental"] },
+            balance: { $gt: 0 },
+          })
+            .select("_id pnNo transactionType productName productCategory quantity totalPrice balance dueDate borrowDate returnDate rentFee latePenalty status")
+            .sort({ dueDate: 1, createdAt: -1 })
+            .lean()
+        : Promise.resolve([]),
     ]);
 
-    res.json({ loans, recentPayments, pendingOnline });
+    res.json({ loans, recentPayments, pendingOnline, productLoans });
   } catch (e) {
     console.error("Cashier loan lookup error:", e);
     res.status(500).json({ message: "Lookup failed. Please try again." });
@@ -246,6 +275,14 @@ router.post("/pay-water", ...payGuard, async (req, res) => {
     const amountReceived = Number(req.body?.amountReceived || 0);
     const method = String(req.body?.method || "cash").toLowerCase();
     const note = String(req.body?.note || "");
+    // Optional inline bundle of product-loan / rental payments to
+    // settle on the SAME OR as the water bill. Each entry is
+    // { id: <ProductLoanApplication._id>, amount: <₱> }. Amounts here
+    // are deducted from amountReceived BEFORE computing CBU excess,
+    // so a cashier can hand back a single receipt covering everything.
+    const rawProductLoans = Array.isArray(req.body?.productLoanPayments)
+      ? req.body.productLoanPayments
+      : [];
 
     if (!pnNo || !meterNumber || !periodKey) return res.status(400).json({ message: "pnNo, meterNumber and periodKey are required." });
     if (!orNo) return res.status(400).json({ message: "OR number is required." });
@@ -259,15 +296,37 @@ router.post("/pay-water", ...payGuard, async (req, res) => {
     if (bill.status === "paid") return res.status(409).json({ message: "This bill is already paid." });
 
     const totalDue = round2(Number(bill.totalDue) || 0);
-    if (amountReceived < totalDue) {
-      return res.status(400).json({ message: `Amount received (₱${amountReceived}) is less than total due (₱${totalDue}). Cashier cannot accept under-payment.` });
+
+    // Validate + pre-load every product loan that's being bundled, so
+    // we can fail fast (and atomically) before flipping the water
+    // bill. Any unresolved id, mismatched member, or over-payment on
+    // a single product loan aborts the whole transaction.
+    const productLoanPayments = [];
+    for (const pl of rawProductLoans) {
+      const amt = round2(Number(pl?.amount || 0));
+      if (!(amt > 0)) continue;
+      const doc = await ProductLoanApplication.findById(String(pl?.id || ""));
+      if (!doc) return res.status(404).json({ message: `Product loan ${pl?.id} not found.` });
+      if (doc.pnNo !== pnNo) return res.status(400).json({ message: `Product loan ${doc._id} belongs to a different member.` });
+      if (doc.transactionType === "sale") return res.status(400).json({ message: `Sale ${doc._id} cannot accept additional payments.` });
+      if (amt > Number(doc.balance || 0) + 0.005) {
+        return res.status(400).json({ message: `Cannot pay ₱${amt} on ${doc.productName} — outstanding is only ₱${doc.balance}.` });
+      }
+      productLoanPayments.push({ doc, amount: amt });
+    }
+    const productLoanTotal = productLoanPayments.reduce((s, p) => s + p.amount, 0);
+    const totalExpected = round2(totalDue + productLoanTotal);
+    if (amountReceived < totalExpected) {
+      return res.status(400).json({
+        message: `Amount received (₱${amountReceived}) is less than the combined total (water ₱${totalDue} + product loans ₱${productLoanTotal} = ₱${totalExpected}).`,
+      });
     }
 
     // Reject duplicate OR up-front (the unique index would catch it anyway).
     const dupOr = await WaterPayment.findOne({ orNo });
     if (dupOr) return res.status(409).json({ message: `OR ${orNo} already used.` });
 
-    const cbuExcess = round2(amountReceived - totalDue);
+    const cbuExcess = round2(amountReceived - totalExpected);
     const receivedBy = req.user?.fullName || req.user?.employeeId || "";
 
     // STEP 1 — atomic status flip. If the bill is already paid (or doesn't
@@ -325,12 +384,43 @@ router.post("/pay-water", ...payGuard, async (req, res) => {
       }
     }
 
+    // STEP 3 — apply any bundled product-loan / rental payments. Same
+    // OR is recorded on each ProductLoanApplication.payments entry so
+    // the audit trail back-references this single receipt.
+    const productLoanResults = [];
+    for (const { doc, amount } of productLoanPayments) {
+      doc.payments.push({
+        orNo,
+        amount,
+        method,
+        paidAt: new Date(),
+        receivedBy,
+        note: `Bundled with water OR ${orNo}`,
+      });
+      doc.totalPaid = round2((doc.totalPaid || 0) + amount);
+      doc.balance = round2((doc.balance || 0) - amount);
+      if (doc.balance <= 0) {
+        doc.status = doc.transactionType === "rental" ? "returned" : "fully_paid";
+      }
+      await doc.save();
+      productLoanResults.push({
+        id: String(doc._id),
+        productName: doc.productName,
+        transactionType: doc.transactionType,
+        applied: amount,
+        newBalance: doc.balance,
+        status: doc.status,
+      });
+    }
+
     res.status(201).json({
       ok: true,
       message: cbuExcess > 0
-        ? `Posted ₱${totalDue}. Excess ₱${cbuExcess} added to CBU (new balance ₱${newCbuBalance}).`
-        : `Posted ₱${totalDue}.`,
+        ? `Posted ₱${totalDue} (water)${productLoanTotal > 0 ? ` + ₱${productLoanTotal} (product loans)` : ""}. Excess ₱${cbuExcess} → CBU (new balance ₱${newCbuBalance}).`
+        : `Posted ₱${totalDue} (water)${productLoanTotal > 0 ? ` + ₱${productLoanTotal} (product loans)` : ""}.`,
       payment, cbuExcess, newCbuBalance,
+      productLoanPayments: productLoanResults,
+      productLoanTotal,
     });
   } catch (e) {
     if (e?.code === 11000) return res.status(409).json({ message: "OR number is already in use." });
@@ -405,13 +495,45 @@ router.post("/pay-loan", ...payGuard, async (req, res) => {
     }
     const totalDue = round2(upcoming.reduce((s, r) => s + (Number(r.payment) || 0), 0));
 
-    if (amountReceived < totalDue) {
-      return res.status(400).json({ message: `Amount received (₱${amountReceived}) is less than total due (₱${totalDue}) for ${upcoming.length} period(s).` });
+    // Same bundling trick as pay-water: cashier can include any open
+    // product loans / rentals owned by the same borrower on this OR.
+    // (Bundling water bills onto the loan-pay OR is intentionally
+    // NOT supported here — there are too many water bills typically;
+    // the cashier should use pay-water as the entry point in that case
+    // and bundle this loan as a productLoan-like add-on later if we
+    // expand to that. For now: loan + product-loans only.)
+    const rawProductLoans = Array.isArray(req.body?.productLoanPayments)
+      ? req.body.productLoanPayments
+      : [];
+    const productLoanPayments = [];
+    for (const pl of rawProductLoans) {
+      const amt = round2(Number(pl?.amount || 0));
+      if (!(amt > 0)) continue;
+      const doc = await ProductLoanApplication.findById(String(pl?.id || ""));
+      if (!doc) return res.status(404).json({ message: `Product loan ${pl?.id} not found.` });
+      if (doc.pnNo !== loan.borrowerPnNo) {
+        return res.status(400).json({ message: `Product loan ${doc._id} belongs to a different member.` });
+      }
+      if (doc.transactionType === "sale") {
+        return res.status(400).json({ message: `Sale ${doc._id} cannot accept additional payments.` });
+      }
+      if (amt > Number(doc.balance || 0) + 0.005) {
+        return res.status(400).json({ message: `Cannot pay ₱${amt} on ${doc.productName} — outstanding is only ₱${doc.balance}.` });
+      }
+      productLoanPayments.push({ doc, amount: amt });
+    }
+    const productLoanTotal = productLoanPayments.reduce((s, p) => s + p.amount, 0);
+    const totalExpected = round2(totalDue + productLoanTotal);
+
+    if (amountReceived < totalExpected) {
+      return res.status(400).json({
+        message: `Amount received (₱${amountReceived}) is less than combined total (loan ₱${totalDue} + product loans ₱${productLoanTotal} = ₱${totalExpected}).`,
+      });
     }
     const dupOr = await LoanPayment.findOne({ orNo });
     if (dupOr) return res.status(409).json({ message: `OR ${orNo} already used.` });
 
-    const cbuExcess = round2(amountReceived - totalDue);
+    const cbuExcess = round2(amountReceived - totalExpected);
     const receivedBy = req.user?.fullName || req.user?.employeeId || "";
 
     // Create the LoanPayment first. Unique-index on orNo is the race
@@ -465,12 +587,43 @@ router.post("/pay-loan", ...payGuard, async (req, res) => {
       }
     }
 
+    // Apply bundled product-loan / rental payments. Same OR ties
+    // every receipt back to the single piece of paper the cashier
+    // handed the member.
+    const productLoanResults = [];
+    for (const { doc, amount } of productLoanPayments) {
+      doc.payments.push({
+        orNo,
+        amount,
+        method,
+        paidAt: new Date(),
+        receivedBy,
+        note: `Bundled with loan OR ${orNo}`,
+      });
+      doc.totalPaid = round2((doc.totalPaid || 0) + amount);
+      doc.balance = round2((doc.balance || 0) - amount);
+      if (doc.balance <= 0) {
+        doc.status = doc.transactionType === "rental" ? "returned" : "fully_paid";
+      }
+      await doc.save();
+      productLoanResults.push({
+        id: String(doc._id),
+        productName: doc.productName,
+        transactionType: doc.transactionType,
+        applied: amount,
+        newBalance: doc.balance,
+        status: doc.status,
+      });
+    }
+
     res.status(201).json({
       ok: true,
       message: cbuExcess > 0
-        ? `Posted ₱${totalDue} for ${upcoming.length} period(s). Excess ₱${cbuExcess} added to CBU (new balance ₱${newCbuBalance}).`
-        : `Posted ₱${totalDue} for ${upcoming.length} period(s).`,
+        ? `Posted ₱${totalDue} for ${upcoming.length} period(s)${productLoanTotal > 0 ? ` + ₱${productLoanTotal} (product loans)` : ""}. Excess ₱${cbuExcess} → CBU (new balance ₱${newCbuBalance}).`
+        : `Posted ₱${totalDue} for ${upcoming.length} period(s)${productLoanTotal > 0 ? ` + ₱${productLoanTotal} (product loans)` : ""}.`,
       payment, cbuExcess, newCbuBalance, periodsCovered: upcoming.length, totalDue,
+      productLoanPayments: productLoanResults,
+      productLoanTotal,
     });
   } catch (e) {
     if (e?.code === 11000) return res.status(409).json({ message: "OR number is already in use." });
