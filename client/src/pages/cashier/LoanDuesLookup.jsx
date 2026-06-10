@@ -504,9 +504,27 @@ export default function LoanDuesLookup() {
               </label>
               <div className="mt-1 max-h-48 overflow-y-auto rounded-xl border border-slate-200 bg-white">
                 {(() => {
-                  const sched = payLoan.amortizationSchedule || [];
+                  // If the server didn't ship amortizationSchedule
+                  // (older API, or legacy loan), synthesise rows from
+                  // termMonths + monthlyPayment + firstPaymentDate
+                  // so the cashier can still pick periods. Without
+                  // dueDate we show "—" but the payment ₱ stays
+                  // correct.
+                  let sched = payLoan.amortizationSchedule || [];
                   if (sched.length === 0) {
-                    return <div className="px-3 py-3 text-xs text-slate-500">No amortization schedule available for this loan.</div>;
+                    const term = Math.max(1, Number(payLoan.termMonths) || 0);
+                    const monthly = Number(payLoan.monthlyPayment) || 0;
+                    if (term > 0 && monthly > 0) {
+                      const first = payLoan.firstPaymentDate ? new Date(payLoan.firstPaymentDate) : null;
+                      sched = Array.from({ length: term }, (_, i) => {
+                        const due = first ? new Date(first) : null;
+                        if (due) due.setMonth(due.getMonth() + i);
+                        return { period: i + 1, payment: monthly, dueDate: due };
+                      });
+                    }
+                  }
+                  if (sched.length === 0) {
+                    return <div className="px-3 py-3 text-xs text-slate-500">No amortization schedule available — use the legacy "pay next N installments" mode by ticking nothing and entering the total amount manually.</div>;
                   }
                   const paidSet = paidPeriodsForLoan(payLoan);
                   return sched.map((row, idx) => {
