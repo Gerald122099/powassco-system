@@ -15,39 +15,44 @@ function discountAppliesToMeter(member, meterNumber) {
 
 export function calculateWaterBillLocal(consumption, classification, member, meterNumber, settings) {
   if (!settings?.tariffs) return null;
-  const tariffArray = classification === "residential" ? settings.tariffs.residential || [] : settings.tariffs.commercial || [];
-  const tariff = tariffArray.find((t) => t.isActive && consumption >= t.minConsumption && consumption <= t.maxConsumption);
+  const tariffArray = classification === "residential"
+    ? settings.tariffs.residential || []
+    : classification === "commercial"
+    ? settings.tariffs.commercial || []
+    : [];
+
+  // Same logic as the server's calculateWaterBill — the first tier is
+  // the minimum-charge bracket (flatAmount), subsequent tiers carry
+  // per-cubic rates for the excess. Reads from the admin-configured
+  // tariff data; no hardcoded ₱74 / ₱442.50 anymore.
+  const activeTiers = tariffArray
+    .filter((t) => t.isActive)
+    .sort((a, b) => Number(a.minConsumption) - Number(b.minConsumption));
+  if (activeTiers.length === 0) return null;
+  const minTier = activeTiers[0];
+  const tariff = activeTiers.find((t) => consumption >= t.minConsumption && consumption <= t.maxConsumption);
   if (!tariff) return null;
 
+  const minFlat = Number(minTier.flatAmount) || 0;
+  const minMax = Number(minTier.maxConsumption) || 0;
+  const excessRate = Number(tariff.ratePerCubic) || 0;
   let baseAmount = 0;
-  const breakdown = { minimumCharge: 0, excessConsumption: 0, excessRate: tariff.ratePerCubic, excessAmount: 0 };
+  const breakdown = { minimumCharge: 0, excessConsumption: 0, excessRate, excessAmount: 0 };
 
-  if (classification === "residential") {
-    if (consumption <= 5) {
-      baseAmount = 74.0;
-      breakdown.minimumCharge = 74.0;
+  if (classification === "residential" || classification === "commercial") {
+    if (consumption <= minMax) {
+      baseAmount = minFlat;
+      breakdown.minimumCharge = minFlat;
     } else {
-      const excess = consumption - 5;
-      const excessAmount = excess * tariff.ratePerCubic;
-      baseAmount = 74.0 + excessAmount;
-      breakdown.minimumCharge = 74.0;
-      breakdown.excessConsumption = excess;
-      breakdown.excessAmount = excessAmount;
-    }
-  } else if (classification === "commercial") {
-    if (consumption <= 15) {
-      baseAmount = 442.5;
-      breakdown.minimumCharge = 442.5;
-    } else {
-      const excess = consumption - 15;
-      const excessAmount = excess * tariff.ratePerCubic;
-      baseAmount = 442.5 + excessAmount;
-      breakdown.minimumCharge = 442.5;
+      const excess = consumption - minMax;
+      const excessAmount = excess * excessRate;
+      baseAmount = minFlat + excessAmount;
+      breakdown.minimumCharge = minFlat;
       breakdown.excessConsumption = excess;
       breakdown.excessAmount = excessAmount;
     }
   } else {
-    baseAmount = consumption * tariff.ratePerCubic;
+    baseAmount = consumption * excessRate;
     breakdown.excessConsumption = consumption;
     breakdown.excessAmount = baseAmount;
   }

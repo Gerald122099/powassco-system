@@ -30,63 +30,63 @@ export async function calculateWaterBill(consumption, classification, member = n
     }
     
     // Find applicable tariff
-    const tariffArray = classification === "residential" 
+    const tariffArray = classification === "residential"
       ? (settings.tariffs?.residential || [])
-      : (settings.tariffs?.commercial || []);
-    
-    const tariff = tariffArray.find(t => 
-      t.isActive && 
-      consumption >= t.minConsumption && 
-      consumption <= t.maxConsumption
+      : classification === "commercial"
+      ? (settings.tariffs?.commercial || [])
+      : [];
+
+    // Sort active tiers by minConsumption so the FIRST tier is the
+    // minimum-charge bracket (e.g. 0-5 residential) and the rest cover
+    // the per-cubic excess steps. We need both the FIRST tier (for the
+    // flat minimum) and the MATCHING tier (for the excess rate).
+    const activeTiers = tariffArray
+      .filter((t) => t.isActive)
+      .sort((a, b) => Number(a.minConsumption) - Number(b.minConsumption));
+    if (activeTiers.length === 0) {
+      throw new Error(`No active tariff configured for ${classification}`);
+    }
+    const minTier = activeTiers[0];
+    const tariff = activeTiers.find(
+      (t) => consumption >= t.minConsumption && consumption <= t.maxConsumption
     );
-    
     if (!tariff) {
       throw new Error(`No tariff found for ${classification} consumption of ${consumption}m³`);
     }
-    
-    // Calculate base amount based on classification
+
+    // Base amount, driven entirely by configured tariff data so admin
+    // edits in Water Settings → Tariffs take effect immediately. No
+    // hardcoded ₱74 / ₱442.50 anymore — the values come from
+    // minTier.flatAmount.
+    const minFlat = Number(minTier.flatAmount) || 0;
+    const minMax = Number(minTier.maxConsumption) || 0;
+    const excessRate = Number(tariff.ratePerCubic) || 0;
     let baseAmount = 0;
-    let breakdown = {
+    const breakdown = {
       minimumCharge: 0,
       excessConsumption: 0,
-      excessRate: tariff.ratePerCubic,
-      excessAmount: 0
+      excessRate,
+      excessAmount: 0,
     };
-    
-    if (classification === "residential") {
-      // Residential: ₱74 minimum for 0-5 m³, then per m³ rate
-      if (consumption <= 5) {
-        baseAmount = 74.00;
-        breakdown.minimumCharge = 74.00;
-        breakdown.excessConsumption = 0;
-        breakdown.excessAmount = 0;
+
+    if (classification === "residential" || classification === "commercial") {
+      if (consumption <= minMax) {
+        // Within the minimum bracket — flat charge from the first tier.
+        baseAmount = minFlat;
+        breakdown.minimumCharge = minFlat;
       } else {
-        const excess = consumption - 5;
-        const excessAmount = excess * tariff.ratePerCubic;
-        baseAmount = 74.00 + excessAmount;
-        breakdown.minimumCharge = 74.00;
-        breakdown.excessConsumption = excess;
-        breakdown.excessAmount = excessAmount;
-      }
-    } else if (classification === "commercial") {
-      // Commercial: ₱442.50 minimum for 0-15 m³, then per m³ rate
-      if (consumption <= 15) {
-        baseAmount = 442.50;
-        breakdown.minimumCharge = 442.50;
-        breakdown.excessConsumption = 0;
-        breakdown.excessAmount = 0;
-      } else {
-        const excess = consumption - 15;
-        const excessAmount = excess * tariff.ratePerCubic;
-        baseAmount = 442.50 + excessAmount;
-        breakdown.minimumCharge = 442.50;
+        // Above the minimum bracket — flat minimum + excess at the
+        // matching tier's per-cubic rate.
+        const excess = consumption - minMax;
+        const excessAmount = excess * excessRate;
+        baseAmount = minFlat + excessAmount;
+        breakdown.minimumCharge = minFlat;
         breakdown.excessConsumption = excess;
         breakdown.excessAmount = excessAmount;
       }
     } else {
-      // Other classifications (institutional, government) - no minimum charge
-      baseAmount = consumption * tariff.ratePerCubic;
-      breakdown.minimumCharge = 0;
+      // institutional / government — no minimum charge, pure per-cubic.
+      baseAmount = consumption * excessRate;
       breakdown.excessConsumption = consumption;
       breakdown.excessAmount = baseAmount;
     }
