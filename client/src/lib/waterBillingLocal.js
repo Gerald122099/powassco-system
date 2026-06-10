@@ -33,28 +33,34 @@ export function calculateWaterBillLocal(consumption, classification, member, met
   const tariff = activeTiers.find((t) => consumption >= t.minConsumption && consumption <= t.maxConsumption);
   if (!tariff) return null;
 
-  const minFlat = Number(minTier.flatAmount) || 0;
+  // Honor each tier's chargeType: "flat" → flatAmount; "per_cubic" →
+  // m³ × ratePerCubic. Same logic as the server's calculateWaterBill.
   const minMax = Number(minTier.maxConsumption) || 0;
-  const excessRate = Number(tariff.ratePerCubic) || 0;
   let baseAmount = 0;
-  const breakdown = { minimumCharge: 0, excessConsumption: 0, excessRate, excessAmount: 0 };
+  const breakdown = {
+    minimumCharge: 0,
+    excessConsumption: 0,
+    excessRate: Number(tariff.ratePerCubic) || 0,
+    excessAmount: 0,
+  };
 
-  if (classification === "residential" || classification === "commercial") {
-    if (consumption <= minMax) {
-      baseAmount = minFlat;
-      breakdown.minimumCharge = minFlat;
-    } else {
-      const excess = consumption - minMax;
-      const excessAmount = excess * excessRate;
-      baseAmount = minFlat + excessAmount;
-      breakdown.minimumCharge = minFlat;
-      breakdown.excessConsumption = excess;
-      breakdown.excessAmount = excessAmount;
-    }
+  if (consumption <= minMax) {
+    baseAmount = minTier.chargeType === "flat"
+      ? (Number(minTier.flatAmount) || 0)
+      : consumption * (Number(minTier.ratePerCubic) || 0);
+    breakdown.minimumCharge = baseAmount;
   } else {
-    baseAmount = consumption * excessRate;
-    breakdown.excessConsumption = consumption;
-    breakdown.excessAmount = baseAmount;
+    const firstTierBase = minTier.chargeType === "flat"
+      ? (Number(minTier.flatAmount) || 0)
+      : minMax * (Number(minTier.ratePerCubic) || 0);
+    const excess = consumption - minMax;
+    const excessRate = Number(tariff.ratePerCubic) || 0;
+    const excessAmount = excess * excessRate;
+    baseAmount = firstTierBase + excessAmount;
+    breakdown.minimumCharge = firstTierBase;
+    breakdown.excessConsumption = excess;
+    breakdown.excessAmount = excessAmount;
+    breakdown.excessRate = excessRate;
   }
 
   let discountAmount = 0;

@@ -55,40 +55,48 @@ export async function calculateWaterBill(consumption, classification, member = n
     }
 
     // Base amount, driven entirely by configured tariff data so admin
-    // edits in Water Settings → Tariffs take effect immediately. No
-    // hardcoded ₱74 / ₱442.50 anymore — the values come from
-    // minTier.flatAmount.
-    const minFlat = Number(minTier.flatAmount) || 0;
+    // edits in Water Settings → Tariffs take effect immediately. We
+    // honor each tier's chargeType:
+    //   • chargeType="flat"      → this tier bills flatAmount as a
+    //                              minimum-charge bracket
+    //   • chargeType="per_cubic" → this tier bills (consumption_within
+    //                              × ratePerCubic)
+    const tierBaseAmount = (tier, m3) => {
+      if (tier.chargeType === "flat") return Number(tier.flatAmount) || 0;
+      return m3 * (Number(tier.ratePerCubic) || 0);
+    };
     const minMax = Number(minTier.maxConsumption) || 0;
-    const excessRate = Number(tariff.ratePerCubic) || 0;
     let baseAmount = 0;
     const breakdown = {
       minimumCharge: 0,
       excessConsumption: 0,
-      excessRate,
+      excessRate: Number(tariff.ratePerCubic) || 0,
       excessAmount: 0,
     };
 
-    if (classification === "residential" || classification === "commercial") {
-      if (consumption <= minMax) {
-        // Within the minimum bracket — flat charge from the first tier.
-        baseAmount = minFlat;
-        breakdown.minimumCharge = minFlat;
-      } else {
-        // Above the minimum bracket — flat minimum + excess at the
-        // matching tier's per-cubic rate.
-        const excess = consumption - minMax;
-        const excessAmount = excess * excessRate;
-        baseAmount = minFlat + excessAmount;
-        breakdown.minimumCharge = minFlat;
-        breakdown.excessConsumption = excess;
-        breakdown.excessAmount = excessAmount;
-      }
+    if (consumption <= minMax) {
+      // Within the first tier. If it's flat → flatAmount. If it's
+      // per-cubic → consumption × that tier's rate.
+      baseAmount = tierBaseAmount(minTier, consumption);
+      breakdown.minimumCharge = baseAmount;
     } else {
-      // institutional / government — no minimum charge, pure per-cubic.
-      baseAmount = consumption * excessRate;
-      breakdown.excessConsumption = consumption;
-      breakdown.excessAmount = baseAmount;
+      // Above the minimum bracket. The first tier contributes its
+      // "base" (flatAmount if flat, or the full bracket × rate if
+      // per-cubic); excess is billed at the MATCHING tier's per-cubic
+      // rate against (consumption − minMax). This matches the
+      // cooperative's printed examples where 10 m³ residential =
+      // ₱74 + (5 × ₱16.20) = ₱155, etc.
+      const firstTierBase = minTier.chargeType === "flat"
+        ? (Number(minTier.flatAmount) || 0)
+        : minMax * (Number(minTier.ratePerCubic) || 0);
+      const excess = consumption - minMax;
+      const excessRate = Number(tariff.ratePerCubic) || 0;
+      const excessAmount = excess * excessRate;
+      baseAmount = firstTierBase + excessAmount;
+      breakdown.minimumCharge = firstTierBase;
+      breakdown.excessConsumption = excess;
+      breakdown.excessAmount = excessAmount;
+      breakdown.excessRate = excessRate;
     }
     
     // Apply senior citizen discount if eligible
