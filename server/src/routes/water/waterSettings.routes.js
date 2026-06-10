@@ -146,15 +146,21 @@ router.put("/", ...adminGuard, async (req, res) => {
     const {
       penaltyType,
       penaltyValue,
+      // New daily-flat penalty engine fields. The client has been
+      // sending these via WaterSettingsPanel.payload; the server was
+      // ignoring them silently before this fix.
+      penaltyDailyAmount,
+      penaltyGraceDays,
+      penaltyAfterGraceAmount,
       dueDayOfMonth,
       graceDays,
       readingStartDayOfMonth,
       readingWindowDays,
       tariffs,
-      seniorDiscount
+      seniorDiscount,
     } = req.body || {};
 
-    console.log("Received update payload:", { tariffs, seniorDiscount });
+    console.log("Received update payload:", Object.keys(req.body || {}));
 
     let settings = await WaterSettings.findOne();
     if (!settings) {
@@ -164,16 +170,23 @@ router.put("/", ...adminGuard, async (req, res) => {
     // Update basic settings
     if (penaltyType !== undefined) settings.penaltyType = penaltyType;
     if (penaltyValue !== undefined) settings.penaltyValue = Number(penaltyValue);
-    
-    if (dueDayOfMonth !== undefined) 
+
+    if (penaltyDailyAmount !== undefined)
+      settings.penaltyDailyAmount = Math.max(0, Number(penaltyDailyAmount) || 0);
+    if (penaltyGraceDays !== undefined)
+      settings.penaltyGraceDays = Math.min(30, Math.max(0, Number(penaltyGraceDays) || 0));
+    if (penaltyAfterGraceAmount !== undefined)
+      settings.penaltyAfterGraceAmount = Math.max(0, Number(penaltyAfterGraceAmount) || 0);
+
+    if (dueDayOfMonth !== undefined)
       settings.dueDayOfMonth = Math.min(31, Math.max(1, Number(dueDayOfMonth)));
-    
-    if (graceDays !== undefined) 
+
+    if (graceDays !== undefined)
       settings.graceDays = Math.min(60, Math.max(0, Number(graceDays)));
-    
+
     if (readingStartDayOfMonth !== undefined)
       settings.readingStartDayOfMonth = Math.min(31, Math.max(1, Number(readingStartDayOfMonth)));
-    
+
     if (readingWindowDays !== undefined)
       settings.readingWindowDays = Math.min(31, Math.max(1, Number(readingWindowDays)));
 
