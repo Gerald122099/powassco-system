@@ -200,7 +200,7 @@ router.get("/loan", ...guard, async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(20)
       .select(
-        "loanId referenceCode borrowerPnNo borrowerName principal monthlyPayment totalPayment totalPaid balance status releasedAt maturityDate firstPaymentDate termMonths interestRatePerMonth createdAt"
+        "loanId referenceCode borrowerPnNo borrowerName borrowerType principal monthlyPayment totalPayment totalPaid balance status releasedAt maturityDate firstPaymentDate termMonths interestRatePerMonth amortizationSchedule createdAt"
       )
       .lean();
 
@@ -211,8 +211,11 @@ router.get("/loan", ...guard, async (req, res) => {
     const [recentPayments, pendingOnline] = await Promise.all([
       LoanPayment.find({ loanId: { $in: loanIds } })
         .sort({ paidAt: -1 })
-        .limit(30)
-        .select("loanId orNo method amountPaid paidAt receivedBy")
+        // Bumped to 500 so a multi-month catch-up on a legacy loan
+        // can fully populate the paid-periods set on the cashier
+        // picker; still bounded.
+        .limit(500)
+        .select("loanId orNo method amountPaid paidAt receivedBy periodsCovered periodsPaid")
         .lean(),
       OnlinePayment.find({ module: "loan", loanId: { $in: loanIds }, status: "pending" })
         .select("loanId amountToPay referenceId createdAt")
@@ -349,6 +352,16 @@ router.post("/pay-loan", ...payGuard, async (req, res) => {
     const loanId = String(req.body?.loanId || "").trim();
     const orNo = String(req.body?.orNo || "").trim().toUpperCase();
     const amountReceived = Number(req.body?.amountReceived || 0);
+    // Two ways to specify which installments are being paid:
+    //   1. periods: [1, 2, 3]   — explicit period numbers (1-based).
+    //                             The new cashier picker uses this so
+    //                             the cashier can hand-pick which
+    //                             scheduled rows are being settled.
+    //   2. periodsCovered: 3    — legacy "next N installments" form.
+    //                             Kept for backwards compatibility.
+    const explicitPeriods = Array.isArray(req.body?.periods)
+      ? req.body.periods.map((n) => Number(n)).filter((n) => Number.isFinite(n) && n >= 1)
+      : null;
     const periodsCovered = Math.max(1, Math.min(60, Number(req.body?.periodsCovered || 1)));
     const method = String(req.body?.method || "cash").toLowerCase();
     const note = String(req.body?.note || "");
@@ -361,12 +374,35 @@ router.post("/pay-loan", ...payGuard, async (req, res) => {
     if (!loan) return res.status(404).json({ message: "Loan not found." });
     if (Number(loan.balance || 0) <= 0) return res.status(400).json({ message: "Loan has no outstanding balance." });
 
-    // Determine the next unpaid scheduled rows. Approximate: scheduled paid
-    // through floor(totalPaid / monthlyPayment) periods. Take next N rows.
-    const monthly = Number(loan.monthlyPayment) || 0;
-    const paidPeriods = monthly > 0 ? Math.floor((Number(loan.totalPaid) || 0) / monthly) : 0;
-    const upcoming = (loan.amortizationSchedule || []).slice(paidPeriods, paidPeriods + periodsCovered);
-    if (upcoming.length === 0) return res.status(400).json({ message: "No upcoming installments to pay." });
+    // Build the list of installments being paid by this OR. With
+    // explicitPeriods, look up each period number on the schedule.
+    // Otherwise fall back to "next N unpaid" behavior.
+    let upcoming;
+    let periodNumbers; // 1-based period numbers this payment covers
+    if (explicitPeriods && explicitPeriods.length > 0) {
+      const schedule = loan.amortizationSchedule || [];
+      // Index-of-period — schedule entries can be {period: N, ...} or
+      // just be ordered by index; we treat both interchangeably.
+      const byPeriod = new Map(
+        schedule.map((r, i) => [Number(r.period ?? i + 1), r])
+      );
+      upcoming = [];
+      periodNumbers = [];
+      for (const p of explicitPeriods) {
+        const row = byPeriod.get(p);
+        if (row) {
+          upcoming.push(row);
+          periodNumbers.push(p);
+        }
+      }
+      if (upcoming.length === 0) return res.status(400).json({ message: "None of the selected periods exist on this loan's schedule." });
+    } else {
+      const monthly = Number(loan.monthlyPayment) || 0;
+      const paidApproxPeriods = monthly > 0 ? Math.floor((Number(loan.totalPaid) || 0) / monthly) : 0;
+      upcoming = (loan.amortizationSchedule || []).slice(paidApproxPeriods, paidApproxPeriods + periodsCovered);
+      if (upcoming.length === 0) return res.status(400).json({ message: "No upcoming installments to pay." });
+      periodNumbers = upcoming.map((r, i) => Number(r.period ?? paidApproxPeriods + i + 1));
+    }
     const totalDue = round2(upcoming.reduce((s, r) => s + (Number(r.payment) || 0), 0));
 
     if (amountReceived < totalDue) {
@@ -394,6 +430,7 @@ router.post("/pay-loan", ...payGuard, async (req, res) => {
         amountReceived: round2(amountReceived),
         cbuExcess,
         periodsCovered: upcoming.length,
+        periodsPaid: periodNumbers,
         paidAt: new Date(),
         receivedBy,
       });

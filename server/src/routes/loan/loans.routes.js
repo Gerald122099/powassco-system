@@ -296,7 +296,15 @@ router.post("/applications", guard, async (req, res) => {
     });
   }
   const rate = Number(b.interestRatePerMonth ?? s.interestRatePerMonth ?? 2.5);
-  const term = Math.max(1, Number(b.termMonths || s.defaultTermMonths || 6));
+  // borrowerType drives the default term when the form didn't ship
+  // an explicit termMonths. Members = 6, Employees = 12 (configurable
+  // in LoanSettings). Officer can always override by passing
+  // termMonths in the body.
+  const borrowerType = b.borrowerType === "employee" ? "employee" : "member";
+  const defaultTerm = borrowerType === "employee"
+    ? Number(s.defaultTermMonthsEmployee || 12)
+    : Number(s.defaultTermMonths || 6);
+  const term = Math.max(1, Number(b.termMonths || defaultTerm));
 
   const amort = computeAmortization({ principal, monthlyRatePct: rate, termMonths: term });
   const charges = computeCharges({ principal, rules: s.charges });
@@ -307,6 +315,7 @@ router.post("/applications", guard, async (req, res) => {
     borrowerAddress: b.borrowerAddress || member.fullAddress || "",
     borrowerStatus: member.accountStatus || "active",
     loanType: b.loanType || "regular",
+    borrowerType,
     purpose: b.purpose || "",
     collateral: b.collateral || "",
     modeOfPayment: b.modeOfPayment === "semi-monthly" ? "semi-monthly" : "monthly",

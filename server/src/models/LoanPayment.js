@@ -16,6 +16,10 @@ const LoanPaymentSchema = new mongoose.Schema(
     amountReceived: { type: Number, default: 0 },
     cbuExcess: { type: Number, default: 0 },
     periodsCovered: { type: Number, default: 1, min: 1 },
+    // Specific period numbers (1-based) this payment was applied to.
+    // Empty array on legacy rows that pre-date this field — the UI
+    // falls back to the count-based logic when displaying those.
+    periodsPaid: { type: [Number], default: [] },
 
     paidAt: { type: Date, default: Date.now },
     receivedBy: { type: String, default: "" },

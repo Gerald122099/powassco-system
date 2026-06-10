@@ -14,7 +14,8 @@ const LoanSettingsSchema = new mongoose.Schema(
   {
     interestRatePerMonth: { type: Number, default: 2.5 }, // diminishing balance
     penaltyRatePerMonth: { type: Number, default: 12 }, // on delayed/unpaid installments
-    defaultTermMonths: { type: Number, default: 6 },
+    defaultTermMonths: { type: Number, default: 6 },           // members (6 months)
+    defaultTermMonthsEmployee: { type: Number, default: 12 },   // employees (12 months)
 
     // Add-on charges deducted from principal to get net proceeds
     charges: { type: [ChargeRuleSchema], default: [] },

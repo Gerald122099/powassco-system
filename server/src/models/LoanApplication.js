@@ -82,6 +82,11 @@ const LoanApplicationSchema = new mongoose.Schema(
     borrowerStatus: { type: String, default: "active" },
 
     loanType: { type: String, default: "regular" },
+    // Drives the default term (6 months for members, 12 for
+    // employees) and lets reports separate the two pools. Officer
+    // can flip this at any time from the loan detail view if a
+    // borrower's status changes.
+    borrowerType: { type: String, enum: ["member", "employee"], default: "member", index: true },
     purpose: { type: String, default: "" },
     collateral: { type: String, default: "" },
     modeOfPayment: { type: String, enum: ["monthly", "semi-monthly"], default: "monthly" },

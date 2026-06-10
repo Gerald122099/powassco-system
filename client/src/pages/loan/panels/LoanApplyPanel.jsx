@@ -63,6 +63,7 @@ export default function LoanApplyPanel() {
 
   const [form, setForm] = useState({
     principal: "",
+    borrowerType: "member",   // "member" (6mo default) | "employee" (12mo default)
     termMonths: 6,
     modeOfPayment: "monthly",
     collateral: "",
@@ -186,6 +187,7 @@ export default function LoanApplyPanel() {
         borrowerPnNo: elig.member.pnNo,
         borrowerName: form.applicant.name || elig.member.accountName,
         borrowerAddress: form.applicant.homeAddress || elig.member.address,
+        borrowerType: form.borrowerType || "member",
         principal,
         termMonths: Number(form.termMonths) || 6,
         modeOfPayment: form.modeOfPayment,
@@ -309,6 +311,41 @@ export default function LoanApplyPanel() {
         <>
           <Card>
             <div className="text-sm font-bold text-slate-800">Loan Information</div>
+            {/* Borrower-type radio. Switching from Member → Employee
+                snaps the default term from 6 → 12 months (or back),
+                BUT only if the officer hasn't already manually
+                changed termMonths to a non-default value. Manual
+                override always wins. */}
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <label className="text-xs font-semibold text-slate-600 mr-2">Borrower type</label>
+              {["member", "employee"].map((bt) => (
+                <label key={bt} className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm cursor-pointer ${
+                  form.borrowerType === bt
+                    ? "border-blue-400 bg-blue-50 text-blue-800 font-semibold"
+                    : "border-slate-200 bg-white text-slate-700"
+                }`}>
+                  <input
+                    type="radio"
+                    name="borrowerType"
+                    value={bt}
+                    checked={form.borrowerType === bt}
+                    onChange={() => {
+                      // Auto-swap term only if it's still at the
+                      // CURRENT default — otherwise we'd clobber a
+                      // manual entry from the officer.
+                      const newDefault = bt === "employee" ? 12 : 6;
+                      const currentDefault = form.borrowerType === "employee" ? 12 : 6;
+                      const term = Number(form.termMonths) === currentDefault
+                        ? newDefault
+                        : Number(form.termMonths);
+                      setForm((p) => ({ ...p, borrowerType: bt, termMonths: term }));
+                      setPreview(null);
+                    }}
+                  />
+                  {bt === "employee" ? "Employee · 12 mo default" : "Member · 6 mo default"}
+                </label>
+              ))}
+            </div>
             <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <Field label="Amount Applied (₱)">
                 <input type="number" min="0" value={form.principal} onChange={(e) => { set("principal", e.target.value); setPreview(null); }} className={inputCls} />

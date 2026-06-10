@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Card from "../../components/Card";
 import Modal from "../../components/Modal";
 import { apiFetch } from "../../lib/api";
@@ -32,7 +32,11 @@ export default function LoanDuesLookup() {
   const [err, setErr] = useState("");
   // Pay modal state
   const [payLoan, setPayLoan] = useState(null);
-  const [periods, setPeriods] = useState(1);
+  // Set of selected period numbers (1-based) the cashier is about to
+  // pay. Replaces the old "next N periods" counter so the cashier can
+  // tick specific scheduled installments — useful when catching up
+  // legacy loans (paid Jan, Feb, Mar on paper) period-by-period.
+  const [periodsSet, setPeriodsSet] = useState(new Set());
   const [payOR, setPayOR] = useState("");
   // Same two-input cash-collected pattern as the water side —
   // explicit bill vs CBU portions.
@@ -46,17 +50,60 @@ export default function LoanDuesLookup() {
 
   function openPay(loan) {
     setPayLoan(loan);
-    setPeriods(1);
+    // Auto-select the NEXT unpaid period — most common cashier
+    // action. The picker below lets them add more or untick this one.
+    const paidAlready = paidPeriodsForLoan(loan);
+    const sched = loan.amortizationSchedule || [];
+    const nextUnpaid = sched
+      .map((r, i) => Number(r.period ?? i + 1))
+      .find((p) => !paidAlready.has(p));
+    setPeriodsSet(new Set(nextUnpaid ? [nextUnpaid] : []));
     setPayOR("");
     setPayReceived(String(loan.monthlyPayment || ""));
     setPayCbu("");
   }
 
-  const installmentTotal = payLoan ? Number(payLoan.monthlyPayment || 0) * Number(periods || 1) : 0;
+  // Build the set of period numbers already paid for a given loan,
+  // unioning every prior payment's periodsPaid array. For legacy
+  // payments that don't have periodsPaid recorded, fall back to a
+  // count-based estimate (totalPaid ÷ monthlyPayment).
+  function paidPeriodsForLoan(loan) {
+    const set = new Set();
+    if (!loan?.loanId) return set;
+    const own = (data?.recentPayments || []).filter((p) => p.loanId === loan.loanId);
+    for (const p of own) {
+      if (Array.isArray(p.periodsPaid) && p.periodsPaid.length > 0) {
+        for (const n of p.periodsPaid) set.add(Number(n));
+      }
+    }
+    // Legacy fallback: if no periodsPaid info is recorded for this
+    // loan AT ALL, infer "first N periods" from totalPaid/monthly.
+    if (set.size === 0) {
+      const monthly = Number(loan.monthlyPayment) || 0;
+      const approx = monthly > 0 ? Math.floor((Number(loan.totalPaid) || 0) / monthly) : 0;
+      for (let i = 1; i <= approx; i++) set.add(i);
+    }
+    return set;
+  }
+
+  // Total ₱ for the currently-ticked periods, summed from the
+  // amortization schedule (so it stays right even if monthly payment
+  // changed across the term).
+  const installmentTotal = useMemo(() => {
+    if (!payLoan) return 0;
+    const sched = payLoan.amortizationSchedule || [];
+    let sum = 0;
+    for (const p of periodsSet) {
+      const row = sched.find((r, i) => Number(r.period ?? i + 1) === Number(p));
+      if (row) sum += Number(row.payment) || 0;
+    }
+    return Number(sum.toFixed(2));
+  }, [payLoan, periodsSet]);
 
   async function submitPay(e) {
     e?.preventDefault?.();
     if (!payLoan) return;
+    if (periodsSet.size === 0) return toast.error("Tick at least one period to pay.");
     const billPortion = Number(payReceived) || 0;
     const cbuPortion = Math.max(0, Number(payCbu) || 0);
     const totalReceived = billPortion + cbuPortion;
@@ -65,7 +112,10 @@ export default function LoanDuesLookup() {
     setPaying(true);
     const target = payLoan;
     const orNo = payOR.trim().toUpperCase();
-    const periodsPaid = periods;
+    // Send the EXPLICIT period numbers the cashier picked. Server
+    // records them on LoanPayment.periodsPaid so the history shows
+    // exactly which scheduled installments this OR covered.
+    const periodsArr = [...periodsSet].map(Number).sort((a, b) => a - b);
     try {
       const res = await apiFetch("/cashier/pay-loan", {
         method: "POST",
@@ -74,7 +124,8 @@ export default function LoanDuesLookup() {
           loanId: target.loanId,
           orNo,
           amountReceived: totalReceived,
-          periodsCovered: periodsPaid,
+          periods: periodsArr,
+          periodsCovered: periodsArr.length,
           method: "cash",
         },
       });
@@ -87,7 +138,8 @@ export default function LoanDuesLookup() {
         borrowerPnNo: target.borrowerPnNo,
         amountDue: installmentTotal,
         amountReceived: totalReceived,
-        periodsCovered: res.periodsCovered || periodsPaid,
+        periodsCovered: res.periodsCovered || periodsArr.length,
+        periodsPaid: periodsArr,
         cbuExcess: res.cbuExcess || 0,
         newCbu: res.newCbuBalance || 0,
         at: new Date(),
@@ -440,19 +492,73 @@ export default function LoanDuesLookup() {
               <div className="flex justify-between"><span className="text-slate-500">Monthly payment</span><b>{peso(payLoan.monthlyPayment)}</b></div>
               <div className="flex justify-between"><span className="text-slate-500">Outstanding balance</span><b className="text-red-600">{peso(payLoan.balance)}</b></div>
             </div>
+            {/* Period picker — checklist of every scheduled
+                 installment. Paid periods are dimmed and disabled;
+                 unpaid periods are tickable so the cashier can pick
+                 exactly which months this OR settles. The Loan
+                 portion input auto-syncs with the sum of selected
+                 periods. */}
             <div>
-              <label className="text-xs font-semibold text-slate-700">Periods to pay (1 = current, more = advance)</label>
-              <div className="mt-1 flex items-center gap-2">
-                {[1, 2, 3, 6, 12].map((n) => (
-                  <button type="button" key={n} onClick={() => { setPeriods(n); setPayReceived(String(Number(payLoan.monthlyPayment || 0) * n)); }}
-                    className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${periods === n ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-                    {n}
-                  </button>
-                ))}
-                <input type="number" min={1} max={60} value={periods} onChange={(e) => { const n = Math.max(1, Number(e.target.value) || 1); setPeriods(n); setPayReceived(String(Number(payLoan.monthlyPayment || 0) * n)); }}
-                  className="w-20 rounded-lg border border-slate-200 px-2 py-1.5 text-sm text-center font-mono" />
+              <label className="text-xs font-semibold text-slate-700">
+                Periods to pay ({periodsSet.size} selected)
+              </label>
+              <div className="mt-1 max-h-48 overflow-y-auto rounded-xl border border-slate-200 bg-white">
+                {(() => {
+                  const sched = payLoan.amortizationSchedule || [];
+                  if (sched.length === 0) {
+                    return <div className="px-3 py-3 text-xs text-slate-500">No amortization schedule available for this loan.</div>;
+                  }
+                  const paidSet = paidPeriodsForLoan(payLoan);
+                  return sched.map((row, idx) => {
+                    const n = Number(row.period ?? idx + 1);
+                    const due = row.dueDate ? new Date(row.dueDate) : null;
+                    const isPaid = paidSet.has(n);
+                    const isChecked = periodsSet.has(n);
+                    return (
+                      <label
+                        key={n}
+                        className={`flex items-center gap-2 px-3 py-1.5 border-b border-slate-100 text-sm ${
+                          isPaid
+                            ? "bg-slate-50 text-slate-400 cursor-not-allowed"
+                            : "hover:bg-emerald-50 cursor-pointer"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isPaid || isChecked}
+                          disabled={isPaid}
+                          onChange={(e) => {
+                            setPeriodsSet((prev) => {
+                              const next = new Set(prev);
+                              if (e.target.checked) next.add(n);
+                              else next.delete(n);
+                              // Keep the Loan-portion input in sync.
+                              let sum = 0;
+                              for (const p of next) {
+                                const r = sched.find((s, i) => Number(s.period ?? i + 1) === p);
+                                if (r) sum += Number(r.payment) || 0;
+                              }
+                              setPayReceived(sum > 0 ? sum.toFixed(2) : "");
+                              return next;
+                            });
+                          }}
+                          className="h-4 w-4"
+                        />
+                        <span className="font-semibold tabular-nums w-16">Period {n}</span>
+                        <span className="text-xs text-slate-500 flex-1">
+                          {due ? due.toLocaleDateString("en-PH", { year: "numeric", month: "short", day: "numeric" }) : "—"}
+                        </span>
+                        <span className="font-mono text-xs">{peso(row.payment)}</span>
+                        {isPaid && <span className="rounded-full bg-emerald-100 text-emerald-700 px-2 py-0.5 text-[10px] font-bold">PAID</span>}
+                      </label>
+                    );
+                  });
+                })()}
               </div>
-              <div className="mt-1 text-[11px] text-slate-500">Total of {periods} period(s) = <b>{peso(installmentTotal)}</b></div>
+              <div className="mt-1 flex items-center justify-between text-[11px]">
+                <span className="text-slate-500">Tick the periods being paid with this OR.</span>
+                <span>Selected total = <b>{peso(installmentTotal)}</b></span>
+              </div>
             </div>
             <div>
               <label className="text-xs font-semibold text-slate-700">OR Number (paper receipt)</label>
