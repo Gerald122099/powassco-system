@@ -6,6 +6,7 @@ import { apiFetch } from "../../../lib/api";
 import { useAuth } from "../../../context/AuthContext";
 import { on, emit } from "../../../lib/events"; // Import event system
 import { parseMeterQR } from "../../../lib/meterQr";
+import { calculateWaterBillLocal } from "../../../lib/waterBillingLocal";
 const QRScannerView = lazy(() => import("../../../components/QRScannerView"));
 import {
   QrCode,
@@ -837,29 +838,27 @@ export default function MeterReadingsPanel() {
       }
 
       const classification = member.billing?.classification || "residential";
-      const tariffs = waterSettings.tariffs?.[classification] || [];
+      // Use the canonical client mirror of the server's tariff math
+      // so the local preview honours the minimum-charge rules:
+      //   residential: ₱74 flat for 0–5 m³, then per-cubic on excess
+      //   commercial:  ₱442.50 flat for 0–15 m³, then per-cubic on excess
+      // The previous naive (consumption × ratePerCubic) calculation
+      // would, for example, print ₱135 for a 5 m³ residential reading
+      // (5 × ₱27 from the first tier) instead of the correct ₱74.
+      const calc = calculateWaterBillLocal(
+        totalConsumption,
+        classification,
+        member,
+        meterReadings?.[0]?.meterNumber,
+        waterSettings,
+      );
 
-      let amount = 0;
-      let rateUsed = 0;
-      let tariffTier = "";
-
-      for (const tier of tariffs) {
-        if (tier.isActive && totalConsumption >= tier.minConsumption && totalConsumption <= tier.maxConsumption) {
-          amount = totalConsumption * (tier.ratePerCubic || 0);
-          rateUsed = tier.ratePerCubic || 0;
-          tariffTier = tier.tier || "";
-          break;
-        }
-      }
-
-      let discount = 0;
-      if (member.personal?.isSeniorCitizen && waterSettings.seniorDiscount) {
-        const applicableTiers = waterSettings.seniorDiscount.applicableTiers || [];
-        const discountRate = waterSettings.seniorDiscount.discountRate || 0;
-        if (applicableTiers.includes(tariffTier) && discountRate > 0) {
-          discount = amount * (discountRate / 100);
-          amount -= discount;
-        }
+      if (!calc) {
+        alert(
+          `No tariff configured for ${classification} consumption of ${totalConsumption.toFixed(2)} m³. ` +
+          `Add a matching tier in Admin → Water Settings → Tariffs.`,
+        );
+        return;
       }
 
       setPreview({
@@ -869,11 +868,11 @@ export default function MeterReadingsPanel() {
         periodKey,
         consumption: totalConsumption.toFixed(3),
         preview: {
-          baseAmount: amount,
-          amount,
-          discount,
-          discountReason: discount > 0 ? "Senior Discount" : "",
-          tariffUsed: { tier: tariffTier, ratePerCubic: rateUsed },
+          baseAmount: calc.baseAmount,
+          amount: calc.amount,
+          discount: calc.discount,
+          discountReason: calc.discountReason,
+          tariffUsed: calc.tariffUsed,
         },
         member,
         meterReadings,
