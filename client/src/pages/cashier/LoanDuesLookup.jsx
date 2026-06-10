@@ -626,7 +626,7 @@ export default function LoanDuesLookup() {
                     <span className="text-xs text-slate-700">↳ Posted to loan</span>
                     <span className="font-mono text-sm font-bold text-slate-800">{peso(billNum)}</span>
                   </div>
-                  <div className={`flex items-center justify-between pl-3 ${cbuNum > 0 ? "" : "opacity-50"}`}>
+                  <div className="flex items-center justify-between pl-3">
                     <span className="text-xs text-violet-700"><Wallet size={11} className="-mt-0.5 mr-1 inline" />↳ Extracted to CBU</span>
                     <span className="font-mono text-sm font-bold text-violet-800">+{peso(cbuNum)}</span>
                   </div>

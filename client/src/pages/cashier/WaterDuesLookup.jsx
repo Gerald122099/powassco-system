@@ -572,7 +572,7 @@ export default function WaterDuesLookup() {
                     <span className="text-xs text-slate-700">↳ Posted to bill</span>
                     <span className="font-mono text-sm font-bold text-slate-800">{peso(billNum)}</span>
                   </div>
-                  <div className={`flex items-center justify-between pl-3 ${cbuNum > 0 ? "" : "opacity-50"}`}>
+                  <div className="flex items-center justify-between pl-3">
                     <span className="text-xs text-violet-700">↳ Extracted to CBU</span>
                     <span className="font-mono text-sm font-bold text-violet-800">+{peso(cbuNum)}</span>
                   </div>

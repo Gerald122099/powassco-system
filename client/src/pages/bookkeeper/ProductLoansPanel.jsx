@@ -43,6 +43,11 @@ export default function ProductLoansPanel() {
 
   const [applyOpen, setApplyOpen] = useState(false);
   const [applyForm, setApplyForm] = useState({ pnNo: "", productId: "", quantity: 1, remarks: "" });
+  // Debounced lookup result for the Account Number field — green
+  // confirmation when found, red explanation when not. Lets the
+  // bookkeeper double-check they're filing against the right member
+  // before submitting.
+  const [memberLookup, setMemberLookup] = useState({ status: "idle", name: "", cbuBalance: 0, error: "" });
 
   const [releaseTarget, setReleaseTarget] = useState(null);
   const [useCbu, setUseCbu] = useState(0);
@@ -59,6 +64,35 @@ export default function ProductLoansPanel() {
     } catch {/* ignore */} finally { setBusy(false); }
   }, [token]);
   useEffect(() => { load(); }, [load]);
+
+  // Debounced Account Number lookup — fires whenever the bookkeeper
+  // types in the pnNo input of the apply modal. Hits the existing
+  // /water/members/pn/:pnNo endpoint, surfaces the account name +
+  // CBU balance so the wrong member can't be filed against by
+  // accident.
+  useEffect(() => {
+    if (!applyOpen) return;
+    const pn = applyForm.pnNo.trim();
+    if (!pn) {
+      setMemberLookup({ status: "idle", name: "", cbuBalance: 0, error: "" });
+      return;
+    }
+    setMemberLookup((p) => ({ ...p, status: "loading" }));
+    const t = setTimeout(async () => {
+      try {
+        const m = await apiFetch(`/water/members/pn/${encodeURIComponent(pn)}`, { token });
+        setMemberLookup({
+          status: "found",
+          name: m.accountName || "",
+          cbuBalance: Number(m.cbuBalance || 0),
+          error: "",
+        });
+      } catch (e) {
+        setMemberLookup({ status: "missing", name: "", cbuBalance: 0, error: e.message || "Not found" });
+      }
+    }, 350);
+    return () => clearTimeout(t);
+  }, [applyForm.pnNo, applyOpen, token]);
 
   function openAdd() { setEditing(null); setForm(EMPTY); setCatalogModalOpen(true); }
   function openEdit(p) { setEditing(p); setForm({ ...EMPTY, ...p }); setCatalogModalOpen(true); }
@@ -275,7 +309,32 @@ export default function ProductLoansPanel() {
       {/* Application modal */}
       <Modal open={applyOpen} title="New Product-Loan Application" onClose={() => setApplyOpen(false)} size="sm">
         <form onSubmit={submitApplication} className="space-y-3">
-          <div><label className="text-xs font-semibold">Member Account No.</label><input value={applyForm.pnNo} onChange={(e) => setApplyForm({ ...applyForm, pnNo: e.target.value.toUpperCase() })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 font-mono" /></div>
+          <div>
+            <label className="text-xs font-semibold">Member Account No.</label>
+            <input
+              value={applyForm.pnNo}
+              onChange={(e) => setApplyForm({ ...applyForm, pnNo: e.target.value.toUpperCase() })}
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 font-mono"
+              placeholder="e.g. K8M3PQ"
+            />
+            {/* Live lookup so the bookkeeper sees who they're filing
+                against the moment they finish typing. Green = found
+                + CBU snapshot, red = no such account. */}
+            {memberLookup.status === "loading" && (
+              <div className="mt-1.5 text-[11px] text-slate-500">Looking up…</div>
+            )}
+            {memberLookup.status === "found" && (
+              <div className="mt-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[11px]">
+                <span className="font-bold text-emerald-800">{memberLookup.name}</span>
+                <span className="ml-2 text-emerald-700">CBU ₱{memberLookup.cbuBalance.toFixed(2)}</span>
+              </div>
+            )}
+            {memberLookup.status === "missing" && (
+              <div className="mt-1.5 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-[11px] font-semibold text-red-700">
+                {memberLookup.error || "Account not found"}
+              </div>
+            )}
+          </div>
           <div>
             <label className="text-xs font-semibold">Product</label>
             <select value={applyForm.productId} onChange={(e) => setApplyForm({ ...applyForm, productId: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2">
