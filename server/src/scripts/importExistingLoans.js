@@ -65,18 +65,54 @@ const LOANS = [
 
 const TERM_MONTHS = 6;
 
+// Manual override table for known legacy-ledger ↔ canonical-name
+// divergences (spelling variants, missing ñ, etc.). Maps the
+// "Last, First" string from LOANS below to the WaterMember.pnNo we
+// want to attach the loan to. Edit this when an operator finds a
+// new mismatch — keeps the resolver branch simple.
+const NAME_TO_PN = {
+  "Uypala, Analiza":   "PZKL4G",  // Uypala, Annaliza
+  "Espana, Letecia":   "L6SG34",  // España, Letecia
+  "Gemarino, Vivincia":"QPNC2G",  // Gemarino, Vivencia
+  "Quinones, Marlyn":  "6U6VQX",  // Quiñones, Marlyn
+  "Aliviado, Marinel": "ED3VMY",  // Aliviado, Mareniel
+};
+
+// Normalise diacritics so "España" and "Espana" can find each other.
+function fold(s) {
+  return String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "");
+}
+
 // Try to find the canonical WaterMember for a "last, first" pair.
 // Returns { ok: true, member } | { ok: false, candidates: [...] }.
 async function resolveMember(last, first) {
-  // Try the "Last, First" form first since that's what the import
-  // script wrote for migrated members. Fall back to substring.
-  const exact = `${last.trim()}, ${first.trim()}`;
-  const exactRe = new RegExp(`^${exact.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i");
+  const target = `${last.trim()}, ${first.trim()}`;
+
+  // 0) Manual override wins.
+  if (NAME_TO_PN[target]) {
+    const m = await WaterMember.findOne({ pnNo: NAME_TO_PN[target] }).select("pnNo accountName").lean();
+    if (m) return { ok: true, member: m };
+  }
+
+  // 1) Exact "Last, First" match — case-insensitive but accent-aware.
+  const exactRe = new RegExp(`^${target.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i");
   let hits = await WaterMember.find({ accountName: exactRe }).select("pnNo accountName").lean();
+
+  // 2) Accent-folded exact match — handles "Espana" → "España".
+  if (hits.length === 0) {
+    const foldedTarget = fold(target).toLowerCase();
+    const candidates = await WaterMember.find({
+      accountName: new RegExp(`^${fold(last).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i"),
+    }).select("pnNo accountName").lean();
+    hits = candidates.filter((c) => fold(c.accountName).toLowerCase() === foldedTarget);
+  }
+
+  // 3) Loose substring (Last AND First somewhere in name).
   if (hits.length === 0) {
     const looseRe = new RegExp(`${last.trim()}.*${first.trim()}`, "i");
     hits = await WaterMember.find({ accountName: looseRe }).select("pnNo accountName").lean();
   }
+
   if (hits.length === 0) return { ok: false, candidates: [], reason: "no_match" };
   if (hits.length > 1) return { ok: false, candidates: hits, reason: "ambiguous" };
   return { ok: true, member: hits[0] };
