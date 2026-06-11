@@ -195,7 +195,14 @@ router.get("/sitios", ...guard, async (req, res) => {
 });
 
 // GET /api/water/members/pn/:pnNo
-router.get("/pn/:pnNo", ...guard, async (req, res) => {
+// Wider read guard than the module default: the cashier Savings panel,
+// loan officer's Savings tab, bookkeeper's product-loan apply form,
+// and the admin/bookkeeper Adjustments panel all use this single-member
+// lookup to confirm an account name before acting. These roles already
+// see the same member data through /cashier/water, so this leaks
+// nothing new — it just stops the 403 noise (and the Adjustments
+// panel, which has no fallback path, actually breaking).
+router.get("/pn/:pnNo", requireAuth, requireRole(["admin", "water_bill_officer", "meter_reader", "cashier", "loan_officer", "bookkeeper"]), async (req, res) => {
   try {
     const member = await WaterMember.findOne({ 
       pnNo: req.params.pnNo.toUpperCase() 
