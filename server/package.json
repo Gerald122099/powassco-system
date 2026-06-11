@@ -11,6 +11,7 @@
     "seed": "node src/seed.js",
     "import-existing": "node src/scripts/importExistingMembers.js",
     "import-loans": "node src/scripts/importExistingLoans.js",
+    "regen-amort": "node src/scripts/regenLoanAmortization.js",
     "test": "vitest run"
   },
   "dependencies": {
