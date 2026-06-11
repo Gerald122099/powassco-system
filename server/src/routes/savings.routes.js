@@ -23,9 +23,16 @@ import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 import SavingsAccount from "../models/SavingsAccount.js";
 import SavingsTransaction from "../models/SavingsTransaction.js";
+import SavingsSettings from "../models/SavingsSettings.js";
 import WaterMember from "../models/WaterMember.js";
 import CbuTransaction from "../models/CbuTransaction.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
+
+async function getSavingsSettings() {
+  let s = await SavingsSettings.findOne();
+  if (!s) s = await SavingsSettings.create({});
+  return s;
+}
 
 const router = express.Router();
 const readGuard = [requireAuth, requireRole(["admin", "bookkeeper", "cashier", "loan_officer"])];
@@ -58,6 +65,39 @@ async function nextSavingsOr() {
   });
   return `${prefix}-${String(count + 1).padStart(5, "0")}`;
 }
+
+// ─── Settings ──────────────────────────────────────────────────────
+router.get("/settings", readGuard, async (_req, res) => {
+  try {
+    const s = await getSavingsSettings();
+    res.json(s.toObject());
+  } catch (e) {
+    res.status(500).json({ message: "Failed to load settings." });
+  }
+});
+
+router.put("/settings", adminGuard, async (req, res) => {
+  try {
+    const s = await getSavingsSettings();
+    const allow = ["interestRatePerPeriod", "interestFrequency", "minimumBalance", "openingFee"];
+    for (const k of allow) {
+      if (k in req.body) {
+        if (k === "interestFrequency") {
+          if (!["monthly", "annually"].includes(req.body[k])) continue;
+          s[k] = req.body[k];
+        } else {
+          const v = Number(req.body[k]);
+          if (Number.isFinite(v) && v >= 0) s[k] = v;
+        }
+      }
+    }
+    s.updatedBy = req.user?.fullName || req.user?.employeeId || "";
+    await s.save();
+    res.json(s.toObject());
+  } catch (e) {
+    res.status(500).json({ message: e.message || "Failed to save settings." });
+  }
+});
 
 // ─── List + search ─────────────────────────────────────────────────
 router.get("/", readGuard, async (req, res) => {
@@ -125,7 +165,10 @@ router.post("/open", openGuard, async (req, res) => {
     });
     const out = account.toObject();
     delete out.pinHash;
-    res.status(201).json({ account: out });
+    // Return the admin-configured opening fee so the cashier UI can
+    // remind them to collect it before depositing initial funds.
+    const settings = await getSavingsSettings();
+    res.status(201).json({ account: out, openingFee: Number(settings.openingFee) || 0 });
   } catch (e) {
     res.status(500).json({ message: e.message || "Failed to open savings account." });
   }
@@ -196,6 +239,10 @@ router.post("/withdraw", txGuard, async (req, res) => {
     const amount = round2(Number(req.body?.amount));
     const method = req.body?.method || "cash";
     const note = String(req.body?.note || "").trim();
+    // closing=true bypasses the minimum-balance check so the member can
+    // drain the account to zero. The /close endpoint validates that
+    // the post-withdrawal balance is exactly 0 before flipping status.
+    const closing = !!req.body?.closing;
     if (!pnNo) return res.status(400).json({ message: "Account number is required." });
     if (!(amount > 0)) return res.status(400).json({ message: "Withdrawal amount must be greater than 0." });
 
@@ -204,6 +251,16 @@ router.post("/withdraw", txGuard, async (req, res) => {
     if (account.status === "closed") return res.status(400).json({ message: "Account is closed." });
     if (Number(account.balance) < amount) {
       return res.status(400).json({ message: `Insufficient balance (₱${account.balance.toLocaleString()} on file).` });
+    }
+    // Minimum-balance policy: post-withdrawal balance must stay >=
+    // settings.minimumBalance unless the cashier explicitly flags this
+    // as a closing withdrawal.
+    const settings = await getSavingsSettings();
+    const minBal = Number(settings.minimumBalance) || 0;
+    if (!closing && (Number(account.balance) - amount) < minBal) {
+      return res.status(400).json({
+        message: `Cannot withdraw below the ₱${minBal.toLocaleString()} minimum balance. To withdraw the full amount, close the account.`,
+      });
     }
 
     const orNo = await nextSavingsOr();
