@@ -203,6 +203,11 @@ router.post("/deposit", txGuard, async (req, res) => {
     const amount = round2(Number(req.body?.amount));
     const method = req.body?.method || "cash";
     const note = String(req.body?.note || "").trim();
+    // Manual OR from the cashier's official receipt booklet. The UI
+    // requires it; the field stays optional at the API level so
+    // internal callers (bundled deposits, interest cron, adjustments)
+    // can keep their generated references.
+    const manualOr = String(req.body?.orNo || "").toUpperCase().trim();
     // Idempotency key — client-supplied, used to dedupe a double-click
     // or retry over a flaky network. If absent, we fall back to a
     // single-use generator (no idempotency, no harm but no protection
@@ -210,6 +215,10 @@ router.post("/deposit", txGuard, async (req, res) => {
     const clientKey = String(req.body?.idempotencyKey || "").trim();
     if (!pnNo) return res.status(400).json({ message: "Account number is required." });
     if (!(amount > 0)) return res.status(400).json({ message: "Deposit amount must be greater than 0." });
+    if (manualOr) {
+      const dup = await SavingsTransaction.findOne({ orNo: manualOr }).lean();
+      if (dup) return res.status(409).json({ message: `OR ${manualOr} already used.` });
+    }
 
     const account = await SavingsAccount.findOne({ pnNo });
     if (!account) return res.status(404).json({ message: "No savings account for this member. Open one first." });
@@ -223,7 +232,7 @@ router.post("/deposit", txGuard, async (req, res) => {
       if (prior) return res.status(200).json({ tx: prior, account: account.toObject(), idempotent: true });
     }
 
-    const orNo = makeSavingsOr();
+    const orNo = manualOr || makeSavingsOr();
     // CRITICAL: insert ledger row FIRST. If the $inc later fails for
     // any reason, the orphaned ledger row is detectable (it has no
     // matching balance delta) — better than the reverse where balance
@@ -264,12 +273,17 @@ router.post("/withdraw", txGuard, async (req, res) => {
     const amount = round2(Number(req.body?.amount));
     const method = req.body?.method || "cash";
     const note = String(req.body?.note || "").trim();
+    const manualOr = String(req.body?.orNo || "").toUpperCase().trim();
     // closing=true bypasses the minimum-balance check so the member can
     // drain the account to zero. The /close endpoint validates that
     // the post-withdrawal balance is exactly 0 before flipping status.
     const closing = !!req.body?.closing;
     if (!pnNo) return res.status(400).json({ message: "Account number is required." });
     if (!(amount > 0)) return res.status(400).json({ message: "Withdrawal amount must be greater than 0." });
+    if (manualOr) {
+      const dup = await SavingsTransaction.findOne({ orNo: manualOr }).lean();
+      if (dup) return res.status(409).json({ message: `OR ${manualOr} already used.` });
+    }
 
     const account = await SavingsAccount.findOne({ pnNo });
     if (!account) return res.status(404).json({ message: "No savings account for this member." });
@@ -288,7 +302,7 @@ router.post("/withdraw", txGuard, async (req, res) => {
       });
     }
 
-    const orNo = makeSavingsOr();
+    const orNo = manualOr || makeSavingsOr();
     // Race-safe decrement: only if balance still has enough at the
     // moment of the write. If a concurrent withdrawal drained it
     // first, the update matches zero docs and we surface a clean error.

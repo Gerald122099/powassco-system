@@ -65,6 +65,7 @@ export default function CashierSavingsPanel() {
   const [pinConfirm, setPinConfirm] = useState("");
   const [txType, setTxType] = useState(null); // "deposit" | "withdrawal" | null
   const [amount, setAmount] = useState("");
+  const [orNo, setOrNo] = useState("");
   const [method, setMethod] = useState("cash");
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -156,6 +157,7 @@ export default function CashierSavingsPanel() {
   function startTx(type) {
     setTxType(type);
     setAmount("");
+    setOrNo("");
     setMethod("cash");
     setNote("");
     setLastTx(null);
@@ -168,6 +170,7 @@ export default function CashierSavingsPanel() {
     if (!member || !account) return;
     const amt = Number(amount);
     if (!(amt > 0)) { toast.error("Enter an amount greater than 0."); return; }
+    if (!orNo.trim()) { toast.error("Enter the OR number from the receipt booklet."); return; }
     if (txType === "withdrawal" && amt > Number(account.balance)) {
       toast.error(`Insufficient balance — only ${peso(account.balance)} on file.`);
       return;
@@ -177,7 +180,7 @@ export default function CashierSavingsPanel() {
       const res = await apiFetch(`/savings/${txType}`, {
         method: "POST",
         token,
-        body: { pnNo: member.pnNo, amount: amt, method, note },
+        body: { pnNo: member.pnNo, amount: amt, orNo: orNo.trim().toUpperCase(), method, note },
       });
       setAccount(res.account);
       setLedger((prev) => [res.tx, ...prev]);
@@ -287,7 +290,17 @@ export default function CashierSavingsPanel() {
           {txType && (
             <div className="mt-4 rounded-xl border border-slate-200 bg-white p-3">
               <div className="text-sm font-bold text-slate-800 mb-2 capitalize">{txType}</div>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div>
+                  <label className="text-xs font-semibold text-slate-600">OR number *</label>
+                  <input
+                    value={orNo}
+                    onChange={(e) => setOrNo(e.target.value)}
+                    placeholder="from receipt booklet"
+                    autoFocus
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-mono uppercase"
+                  />
+                </div>
                 <div>
                   <label className="text-xs font-semibold text-slate-600">Amount (₱)</label>
                   <input
@@ -296,7 +309,6 @@ export default function CashierSavingsPanel() {
                     step="0.01"
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
-                    autoFocus
                     className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-mono"
                   />
                   {txType === "withdrawal" && account && (
@@ -318,7 +330,7 @@ export default function CashierSavingsPanel() {
                 <button onClick={cancelTx} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold hover:bg-slate-50">Cancel</button>
                 <button
                   onClick={submitTx}
-                  disabled={submitting || !(Number(amount) > 0)}
+                  disabled={submitting || !(Number(amount) > 0) || !orNo.trim()}
                   className={`inline-flex items-center gap-2 rounded-xl px-5 py-2 text-sm font-bold text-white disabled:opacity-50 ${txType === "deposit" ? "bg-emerald-600 hover:bg-emerald-700" : "bg-amber-600 hover:bg-amber-700"}`}
                 >
                   {submitting ? "Posting…" : `Post ${txType === "deposit" ? "Deposit" : "Withdrawal"} ${amount ? peso(amount) : ""}`}

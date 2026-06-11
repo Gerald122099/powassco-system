@@ -551,6 +551,16 @@ router.post("/product-applications", ...cashierGuard, async (req, res) => {
     if (transactionType === "sale" && !member && !customerName) {
       return res.status(400).json({ message: "Walk-in sales need either a member Account Number or a customer name." });
     }
+    // Sales collect cash NOW, so the OR from the official receipt
+    // booklet is mandatory — same rule as pay-water / pay-loan.
+    const saleOr = String(b.orNo || "").toUpperCase().trim();
+    if (transactionType === "sale" && !saleOr) {
+      return res.status(400).json({ message: "OR number is required for sales." });
+    }
+    if (saleOr) {
+      const dupSale = await ProductLoanApplication.findOne({ "payments.orNo": saleOr }).select("_id").lean();
+      if (dupSale) return res.status(409).json({ message: `OR ${saleOr} already used on a product transaction.` });
+    }
 
     const unitPrice = round2(product.unitPrice);
     const totalPrice = round2(unitPrice * quantity);

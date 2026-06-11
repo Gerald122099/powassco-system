@@ -72,6 +72,7 @@ export default function CashierSalesPanel() {
   const [customerContact, setCustomerContact] = useState("");
   const [productId, setProductId] = useState("");
   const [quantity, setQuantity] = useState(1);
+  const [orNo, setOrNo] = useState("");
   const [method, setMethod] = useState("cash");
   const [remarks, setRemarks] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -102,6 +103,7 @@ export default function CashierSalesPanel() {
     setCustomerContact("");
     setProductId("");
     setQuantity(1);
+    setOrNo("");
     setMethod("cash");
     setRemarks("");
     setLastSale(null);
@@ -159,12 +161,15 @@ export default function CashierSalesPanel() {
     if (!product) { toast.error("Pick a product first."); return; }
     if (mode === "member" && !member) { toast.error("Pick a member or switch to Walk-in."); return; }
     if (mode === "walkin" && !customerName.trim()) { toast.error("Enter the walk-in customer name."); return; }
+    if (!orNo.trim()) { toast.error("Enter the OR number from the receipt booklet."); return; }
     setSubmitting(true);
+    const saleOr = orNo.trim().toUpperCase();
     try {
       const body = {
         transactionType: "sale",
         productId: product._id,
         quantity: Math.max(1, Number(quantity) || 1),
+        orNo: saleOr,
         method,
         remarks: remarks.trim(),
       };
@@ -181,14 +186,17 @@ export default function CashierSalesPanel() {
       });
       // Capture for the receipt + show the success state in the modal
       // without closing it, so the cashier can hit Print and then close.
+      // The created doc keeps the OR inside payments[0]; surface the
+      // typed OR directly so the receipt always shows it.
       setLastSale({
         ...res,
+        orNo: saleOr,
         productName: product.name,
         unitPrice,
         quantity: body.quantity,
         principal: total,
       });
-      toast.success(`Sale posted • OR ${res.orNo || ""}`);
+      toast.success(`Sale posted • OR ${saleOr}`);
       load(); // refresh recent list
     } catch (e) {
       toast.error(e.message || "Failed to post sale.");
@@ -399,8 +407,17 @@ export default function CashierSalesPanel() {
               </div>
             </div>
 
-            {/* Method + remarks */}
+            {/* OR + method + remarks */}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div>
+                <label className="text-xs font-semibold text-slate-600">OR number *</label>
+                <input
+                  value={orNo}
+                  onChange={(e) => setOrNo(e.target.value)}
+                  placeholder="from receipt booklet"
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-mono uppercase"
+                />
+              </div>
               <div>
                 <label className="text-xs font-semibold text-slate-600">Payment method</label>
                 <select
@@ -411,7 +428,7 @@ export default function CashierSalesPanel() {
                   {METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
                 </select>
               </div>
-              <div className="sm:col-span-2">
+              <div>
                 <label className="text-xs font-semibold text-slate-600">Remarks (optional)</label>
                 <input
                   value={remarks}
@@ -441,7 +458,7 @@ export default function CashierSalesPanel() {
               </button>
               <button
                 onClick={submit}
-                disabled={submitting || !product || total <= 0 || (mode === "member" && !member) || (mode === "walkin" && !customerName.trim())}
+                disabled={submitting || !product || total <= 0 || !orNo.trim() || (mode === "member" && !member) || (mode === "walkin" && !customerName.trim())}
                 className="inline-flex items-center gap-2 rounded-xl bg-orange-600 px-5 py-2 text-sm font-bold text-white hover:bg-orange-700 disabled:opacity-50"
               >
                 <Receipt size={14} /> {submitting ? "Posting…" : `Post Sale ${peso(total)}`}
