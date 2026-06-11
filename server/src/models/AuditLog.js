@@ -9,6 +9,9 @@ const AuditLogSchema = new mongoose.Schema(
     path: { type: String, default: "" },
     action: { type: String, default: "" }, // human-friendly label
     category: { type: String, default: "general", index: true }, // session | security | general
+    // Verb category for the colored badge in the Audit Log panel:
+    // insert | update | delete | payment | adjust | approve | reject
+    actionKind: { type: String, default: "", index: true },
     statusCode: { type: Number, default: 0 },
     ip: { type: String, default: "" },
     meta: { type: Object },

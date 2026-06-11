@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import DashboardLayout from "../../components/DashboardLayout";
-import { Users, Settings, BarChart3, Banknote, Wallet, FileBarChart, UserCog, ScrollText, ShieldCheck, Inbox, CalendarClock, Megaphone, Boxes, CreditCard, ReceiptText, AlertTriangle, MapPin, Wrench, PiggyBank } from "lucide-react";
+import { Users, Settings, BarChart3, Banknote, Wallet, FileBarChart, UserCog, ScrollText, ShieldCheck, Inbox, CalendarClock, Megaphone, Boxes, CreditCard, ReceiptText, AlertTriangle, MapPin, Wrench, PiggyBank, Scale } from "lucide-react";
 import CollectionTodayPanel from "../../components/CollectionTodayPanel";
 import MembersPanel from "../water/panels/MembersPanel";
 import MeterMapPanel from "../water/panels/MeterMapPanel";
 import DangerZonePanel from "./DangerZonePanel";
 import MaintenancePanel from "./MaintenancePanel";
 import SavingsSettingsPanel from "./SavingsSettingsPanel";
+import AdjustmentsPanel from "../../components/AdjustmentsPanel";
 import Card from "../../components/Card";
 import Modal from "../../components/Modal";
 import { apiFetch } from "../../lib/api";
@@ -107,6 +108,7 @@ const adminNavItems = [
   { key: "assets", label: "Inventory", icon: Boxes, desc: "Equipment & device inventory with 6-month audits" },
   { key: "payments", label: "Payments", icon: CreditCard, desc: "Online payment mode, QR PH, and transaction fee" },
   { key: "security", label: "Security", icon: ShieldCheck, desc: "Two-factor authentication and access controls" },
+  { key: "adjustments", label: "Adjustments", icon: Scale, desc: "File CBU / savings balance corrections — bookkeeper approves" },
   { key: "savings-settings", label: "Savings Policy", icon: PiggyBank, desc: "Interest, minimum balance, opening fee for voluntary savings" },
   { key: "maintenance", label: "Maintenance", icon: Wrench, desc: "One-shot data fixes (e.g. regen amortization on imported loans)" },
   { key: "danger", label: "Danger Zone", icon: AlertTriangle, desc: "Reset operational data — keeps users, employees, settings" },
@@ -445,6 +447,7 @@ export default function AdminDashboard() {
         {activeTab === "payments" && <PaymentSettingsPanel />}
 
         {/* Danger Zone — irreversible data reset (admin + password + 2FA) */}
+        {activeTab === "adjustments" && <AdjustmentsPanel />}
         {activeTab === "savings-settings" && <SavingsSettingsPanel />}
         {activeTab === "maintenance" && <MaintenancePanel />}
         {activeTab === "danger" && <DangerZonePanel />}

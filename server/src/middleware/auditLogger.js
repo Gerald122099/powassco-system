@@ -20,10 +20,28 @@ const LABELS = [
   [/^\/api\/loan\/applications\/[^/]+\/status/, "Loan status change"],
   [/^\/api\/loan\/applications/, "Loan application"],
   [/^\/api\/loan\/settings/, "Loan settings"],
+  [/^\/api\/expenses\/[^/]+\/approve/, "Expense approval"],
+  [/^\/api\/expenses\/[^/]+\/reject/, "Expense rejection"],
+  [/^\/api\/expenses\/[^/]+\/disburse/, "Cash disbursement"],
   [/^\/api\/expenses/, "Expense"],
   [/^\/api\/employees/, "Employee"],
   [/^\/api\/payroll\/settings/, "Payroll settings"],
   [/^\/api\/payroll/, "Payroll"],
+  [/^\/api\/adjustments\/[^/]+\/approve/, "Balance adjustment approval"],
+  [/^\/api\/adjustments\/[^/]+\/reject/, "Balance adjustment rejection"],
+  [/^\/api\/adjustments/, "Balance adjustment request"],
+  [/^\/api\/savings\/settings/, "Savings settings"],
+  [/^\/api\/savings\/open/, "Savings account open"],
+  [/^\/api\/savings\/deposit/, "Savings deposit"],
+  [/^\/api\/savings\/withdraw/, "Savings withdrawal"],
+  [/^\/api\/savings\/[^/]+\/reset-pin/, "Savings PIN reset"],
+  [/^\/api\/savings\/[^/]+\/close/, "Savings account close"],
+  [/^\/api\/cashier\/pay-water/, "Water payment (cashier)"],
+  [/^\/api\/cashier\/pay-loan/, "Loan payment (cashier)"],
+  [/^\/api\/bookkeeper\/product-applications/, "Product transaction"],
+  [/^\/api\/bookkeeper\/product-catalog/, "Product catalog"],
+  [/^\/api\/admin\/maintenance/, "Maintenance run"],
+  [/^\/api\/admin\/data-reset/, "DATA RESET"],
 ];
 
 function labelFor(method, path) {
@@ -40,8 +58,22 @@ function labelFor(method, path) {
 
 function categoryFor(path) {
   if (/^\/api\/auth\/(login|logout)/.test(path)) return "session";
-  if (/^\/api\/auth\/2fa|^\/api\/auth\/recover|^\/api\/auth\/reset-password|^\/api\/users/.test(path)) return "security";
+  if (/^\/api\/auth\/2fa|^\/api\/auth\/recover|^\/api\/auth\/reset-password|^\/api\/users|reset-pin/.test(path)) return "security";
   return "general";
+}
+
+// Verb category — drives the colored badge in the Audit Log panel.
+// "adjust"/"approve"/"payment"/"delete" are the crucial ones the
+// operator wants to spot at a glance; insert/update are routine.
+function actionKindFor(method, path) {
+  if (/\/approve$/.test(path)) return "approve";
+  if (/\/reject$/.test(path)) return "reject";
+  if (/^\/api\/adjustments/.test(path)) return "adjust";
+  if (/^\/api\/admin\/maintenance|^\/api\/admin\/data-reset/.test(path)) return "adjust";
+  if (/pay-water|pay-loan|\/payments|\/deposit|\/withdraw|\/disburse/.test(path)) return "payment";
+  if (method === "DELETE") return "delete";
+  if (method === "POST") return "insert";
+  return "update"; // PUT / PATCH
 }
 
 function sanitize(body) {
@@ -75,6 +107,7 @@ export function auditLogger(req, res, next) {
       path: (req.originalUrl || req.path).split("?")[0],
       action: labelFor(req.method, req.path),
       category: categoryFor(req.path),
+      actionKind: actionKindFor(req.method, req.path),
       statusCode: res.statusCode,
       ip: (req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "").toString().split(",")[0].trim(),
       meta,

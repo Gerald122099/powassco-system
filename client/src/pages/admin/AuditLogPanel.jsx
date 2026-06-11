@@ -19,6 +19,28 @@ const METHOD_TONE = {
   DELETE: "bg-red-100 text-red-700",
 };
 
+// Colored verb badge — lets the operator spot the crucial event types
+// (adjustments, approvals, payments, deletes) in a sea of routine
+// inserts/updates. Server stamps actionKind in auditLogger.js; rows
+// from before that change fall back to a method-derived guess.
+const KIND_TONE = {
+  insert:  { label: "INSERT",  cls: "bg-emerald-100 text-emerald-800" },
+  update:  { label: "UPDATE",  cls: "bg-blue-100 text-blue-800" },
+  delete:  { label: "DELETE",  cls: "bg-red-100 text-red-800" },
+  payment: { label: "PAYMENT", cls: "bg-violet-100 text-violet-800" },
+  adjust:  { label: "ADJUST",  cls: "bg-amber-100 text-amber-900" },
+  approve: { label: "APPROVE", cls: "bg-teal-100 text-teal-800" },
+  reject:  { label: "REJECT",  cls: "bg-rose-100 text-rose-800" },
+};
+
+function kindFor(row) {
+  if (row.actionKind && KIND_TONE[row.actionKind]) return KIND_TONE[row.actionKind];
+  // Legacy rows without actionKind: derive from method.
+  if (row.method === "DELETE") return KIND_TONE.delete;
+  if (row.method === "POST") return KIND_TONE.insert;
+  return KIND_TONE.update;
+}
+
 function statusTone(code) {
   if (code >= 500) return "text-red-600";
   if (code >= 400) return "text-amber-600";
@@ -31,6 +53,7 @@ export default function AuditLogPanel() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [category, setCategory] = useState("");
+  const [kind, setKind] = useState("");
   const [page, setPage] = useState(1);
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
@@ -48,7 +71,7 @@ export default function AuditLogPanel() {
     setLoading(true);
     setErr("");
     try {
-      const qs = new URLSearchParams({ q, from, to, category, page: String(page), limit: String(PAGE_SIZE) });
+      const qs = new URLSearchParams({ q, from, to, category, kind, page: String(page), limit: String(PAGE_SIZE) });
       const data = await apiFetch(`/audit?${qs}`, { token });
       setItems(data.items || []);
       setTotal(data.total || 0);
@@ -60,7 +83,7 @@ export default function AuditLogPanel() {
   }
   useEffect(() => {
     load(); /* eslint-disable-next-line */
-  }, [q, from, to, category, page]);
+  }, [q, from, to, category, kind, page]);
 
   return (
     <Card>
@@ -78,6 +101,19 @@ export default function AuditLogPanel() {
               <option value="session">Logins &amp; Logouts</option>
               <option value="security">Security events</option>
               <option value="general">General</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-600">Kind</label>
+            <select value={kind} onChange={(e) => { setPage(1); setKind(e.target.value); }} className="rounded-xl border border-slate-200 px-3 py-2 text-sm">
+              <option value="">All kinds</option>
+              <option value="payment">Payments</option>
+              <option value="adjust">Adjustments</option>
+              <option value="approve">Approvals</option>
+              <option value="reject">Rejections</option>
+              <option value="insert">Inserts</option>
+              <option value="update">Updates</option>
+              <option value="delete">Deletes</option>
             </select>
           </div>
           <div>
@@ -171,7 +207,12 @@ export default function AuditLogPanel() {
                     <div className="text-xs text-slate-400">{row.actorRole}</div>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="font-medium text-slate-800">{row.action}</div>
+                    <div className="flex items-center gap-2">
+                      {(() => { const k = kindFor(row); return (
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${k.cls}`}>{k.label}</span>
+                      ); })()}
+                      <div className="font-medium text-slate-800">{row.action}</div>
+                    </div>
                     {row.meta && (
                       <div className="mt-0.5 max-w-md truncate text-xs text-slate-400" title={JSON.stringify(row.meta)}>
                         {Object.entries(row.meta).map(([k, v]) => `${k}: ${v}`).join(" · ")}

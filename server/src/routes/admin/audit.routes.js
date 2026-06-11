@@ -11,11 +11,12 @@ const guard = [requireAuth, requireRole(["admin"])];
 const sha256 = (s) => crypto.createHash("sha256").update(String(s)).digest("hex");
 
 router.get("/", guard, async (req, res) => {
-  const { q = "", actor = "", action = "", category = "", from = "", to = "", page = "1", limit = "25" } = req.query;
+  const { q = "", actor = "", action = "", category = "", kind = "", from = "", to = "", page = "1", limit = "25" } = req.query;
   const filter = {};
   if (actor) filter.actorName = new RegExp(String(actor).trim(), "i");
   if (action) filter.action = new RegExp(String(action).trim(), "i");
   if (category) filter.category = category;
+  if (kind) filter.actionKind = kind;
   if (q) {
     const rx = new RegExp(String(q).trim(), "i");
     filter.$or = [{ actorName: rx }, { action: rx }, { path: rx }, { actorRole: rx }];
