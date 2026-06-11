@@ -78,11 +78,22 @@ const allowedOrigins = new Set([
   ...envOrigins,
 ]);
 
+// Vercel preview deployments produce URLs like
+//   https://powassco-staging-git-staging-<user>.vercel.app  (branch URL)
+//   https://powassco-staging-<hash>-<user>.vercel.app       (commit URL)
+// We can't enumerate these in advance because the hash changes per commit,
+// so the staging API accepts any *.vercel.app origin belonging to the
+// powassco-staging / powassco-system-staging projects.
+function isPowasscoVercelPreview(origin) {
+  return /^https:\/\/(powassco|powassco-staging|powassco-system-staging)[A-Za-z0-9-]*\.vercel\.app$/.test(origin);
+}
+
 const corsOptions = {
   origin: (origin, cb) => {
     if (!origin) return cb(null, true); // non-browser clients (curl, server-to-server)
     const normalized = origin.replace(/\/+$/, "");
     if (allowedOrigins.has(normalized)) return cb(null, true);
+    if (isPowasscoVercelPreview(normalized)) return cb(null, true);
     console.log("⚠️ Blocked origin:", origin);
     return cb(null, false);
   },
