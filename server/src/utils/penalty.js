@@ -126,7 +126,30 @@ export async function freshenBill(bill, { settings, WaterSettings, now = new Dat
     bill.subjectForDisconnection = subjectForDisconnection;
     bill.daysOverdue = daysOverdue;
     bill.penaltyComputedAt = new Date();
-    if (typeof bill.save === "function") await bill.save();
+    // CONDITIONAL persist (audit fix 2026-06-12): a full .save() here
+    // could race the cashier's atomic paid-flip — this freshen loads
+    // the bill, the cashier marks it paid, then .save() would write
+    // status:"overdue" back over the paid bill. The conditional
+    // update only lands while the bill is still unpaid/overdue; if
+    // the cashier won, this is a no-op and the in-memory copy is
+    // stale for one render, which is harmless.
+    if (bill._id && bill.constructor?.updateOne) {
+      await bill.constructor.updateOne(
+        { _id: bill._id, status: { $ne: "paid" } },
+        {
+          $set: {
+            status: targetStatus,
+            penaltyApplied: penaltyShouldBe,
+            totalDue: totalShouldBe,
+            subjectForDisconnection,
+            daysOverdue,
+            penaltyComputedAt: bill.penaltyComputedAt,
+          },
+        }
+      );
+    } else if (typeof bill.save === "function") {
+      await bill.save();
+    }
   }
   return bill;
 }

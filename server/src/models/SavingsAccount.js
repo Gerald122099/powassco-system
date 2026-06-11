@@ -23,6 +23,11 @@ const SavingsAccountSchema = new mongoose.Schema(
     pinHash: { type: String, default: "" },
     pinSetAt: { type: Date, default: null },
     pinResetCount: { type: Number, default: 0 }, // grows on every admin reset
+    // Per-account brute-force lockout for the public inquiry: 5
+    // consecutive failures lock the PIN for 30 minutes. A correct
+    // PIN or an admin reset clears the counter.
+    pinFailedAttempts: { type: Number, default: 0 },
+    pinLockedUntil: { type: Date, default: null },
   },
   { timestamps: true }
 );

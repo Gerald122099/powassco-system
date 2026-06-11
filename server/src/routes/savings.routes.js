@@ -187,6 +187,8 @@ router.post("/:id/reset-pin", adminGuard, async (req, res) => {
     account.pinHash = await bcrypt.hash(newPin, 10);
     account.pinSetAt = new Date();
     account.pinResetCount = (account.pinResetCount || 0) + 1;
+    account.pinFailedAttempts = 0;
+    account.pinLockedUntil = null;
     await account.save();
     res.json({ ok: true, pinResetCount: account.pinResetCount, pinSetAt: account.pinSetAt });
   } catch (e) {
