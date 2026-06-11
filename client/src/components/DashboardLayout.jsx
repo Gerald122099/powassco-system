@@ -3,6 +3,7 @@ import { useAuth } from "../context/AuthContext";
 import { apiFetch } from "../lib/api";
 import logo from "../assets/logo.png";
 import { LogOut, Eye, CalendarClock, X } from "lucide-react";
+import StaffChat from "./StaffChat";
 
 function MeetingBanner() {
   const { token } = useAuth();
@@ -170,6 +171,10 @@ export default function DashboardLayout({
           {children}
         </main>
       </div>
+
+      {/* Floating team chat — renders nothing for excluded roles
+          (plumber, meter_reader); StaffChat gates itself by role. */}
+      <StaffChat />
 
       {/* Eye-comfort screen tint overlay (warm / cool / dim) */}
       {TONE_STYLES[tone] && (
