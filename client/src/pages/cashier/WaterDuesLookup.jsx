@@ -59,12 +59,15 @@ export default function WaterDuesLookup() {
   // every time the Pay modal opens so a previous pick doesn't bleed
   // across receipts.
   const [productLoanPicks, setProductLoanPicks] = useState({});
+  // Bundled additions on the same OR (zero by default; cashier opts in).
+  const [paySavings, setPaySavings] = useState("");
 
   function openPay(bill) {
     setPayTarget(bill);
     setPayOR("");
     setPayReceived(String(bill.totalDue || ""));
     setPayCbu("");
+    setPaySavings("");
     setProductLoanPicks({});
   }
 
@@ -81,13 +84,18 @@ export default function WaterDuesLookup() {
     const due = Number(payTarget.totalDue) || 0;
     const billPortion = Number(payReceived) || 0;
     const cbuPortion = Math.max(0, Number(payCbu) || 0);
-    // amountReceived now also includes any bundled product-loan picks.
-    // The server will deduct each pick from the matching product loan
-    // and only treat the rest as CBU excess.
+    const savingsPortion = Math.max(0, Number(paySavings) || 0);
+    if (savingsPortion > 0 && !data.savingsAccount) {
+      return toast.error("Member has no savings account. Open one in the Savings tab first.");
+    }
+    // amountReceived now also includes any bundled product-loan picks +
+    // direct CBU contribution + savings deposit. Server validates that
+    // amountReceived >= sum(all bundled items) and uses the leftover
+    // (if any) as an automatic CBU credit on top.
     const productLoanPayments = Object.entries(productLoanPicks)
       .map(([id, amount]) => ({ id, amount: Number(amount) || 0 }))
       .filter((p) => p.amount > 0);
-    const totalReceived = billPortion + cbuPortion + productLoanSum;
+    const totalReceived = billPortion + cbuPortion + savingsPortion + productLoanSum;
     if (!payOR.trim()) return toast.error("Enter the OR number.");
     if (billPortion < due) return toast.error(`Bill amount must be at least ₱${due.toFixed(2)}.`);
     setPaying(true);
@@ -105,6 +113,8 @@ export default function WaterDuesLookup() {
           amountReceived: totalReceived,
           method: "cash",
           productLoanPayments,
+          savingsDeposit: savingsPortion,
+          cbuContribution: cbuPortion,
         },
       });
       toast.success(res.message || "Payment posted.");
@@ -658,33 +668,87 @@ export default function WaterDuesLookup() {
             {(() => {
               const billNum = Number(payReceived) || 0;
               const cbuNum = Math.max(0, Number(payCbu) || 0);
-              const totalNum = billNum + cbuNum + productLoanSum;
+              const savingsNum = Math.max(0, Number(paySavings) || 0);
+              const totalNum = billNum + cbuNum + savingsNum + productLoanSum;
               return (
-                <div className="rounded-xl border-2 border-emerald-300 bg-emerald-50 p-3 space-y-1.5">
-                  <div className="flex items-center justify-between border-b border-emerald-200 pb-1.5">
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-800">Amount received from member</span>
-                    <span className="font-mono text-xl font-extrabold text-emerald-900">{peso(totalNum)}</span>
+                <>
+                  {/* Bundle inputs — savings + direct CBU contribution.
+                      Both are optional; default to zero. */}
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div className="rounded-xl border border-pink-200 bg-pink-50/50 p-2">
+                      <label className="text-[11px] font-bold uppercase tracking-wide text-pink-700">
+                        Savings deposit (optional)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={paySavings}
+                        onChange={(e) => setPaySavings(e.target.value)}
+                        disabled={!data.savingsAccount}
+                        placeholder={data.savingsAccount ? "0.00" : "No savings account"}
+                        className="mt-1 w-full rounded-xl border border-pink-200 bg-white px-3 py-2 text-sm font-mono disabled:opacity-50"
+                      />
+                      {data.savingsAccount ? (
+                        <div className="mt-0.5 text-[10px] text-pink-700">
+                          Balance on file: {peso(data.savingsAccount.balance || 0)}
+                        </div>
+                      ) : (
+                        <div className="mt-0.5 text-[10px] text-slate-500">
+                          Open one in the Savings tab to bundle.
+                        </div>
+                      )}
+                    </div>
+                    <div className="rounded-xl border border-violet-200 bg-violet-50/50 p-2">
+                      <label className="text-[11px] font-bold uppercase tracking-wide text-violet-700">
+                        Direct CBU contribution (optional)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={payCbu}
+                        onChange={(e) => setPayCbu(e.target.value)}
+                        placeholder="0.00"
+                        className="mt-1 w-full rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm font-mono"
+                      />
+                      <div className="mt-0.5 text-[10px] text-violet-700">
+                        Posted as an explicit CBU credit on this OR.
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex items-center justify-between pl-3">
-                    <span className="text-xs text-slate-700">↳ Posted to bill</span>
-                    <span className="font-mono text-sm font-bold text-slate-800">{peso(billNum)}</span>
-                  </div>
-                  {productLoanSum > 0 && (
+                  <div className="rounded-xl border-2 border-emerald-300 bg-emerald-50 p-3 space-y-1.5">
+                    <div className="flex items-center justify-between border-b border-emerald-200 pb-1.5">
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-800">Amount received from member</span>
+                      <span className="font-mono text-xl font-extrabold text-emerald-900">{peso(totalNum)}</span>
+                    </div>
                     <div className="flex items-center justify-between pl-3">
-                      <span className="text-xs text-violet-700">↳ Applied to product loan(s)</span>
-                      <span className="font-mono text-sm font-bold text-violet-800">+{peso(productLoanSum)}</span>
+                      <span className="text-xs text-slate-700">↳ Posted to bill</span>
+                      <span className="font-mono text-sm font-bold text-slate-800">{peso(billNum)}</span>
                     </div>
-                  )}
-                  <div className="flex items-center justify-between pl-3">
-                    <span className="text-xs text-violet-700">↳ Extracted to CBU</span>
-                    <span className="font-mono text-sm font-bold text-violet-800">+{peso(cbuNum)}</span>
+                    {productLoanSum > 0 && (
+                      <div className="flex items-center justify-between pl-3">
+                        <span className="text-xs text-violet-700">↳ Applied to product loan(s)</span>
+                        <span className="font-mono text-sm font-bold text-violet-800">+{peso(productLoanSum)}</span>
+                      </div>
+                    )}
+                    {savingsNum > 0 && (
+                      <div className="flex items-center justify-between pl-3">
+                        <span className="text-xs text-pink-700">↳ Savings deposit</span>
+                        <span className="font-mono text-sm font-bold text-pink-800">+{peso(savingsNum)}</span>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between pl-3">
+                      <span className="text-xs text-violet-700">↳ Extracted to CBU</span>
+                      <span className="font-mono text-sm font-bold text-violet-800">+{peso(cbuNum)}</span>
+                    </div>
+                    {Number(payReceived) < Number(payTarget.totalDue) && (
+                      <div className="mt-1 rounded-lg bg-red-50 border border-red-200 px-2 py-1 text-[11px] font-semibold text-red-800">
+                        Bill amount must be ≥ ₱{Number(payTarget.totalDue).toFixed(2)}.
+                      </div>
+                    )}
                   </div>
-                  {Number(payReceived) < Number(payTarget.totalDue) && (
-                    <div className="mt-1 rounded-lg bg-red-50 border border-red-200 px-2 py-1 text-[11px] font-semibold text-red-800">
-                      Bill amount must be ≥ ₱{Number(payTarget.totalDue).toFixed(2)}.
-                    </div>
-                  )}
-                </div>
+                </>
               );
             })()}
             <div className="flex justify-end gap-2 pt-2">

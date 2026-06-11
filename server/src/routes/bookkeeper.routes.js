@@ -363,7 +363,7 @@ router.get("/members-cbu/:pnNo", ...guard, async (req, res) => {
       }
     }
 
-    const [ledger, waterBills, loans, productLoans] = await Promise.all([
+    const [ledger, waterBills, loans, productLoans, savingsAccount, savingsLedger] = await Promise.all([
       CbuTransaction.find({ pnNo }).sort({ createdAt: -1 }).limit(200).lean(),
       WaterBill.find({ pnNo, status: { $in: ["unpaid", "overdue", "partial"] } })
         .sort({ periodKey: 1 })
@@ -381,9 +381,14 @@ router.get("/members-cbu/:pnNo", ...guard, async (req, res) => {
         .sort({ createdAt: -1 })
         .select("productName category transactionType principal balance dueDate borrowDate returnDate status")
         .lean(),
+      SavingsAccount.findOne({ pnNo }).lean(),
+      (async () => {
+        const { default: SavingsTransaction } = await import("../models/SavingsTransaction.js");
+        return SavingsTransaction.find({ pnNo }).sort({ createdAt: -1 }).limit(200).lean();
+      })(),
     ]);
 
-    res.json({ member, ledger, waterBills, loans, productLoans });
+    res.json({ member, ledger, waterBills, loans, productLoans, savingsAccount, savingsLedger });
   } catch (e) {
     res.status(500).json({ message: "Failed to load member ledger." });
   }

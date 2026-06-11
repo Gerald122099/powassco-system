@@ -21,6 +21,8 @@ import LoanPayment from "../models/LoanPayment.js";
 import { ProductLoanApplication } from "../models/ProductLoan.js";
 import OnlinePayment from "../models/OnlinePayment.js";
 import CbuTransaction from "../models/CbuTransaction.js";
+import SavingsAccount from "../models/SavingsAccount.js";
+import SavingsTransaction from "../models/SavingsTransaction.js";
 import WaterSettings from "../models/WaterSettings.js";
 import { freshenBill } from "../utils/penalty.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
@@ -168,11 +170,18 @@ router.get("/water", ...guard, async (req, res) => {
       .sort({ dueDate: 1, createdAt: -1 })
       .lean();
 
+    // Voluntary savings account (if any) — surfaced so the pay modal
+    // can offer a deposit bundle on the same OR.
+    const savingsAccount = await SavingsAccount.findOne({ pnNo: member.pnNo, status: "active" })
+      .select("pnNo balance status")
+      .lean();
+
     res.json({
       member: {
         pnNo: member.pnNo,
         accountName: member.accountName,
         accountStatus: member.accountStatus,
+        cbuBalance: Number(member.cbuBalance) || 0,
         classification: member.billing?.classification,
         address: [member.address?.houseLotNo, member.address?.streetSitioPurok, member.address?.barangay, member.address?.municipalityCity].filter(Boolean).join(", "),
         contact: member.contact?.mobileNumber || "",
@@ -186,6 +195,7 @@ router.get("/water", ...guard, async (req, res) => {
       recentPayments: payments,
       pendingOnline,
       productLoans,
+      savingsAccount,
     });
   } catch (e) {
     console.error("Cashier water lookup error:", e);
@@ -251,7 +261,15 @@ router.get("/loan", ...guard, async (req, res) => {
         : Promise.resolve([]),
     ]);
 
-    res.json({ loans, recentPayments, pendingOnline, productLoans });
+    // Pull savings accounts for the borrowers so the pay modal can
+    // bundle a deposit on the same OR.
+    const savingsAccounts = borrowerPnNos.length > 0
+      ? await SavingsAccount.find({ pnNo: { $in: borrowerPnNos }, status: "active" })
+          .select("pnNo balance status")
+          .lean()
+      : [];
+
+    res.json({ loans, recentPayments, pendingOnline, productLoans, savingsAccounts });
   } catch (e) {
     console.error("Cashier loan lookup error:", e);
     res.status(500).json({ message: "Lookup failed. Please try again." });
@@ -283,6 +301,12 @@ router.post("/pay-water", ...payGuard, async (req, res) => {
     const rawProductLoans = Array.isArray(req.body?.productLoanPayments)
       ? req.body.productLoanPayments
       : [];
+    // Optional bundled additions (collected as part of this OR):
+    //   savingsDeposit   — credited to the member's savings account
+    //   cbuContribution  — credited to the member's CBU (separate from
+    //                       automatic excess routing below)
+    const savingsDeposit = Math.max(0, round2(Number(req.body?.savingsDeposit || 0)));
+    const cbuContribution = Math.max(0, round2(Number(req.body?.cbuContribution || 0)));
 
     if (!pnNo || !meterNumber || !periodKey) return res.status(400).json({ message: "pnNo, meterNumber and periodKey are required." });
     if (!orNo) return res.status(400).json({ message: "OR number is required." });
@@ -315,10 +339,25 @@ router.post("/pay-water", ...payGuard, async (req, res) => {
       productLoanPayments.push({ doc, amount: amt });
     }
     const productLoanTotal = productLoanPayments.reduce((s, p) => s + p.amount, 0);
-    const totalExpected = round2(totalDue + productLoanTotal);
+
+    // If a savings deposit is requested, verify the account exists.
+    // No silent open — the cashier opens through the Savings tab first
+    // so this validation surfaces missing setup early.
+    let savingsAccountForBundle = null;
+    if (savingsDeposit > 0) {
+      savingsAccountForBundle = await SavingsAccount.findOne({ pnNo });
+      if (!savingsAccountForBundle) {
+        return res.status(400).json({ message: "Member has no savings account. Open one in the Savings tab before bundling." });
+      }
+      if (savingsAccountForBundle.status === "closed") {
+        return res.status(400).json({ message: "Savings account is closed." });
+      }
+    }
+
+    const totalExpected = round2(totalDue + productLoanTotal + savingsDeposit + cbuContribution);
     if (amountReceived < totalExpected) {
       return res.status(400).json({
-        message: `Amount received (₱${amountReceived}) is less than the combined total (water ₱${totalDue} + product loans ₱${productLoanTotal} = ₱${totalExpected}).`,
+        message: `Amount received (₱${amountReceived}) is less than the combined total (₱${totalExpected}: water ₱${totalDue}${productLoanTotal > 0 ? ` + product loans ₱${productLoanTotal}` : ""}${savingsDeposit > 0 ? ` + savings ₱${savingsDeposit}` : ""}${cbuContribution > 0 ? ` + CBU ₱${cbuContribution}` : ""}).`,
       });
     }
 
@@ -413,14 +452,53 @@ router.post("/pay-water", ...payGuard, async (req, res) => {
       });
     }
 
+    // STEP 4 — bundled savings deposit (single OR, separate ledger row
+    // tagged with bundledWithOr so the bookkeeper can reconcile).
+    let savingsResult = null;
+    if (savingsDeposit > 0 && savingsAccountForBundle) {
+      const updated = await SavingsAccount.findOneAndUpdate(
+        { _id: savingsAccountForBundle._id },
+        { $inc: { balance: savingsDeposit } },
+        { new: true }
+      );
+      const savingsTx = await SavingsTransaction.create({
+        pnNo,
+        type: "deposit",
+        amount: savingsDeposit,
+        orNo: `${orNo}-SAV`, // suffix so the OR row is unique system-wide
+        method,
+        receivedBy,
+        balanceAfter: round2(updated.balance),
+        note: `Bundled with water OR ${orNo}`,
+        bundledWithOr: orNo,
+      });
+      savingsResult = { tx: savingsTx, newBalance: updated.balance };
+    }
+
+    // STEP 5 — direct CBU contribution (separate from any excess).
+    let cbuContributionResult = null;
+    if (cbuContribution > 0) {
+      const member = await WaterMember.findOne({ pnNo });
+      if (member) {
+        const newBal = await creditCbu({
+          member, amount: cbuContribution, source: "cashier_contribution", refOrNo: orNo,
+          waterPaymentId: payment._id, postedBy: receivedBy,
+          note: `Direct CBU contribution bundled with OR ${orNo}`,
+        });
+        cbuContributionResult = { amount: cbuContribution, newBalance: newBal };
+      }
+    }
+
     res.status(201).json({
       ok: true,
       message: cbuExcess > 0
-        ? `Posted ₱${totalDue} (water)${productLoanTotal > 0 ? ` + ₱${productLoanTotal} (product loans)` : ""}. Excess ₱${cbuExcess} → CBU (new balance ₱${newCbuBalance}).`
-        : `Posted ₱${totalDue} (water)${productLoanTotal > 0 ? ` + ₱${productLoanTotal} (product loans)` : ""}.`,
+        ? `Posted ₱${totalDue} (water)${productLoanTotal > 0 ? ` + ₱${productLoanTotal} (product loans)` : ""}${savingsDeposit > 0 ? ` + ₱${savingsDeposit} (savings)` : ""}${cbuContribution > 0 ? ` + ₱${cbuContribution} (CBU)` : ""}. Excess ₱${cbuExcess} → CBU (new balance ₱${newCbuBalance}).`
+        : `Posted ₱${totalDue} (water)${productLoanTotal > 0 ? ` + ₱${productLoanTotal} (product loans)` : ""}${savingsDeposit > 0 ? ` + ₱${savingsDeposit} (savings)` : ""}${cbuContribution > 0 ? ` + ₱${cbuContribution} (CBU)` : ""}.`,
       payment, cbuExcess, newCbuBalance,
       productLoanPayments: productLoanResults,
       productLoanTotal,
+      savingsDeposit: savingsResult,
+      cbuContribution: cbuContributionResult,
     });
   } catch (e) {
     if (e?.code === 11000) return res.status(409).json({ message: "OR number is already in use." });
@@ -455,6 +533,9 @@ router.post("/pay-loan", ...payGuard, async (req, res) => {
     const periodsCovered = Math.max(1, Math.min(60, Number(req.body?.periodsCovered || 1)));
     const method = String(req.body?.method || "cash").toLowerCase();
     const note = String(req.body?.note || "");
+    // Bundled additions (same OR): savings deposit + direct CBU contribution.
+    const savingsDeposit = Math.max(0, round2(Number(req.body?.savingsDeposit || 0)));
+    const cbuContribution = Math.max(0, round2(Number(req.body?.cbuContribution || 0)));
 
     if (!loanId) return res.status(400).json({ message: "loanId is required." });
     if (!orNo) return res.status(400).json({ message: "OR number is required." });
@@ -523,11 +604,24 @@ router.post("/pay-loan", ...payGuard, async (req, res) => {
       productLoanPayments.push({ doc, amount: amt });
     }
     const productLoanTotal = productLoanPayments.reduce((s, p) => s + p.amount, 0);
-    const totalExpected = round2(totalDue + productLoanTotal);
+
+    // Pre-validate savings account for bundled deposit.
+    let savingsAccountForBundle = null;
+    if (savingsDeposit > 0) {
+      savingsAccountForBundle = await SavingsAccount.findOne({ pnNo: loan.borrowerPnNo });
+      if (!savingsAccountForBundle) {
+        return res.status(400).json({ message: "Borrower has no savings account. Open one in the Savings tab before bundling." });
+      }
+      if (savingsAccountForBundle.status === "closed") {
+        return res.status(400).json({ message: "Savings account is closed." });
+      }
+    }
+
+    const totalExpected = round2(totalDue + productLoanTotal + savingsDeposit + cbuContribution);
 
     if (amountReceived < totalExpected) {
       return res.status(400).json({
-        message: `Amount received (₱${amountReceived}) is less than combined total (loan ₱${totalDue} + product loans ₱${productLoanTotal} = ₱${totalExpected}).`,
+        message: `Amount received (₱${amountReceived}) is less than combined total (₱${totalExpected}: loan ₱${totalDue}${productLoanTotal > 0 ? ` + product loans ₱${productLoanTotal}` : ""}${savingsDeposit > 0 ? ` + savings ₱${savingsDeposit}` : ""}${cbuContribution > 0 ? ` + CBU ₱${cbuContribution}` : ""}).`,
       });
     }
     const dupOr = await LoanPayment.findOne({ orNo });
@@ -616,14 +710,52 @@ router.post("/pay-loan", ...payGuard, async (req, res) => {
       });
     }
 
+    // Bundled savings deposit (single OR, suffixed tx OR for uniqueness).
+    let savingsResult = null;
+    if (savingsDeposit > 0 && savingsAccountForBundle) {
+      const updated = await SavingsAccount.findOneAndUpdate(
+        { _id: savingsAccountForBundle._id },
+        { $inc: { balance: savingsDeposit } },
+        { new: true }
+      );
+      const savingsTx = await SavingsTransaction.create({
+        pnNo: loan.borrowerPnNo,
+        type: "deposit",
+        amount: savingsDeposit,
+        orNo: `${orNo}-SAV`,
+        method,
+        receivedBy,
+        balanceAfter: round2(updated.balance),
+        note: `Bundled with loan OR ${orNo}`,
+        bundledWithOr: orNo,
+      });
+      savingsResult = { tx: savingsTx, newBalance: updated.balance };
+    }
+
+    // Direct CBU contribution (separate from excess).
+    let cbuContributionResult = null;
+    if (cbuContribution > 0) {
+      const member = await WaterMember.findOne({ pnNo: String(loan.borrowerPnNo || "").toUpperCase() });
+      if (member) {
+        const newBal = await creditCbu({
+          member, amount: cbuContribution, source: "cashier_contribution", refOrNo: orNo,
+          loanPaymentId: payment._id, postedBy: receivedBy,
+          note: `Direct CBU contribution bundled with OR ${orNo}`,
+        });
+        cbuContributionResult = { amount: cbuContribution, newBalance: newBal };
+      }
+    }
+
     res.status(201).json({
       ok: true,
       message: cbuExcess > 0
-        ? `Posted ₱${totalDue} for ${upcoming.length} period(s)${productLoanTotal > 0 ? ` + ₱${productLoanTotal} (product loans)` : ""}. Excess ₱${cbuExcess} → CBU (new balance ₱${newCbuBalance}).`
-        : `Posted ₱${totalDue} for ${upcoming.length} period(s)${productLoanTotal > 0 ? ` + ₱${productLoanTotal} (product loans)` : ""}.`,
+        ? `Posted ₱${totalDue} for ${upcoming.length} period(s)${productLoanTotal > 0 ? ` + ₱${productLoanTotal} (product loans)` : ""}${savingsDeposit > 0 ? ` + ₱${savingsDeposit} (savings)` : ""}${cbuContribution > 0 ? ` + ₱${cbuContribution} (CBU)` : ""}. Excess ₱${cbuExcess} → CBU (new balance ₱${newCbuBalance}).`
+        : `Posted ₱${totalDue} for ${upcoming.length} period(s)${productLoanTotal > 0 ? ` + ₱${productLoanTotal} (product loans)` : ""}${savingsDeposit > 0 ? ` + ₱${savingsDeposit} (savings)` : ""}${cbuContribution > 0 ? ` + ₱${cbuContribution} (CBU)` : ""}.`,
       payment, cbuExcess, newCbuBalance, periodsCovered: upcoming.length, totalDue,
       productLoanPayments: productLoanResults,
       productLoanTotal,
+      savingsDeposit: savingsResult,
+      cbuContribution: cbuContributionResult,
     });
   } catch (e) {
     if (e?.code === 11000) return res.status(409).json({ message: "OR number is already in use." });

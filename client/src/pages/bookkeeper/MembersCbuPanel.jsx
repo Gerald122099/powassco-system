@@ -14,7 +14,7 @@ import Card from "../../components/Card";
 import Modal from "../../components/Modal";
 import { apiFetch } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
-import { Wallet, Search, RefreshCw, Droplets, Banknote, Package, AlertCircle, Calendar } from "lucide-react";
+import { Wallet, Search, RefreshCw, Droplets, Banknote, Package, AlertCircle, Calendar, PiggyBank } from "lucide-react";
 
 const DATE_PRESETS = [
   { key: "all", label: "All time" },
@@ -433,6 +433,51 @@ export default function MembersCbuPanel() {
                 </tbody>
               </table>
             </DetailSection>
+
+            {/* Savings ledger (voluntary, distinct from CBU) */}
+            {detail.savingsAccount && (
+              <DetailSection
+                icon={PiggyBank}
+                color="pink"
+                title="Voluntary Savings ledger"
+                count={(detail.savingsLedger || []).length}
+                total={Number(detail.savingsAccount.balance) || 0}
+                emptyText="No savings transactions yet."
+              >
+                <table className="w-full text-xs">
+                  <thead className="bg-white text-left text-[10px] text-slate-500 sticky top-0">
+                    <tr>
+                      <th className="px-3 py-1.5">When</th>
+                      <th className="px-3 py-1.5">OR No.</th>
+                      <th className="px-3 py-1.5">Type</th>
+                      <th className="px-3 py-1.5">Method</th>
+                      <th className="px-3 py-1.5 text-right">Amount</th>
+                      <th className="px-3 py-1.5 text-right">Balance after</th>
+                      <th className="px-3 py-1.5">By</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(detail.savingsLedger || []).map((t) => (
+                      <tr key={t._id} className="border-t">
+                        <td className="px-3 py-1.5 text-xs">{fmtDate(t.paidAt || t.createdAt)}</td>
+                        <td className="px-3 py-1.5 font-mono text-xs">{t.orNo}</td>
+                        <td className="px-3 py-1.5">
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${t.type === "deposit" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+                            {t.type === "deposit" ? "DEBIT" : "CREDIT"}
+                          </span>
+                        </td>
+                        <td className="px-3 py-1.5">{t.method}</td>
+                        <td className={`px-3 py-1.5 text-right font-mono font-bold ${t.type === "deposit" ? "text-emerald-700" : "text-amber-700"}`}>
+                          {t.type === "deposit" ? "+" : "-"}{peso(t.amount)}
+                        </td>
+                        <td className="px-3 py-1.5 text-right font-mono">{peso(t.balanceAfter)}</td>
+                        <td className="px-3 py-1.5 text-xs">{t.receivedBy || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </DetailSection>
+            )}
 
             {/* CBU ledger */}
             <DetailSection
