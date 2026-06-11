@@ -21,6 +21,7 @@ const CashierDashboard = lazy(() => import("./pages/cashier/CashierDashboard"));
 const BookkeeperDashboard = lazy(() => import("./pages/bookkeeper/BookkeeperDashboard"));
 const MemberInquiryPage = lazy(() => import("./pages/public/MemberInquiryPage"));
 const TariffCalculatorPage = lazy(() => import("./pages/public/TariffCalculatorPage"));
+const CheckBalancePage = lazy(() => import("./pages/public/CheckBalancePage"));
 const AboutPage = lazy(() => import("./pages/public/AboutPage"));
 const ContactPage = lazy(() => import("./pages/public/ContactPage"));
 
@@ -85,6 +86,7 @@ export default function App() {
         <Route path="/employee-login" element={<LoginPage />} />
         <Route path="/inquiry" element={<MemberInquiryPage />} />
         <Route path="/calculator" element={<TariffCalculatorPage />} />
+        <Route path="/check-balance" element={<CheckBalancePage />} />
         <Route path="/about" element={<AboutPage />} />
         <Route path="/contact" element={<ContactPage />} />
 

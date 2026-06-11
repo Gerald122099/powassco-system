@@ -16,6 +16,13 @@ const SavingsAccountSchema = new mongoose.Schema(
     openedBy: { type: String, default: "" },
     closedAt: { type: Date, default: null },
     closedBy: { type: String, default: "" },
+
+    // 4-digit PIN — bcrypt-hashed; never returned to the client.
+    // Used by the public "Check Balance" navbar widget so the
+    // member can verify their own balance without logging in.
+    pinHash: { type: String, default: "" },
+    pinSetAt: { type: Date, default: null },
+    pinResetCount: { type: Number, default: 0 }, // grows on every admin reset
   },
   { timestamps: true }
 );

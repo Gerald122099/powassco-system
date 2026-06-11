@@ -12,6 +12,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import Card from "../../components/Card";
+import Modal from "../../components/Modal";
 import { apiFetch } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
 import { toast } from "../../components/Toast";
@@ -59,6 +60,9 @@ export default function CashierSavingsPanel() {
   const [busy, setBusy] = useState(false);
 
   const [opening, setOpening] = useState(false);
+  const [pinModalOpen, setPinModalOpen] = useState(false);
+  const [pinInput, setPinInput] = useState("");
+  const [pinConfirm, setPinConfirm] = useState("");
   const [txType, setTxType] = useState(null); // "deposit" | "withdrawal" | null
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState("cash");
@@ -121,18 +125,24 @@ export default function CashierSavingsPanel() {
     return () => clearTimeout(t);
   }, [q, token]);
 
+  function startOpen() {
+    setPinInput(""); setPinConfirm(""); setPinModalOpen(true);
+  }
   async function openAccount() {
     if (!member) return;
+    if (!/^[0-9]{4}$/.test(pinInput)) { toast.error("PIN must be exactly 4 digits."); return; }
+    if (pinInput !== pinConfirm) { toast.error("PINs do not match."); return; }
     setOpening(true);
     try {
       const res = await apiFetch("/savings/open", {
         method: "POST",
         token,
-        body: { pnNo: member.pnNo },
+        body: { pnNo: member.pnNo, pin: pinInput },
       });
       setAccount(res.account);
       setLedger([]);
       toast.success(res.alreadyExists ? "Account already exists." : "Savings account opened.");
+      setPinModalOpen(false);
     } catch (e) {
       toast.error(e.message || "Failed to open account.");
     } finally {
@@ -234,7 +244,7 @@ export default function CashierSavingsPanel() {
             </div>
             {!account ? (
               <button
-                onClick={openAccount}
+                onClick={startOpen}
                 disabled={opening}
                 className="inline-flex items-center gap-2 rounded-xl bg-pink-600 px-4 py-2 text-sm font-bold text-white hover:bg-pink-700 disabled:opacity-50"
               >
@@ -328,6 +338,53 @@ export default function CashierSavingsPanel() {
           )}
         </div>
       )}
+
+      {/* PIN modal — required at account open time */}
+      <Modal open={pinModalOpen} title="Set 4-digit PIN" onClose={() => setPinModalOpen(false)} size="sm">
+        <div className="space-y-3">
+          <div className="rounded-xl border border-pink-200 bg-pink-50 p-3 text-xs text-pink-900">
+            The PIN lets the member check their savings balance from the public homepage
+            (no login). Hand it to them privately after opening the account.
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-slate-600">New PIN (4 digits)</label>
+            <input
+              type="password"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={4}
+              value={pinInput}
+              onChange={(e) => setPinInput(e.target.value.replace(/\D/g, ""))}
+              autoFocus
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-center font-mono text-2xl tracking-widest"
+              placeholder="••••"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-slate-600">Confirm PIN</label>
+            <input
+              type="password"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={4}
+              value={pinConfirm}
+              onChange={(e) => setPinConfirm(e.target.value.replace(/\D/g, ""))}
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-center font-mono text-2xl tracking-widest"
+              placeholder="••••"
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <button onClick={() => setPinModalOpen(false)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold hover:bg-slate-50">Cancel</button>
+            <button
+              onClick={openAccount}
+              disabled={opening || pinInput.length !== 4 || pinInput !== pinConfirm}
+              className="rounded-xl bg-pink-600 px-5 py-2 text-sm font-bold text-white hover:bg-pink-700 disabled:opacity-50"
+            >
+              {opening ? "Opening…" : "Open Account"}
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Ledger */}
       {member && account && (

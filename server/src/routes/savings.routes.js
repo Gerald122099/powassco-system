@@ -20,16 +20,23 @@
 
 import express from "express";
 import mongoose from "mongoose";
+import bcrypt from "bcryptjs";
 import SavingsAccount from "../models/SavingsAccount.js";
 import SavingsTransaction from "../models/SavingsTransaction.js";
 import WaterMember from "../models/WaterMember.js";
+import CbuTransaction from "../models/CbuTransaction.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
 const router = express.Router();
-const readGuard = [requireAuth, requireRole(["admin", "bookkeeper", "cashier"])];
-const openGuard = [requireAuth, requireRole(["admin", "bookkeeper", "cashier"])];
+const readGuard = [requireAuth, requireRole(["admin", "bookkeeper", "cashier", "loan_officer"])];
+const openGuard = [requireAuth, requireRole(["admin", "bookkeeper", "cashier", "loan_officer"])];
 const txGuard = [requireAuth, requireRole(["admin", "cashier"])];
 const closeGuard = [requireAuth, requireRole(["admin", "bookkeeper"])];
+const adminGuard = [requireAuth, requireRole(["admin"])];
+
+function isValidPin(v) {
+  return typeof v === "string" && /^[0-9]{4}$/.test(v);
+}
 
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 const normPN = (s) => String(s || "").toUpperCase().trim();
@@ -92,26 +99,55 @@ router.get("/:pnNo", readGuard, async (req, res) => {
 });
 
 // ─── Open new account ──────────────────────────────────────────────
+// Requires a 4-digit PIN. The PIN is bcrypt-hashed before storage so
+// an admin can reset it but cannot read it back.
 router.post("/open", openGuard, async (req, res) => {
   try {
     const pnNo = normPN(req.body?.pnNo);
+    const pin = String(req.body?.pin || "");
     if (!pnNo) return res.status(400).json({ message: "Account number is required." });
+    if (!isValidPin(pin)) return res.status(400).json({ message: "A 4-digit numeric PIN is required." });
     const member = await WaterMember.findOne({ pnNo }).select("pnNo accountName").lean();
     if (!member) return res.status(404).json({ message: `Member ${pnNo} not found.` });
     const existing = await SavingsAccount.findOne({ pnNo });
     if (existing) {
       // Idempotent — return the existing account so the UI can pick up.
-      return res.json({ account: existing.toObject(), alreadyExists: true });
+      return res.json({ account: { ...existing.toObject(), pinHash: undefined }, alreadyExists: true });
     }
+    const pinHash = await bcrypt.hash(pin, 10);
     const account = await SavingsAccount.create({
       pnNo,
       accountName: member.accountName || "",
       balance: 0,
       openedBy: req.user?.fullName || req.user?.employeeId || "",
+      pinHash,
+      pinSetAt: new Date(),
     });
-    res.status(201).json({ account: account.toObject() });
+    const out = account.toObject();
+    delete out.pinHash;
+    res.status(201).json({ account: out });
   } catch (e) {
     res.status(500).json({ message: e.message || "Failed to open savings account." });
+  }
+});
+
+// ─── Admin: reset PIN ──────────────────────────────────────────────
+// Issues a new 4-digit PIN (returned ONCE, never readable again) so
+// the admin can hand it to the member. pinResetCount is bumped so
+// the audit log can show how many resets a member has had.
+router.post("/:id/reset-pin", adminGuard, async (req, res) => {
+  try {
+    const newPin = String(req.body?.pin || "").trim();
+    if (!isValidPin(newPin)) return res.status(400).json({ message: "A 4-digit numeric PIN is required." });
+    const account = await SavingsAccount.findById(req.params.id);
+    if (!account) return res.status(404).json({ message: "Account not found." });
+    account.pinHash = await bcrypt.hash(newPin, 10);
+    account.pinSetAt = new Date();
+    account.pinResetCount = (account.pinResetCount || 0) + 1;
+    await account.save();
+    res.json({ ok: true, pinResetCount: account.pinResetCount, pinSetAt: account.pinSetAt });
+  } catch (e) {
+    res.status(500).json({ message: e.message || "Failed to reset PIN." });
   }
 });
 
