@@ -210,12 +210,15 @@ router.put("/settings", guard, async (req, res) => {
     "interestRatePerMonth",
     "penaltyRatePerMonth",
     "defaultTermMonths",
+    "defaultTermMonthsEmployee",
+    "minCbuForLoan",
     "charges",
     "dueDayOfMonth",
     "graceDays",
     "penaltyType",
     "penaltyValue",
     "penaltyFrequency",
+    "productTerms",
   ];
   for (const k of allow) if (k in req.body) s[k] = req.body[k];
   s.updatedBy = req.user?.fullName || req.user?.employeeId || "";

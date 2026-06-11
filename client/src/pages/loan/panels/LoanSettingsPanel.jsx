@@ -42,6 +42,12 @@ export default function LoanSettingsPanel() {
   function setField(k, v) {
     setS((p) => ({ ...p, [k]: v }));
   }
+  function setProductTerm(category, v) {
+    setS((p) => ({
+      ...p,
+      productTerms: { ...(p.productTerms || {}), [category]: v },
+    }));
+  }
   function setCharge(i, k, v) {
     setS((p) => ({ ...p, charges: p.charges.map((c, idx) => (idx === i ? { ...c, [k]: v } : c)) }));
   }
@@ -60,9 +66,12 @@ export default function LoanSettingsPanel() {
     setMsg("");
     setSaving(true);
     try {
+      const pt = s.productTerms || {};
       const body = {
         interestRatePerMonth: Number(s.interestRatePerMonth) || 0,
         defaultTermMonths: Number(s.defaultTermMonths) || 1,
+        defaultTermMonthsEmployee: Number(s.defaultTermMonthsEmployee) || 12,
+        minCbuForLoan: Number(s.minCbuForLoan) || 0,
         penaltyRatePerMonth: Number(s.penaltyRatePerMonth) || 0,
         charges: (s.charges || []).map((c) => ({
           key: c.key,
@@ -70,6 +79,16 @@ export default function LoanSettingsPanel() {
           type: c.type,
           value: Number(c.value) || 0,
         })),
+        productTerms: {
+          frozen_goods: Number(pt.frozen_goods) || 0,
+          rice: Number(pt.rice) || 0,
+          materials: Number(pt.materials) || 0,
+          rental: Number(pt.rental) || 0,
+          appliance: Number(pt.appliance) || 0,
+          construction: Number(pt.construction) || 0,
+          other: Number(pt.other) || 0,
+          rentalLatePenaltyPerDay: Number(pt.rentalLatePenaltyPerDay) || 0,
+        },
       };
       const updated = await apiFetch("/loan/settings", { method: "PUT", token, body });
       setS(updated);
@@ -108,11 +127,17 @@ export default function LoanSettingsPanel() {
         <Labeled label="Interest Rate (% / month)">
           <input type="number" step="0.01" value={s.interestRatePerMonth ?? ""} onChange={(e) => setField("interestRatePerMonth", e.target.value)} className={`mt-1 ${inputCls}`} />
         </Labeled>
-        <Labeled label="Default Term (months)">
+        <Labeled label="Default Term — Members (months)">
           <input type="number" min="1" value={s.defaultTermMonths ?? ""} onChange={(e) => setField("defaultTermMonths", e.target.value)} className={`mt-1 ${inputCls}`} />
+        </Labeled>
+        <Labeled label="Default Term — Employees (months)">
+          <input type="number" min="1" value={s.defaultTermMonthsEmployee ?? ""} onChange={(e) => setField("defaultTermMonthsEmployee", e.target.value)} className={`mt-1 ${inputCls}`} />
         </Labeled>
         <Labeled label="Penalty Rate (% / month)">
           <input type="number" step="0.01" value={s.penaltyRatePerMonth ?? ""} onChange={(e) => setField("penaltyRatePerMonth", e.target.value)} className={`mt-1 ${inputCls}`} />
+        </Labeled>
+        <Labeled label="Minimum CBU for Loan (₱)">
+          <input type="number" min="0" value={s.minCbuForLoan ?? ""} onChange={(e) => setField("minCbuForLoan", e.target.value)} className={`mt-1 ${inputCls}`} />
         </Labeled>
       </div>
 
@@ -140,6 +165,49 @@ export default function LoanSettingsPanel() {
         </div>
         <div className="mt-2 text-xs text-slate-500">
           Flat charges total ₱{flatTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })} (percent charges scale with the loan amount).
+        </div>
+      </div>
+
+      {/* Product-transaction term days. These drive the default
+          due-date computed when the bookkeeper / cashier writes
+          a "loan" or "rental" product transaction — empty (0)
+          falls back to no-due-date. Late-return penalty per day
+          only applies to category = rental. */}
+      <div className="mt-6 rounded-2xl border border-violet-200 bg-violet-50/40 p-4">
+        <div className="text-sm font-semibold text-violet-900">Product Transactions — Default Term Days</div>
+        <div className="mt-0.5 text-xs text-violet-700">
+          Per-category default term in DAYS for product loans / rentals. Leave 0 to require manual entry.
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+          {[
+            ["frozen_goods", "Frozen Goods (days)"],
+            ["rice", "Rice (days)"],
+            ["materials", "Materials (days)"],
+            ["rental", "Rental (days)"],
+            ["appliance", "Appliance (days)"],
+            ["construction", "Construction (days)"],
+            ["other", "Other (days)"],
+          ].map(([key, label]) => (
+            <Labeled key={key} label={label}>
+              <input
+                type="number"
+                min="0"
+                value={s.productTerms?.[key] ?? ""}
+                onChange={(e) => setProductTerm(key, e.target.value)}
+                className={`mt-1 ${inputCls}`}
+              />
+            </Labeled>
+          ))}
+          <Labeled label="Rental Late Penalty (₱ / day)">
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={s.productTerms?.rentalLatePenaltyPerDay ?? ""}
+              onChange={(e) => setProductTerm("rentalLatePenaltyPerDay", e.target.value)}
+              className={`mt-1 ${inputCls}`}
+            />
+          </Labeled>
         </div>
       </div>
 
