@@ -100,8 +100,29 @@ export default function MemberInquiryPage() {
   const [showAccountDetails, setShowAccountDetails] = useState(false);
   const [showMeterDetails, setShowMeterDetails] = useState(false);
 
+  // Rate-limit cooldown (seconds). When the server replies 429
+  // ("Too many attempts"), searching is disabled for 20 seconds and
+  // the error line shows a live countdown so the user knows exactly
+  // when they can retry instead of hammering the button.
+  const [cooldown, setCooldown] = useState(0);
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setInterval(() => {
+      setCooldown((s) => {
+        if (s <= 1) {
+          clearInterval(t);
+          setErr("");
+          return 0;
+        }
+        return s - 1;
+      });
+    }, 1000);
+    return () => clearInterval(t);
+  }, [cooldown > 0]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Shared fetch — `kind` is "pn" or "meter".
   async function runInquiry(kind, value) {
+    if (cooldown > 0) return null; // still rate-limited — don't even hit the server
     setErr("");
     setData(null);
     const v = String(value || "").trim().toUpperCase();
@@ -145,7 +166,14 @@ export default function MemberInquiryPage() {
       setShowMeterDetails(false);
       return json;
     } catch (e2) {
-      setErr(e2.message);
+      // 429 from the inquiry rate limiter → start the 20s countdown.
+      // The message check (not a status code) is what apiFetch exposes.
+      if (/too many attempts|too many requests/i.test(e2.message || "")) {
+        setCooldown(20);
+        setErr("Too many attempts. Please try again in 20s.");
+      } else {
+        setErr(e2.message);
+      }
       return null;
     } finally {
       setLoading(false);
@@ -346,10 +374,10 @@ export default function MemberInquiryPage() {
                 <div className="flex items-end">
                   <button
                     type="submit"
-                    disabled={loading}
+                    disabled={loading || cooldown > 0}
                     className="w-full rounded-2xl bg-gradient-to-r from-green-600 to-green-700 text-white py-3 font-semibold hover:from-green-700 hover:to-green-800 disabled:opacity-60 transition-all transform hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2"
                   >
-                    {loading ? "Checking..." : "Check Bills"}
+                    {cooldown > 0 ? `Wait ${cooldown}s…` : loading ? "Checking..." : "Check Bills"}
                   </button>
                 </div>
               </div>
@@ -402,7 +430,9 @@ export default function MemberInquiryPage() {
 
             {err && (
               <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
-                {err}
+                {cooldown > 0
+                  ? `Too many attempts. Please try again in ${cooldown}s.`
+                  : err}
               </div>
             )}
           </div>
