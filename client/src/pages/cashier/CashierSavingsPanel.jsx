@@ -256,21 +256,26 @@ export default function CashierSavingsPanel() {
                   <div className="text-[10px] uppercase tracking-wide text-pink-700">Savings balance</div>
                   <div className="font-mono text-xl font-extrabold text-pink-800">{peso(account.balance)}</div>
                 </div>
-                <div className="flex flex-col gap-1">
-                  <button
-                    onClick={() => startTx("deposit")}
-                    className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700"
-                  >
-                    <ArrowDownLeft size={12} /> Deposit
-                  </button>
-                  <button
-                    onClick={() => startTx("withdrawal")}
-                    disabled={Number(account.balance) <= 0}
-                    className="inline-flex items-center gap-1 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-700 disabled:opacity-50"
-                  >
-                    <ArrowUpRight size={12} /> Withdraw
-                  </button>
-                </div>
+                {/* Deposit / withdraw buttons only for cashier + admin —
+                    server rejects loan_officer + bookkeeper on tx routes.
+                    Hide them for those roles so the UI matches. */}
+                {(user?.role === "admin" || user?.role === "cashier") && (
+                  <div className="flex flex-col gap-1">
+                    <button
+                      onClick={() => startTx("deposit")}
+                      className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700"
+                    >
+                      <ArrowDownLeft size={12} /> Deposit
+                    </button>
+                    <button
+                      onClick={() => startTx("withdrawal")}
+                      disabled={Number(account.balance) <= 0}
+                      className="inline-flex items-center gap-1 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-700 disabled:opacity-50"
+                    >
+                      <ArrowUpRight size={12} /> Withdraw
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
