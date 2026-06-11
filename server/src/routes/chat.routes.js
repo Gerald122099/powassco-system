@@ -22,6 +22,10 @@ const ChatMessageSchema = new mongoose.Schema(
     fromName: { type: String, default: "" },
     fromRole: { type: String, default: "" },
     text: { type: String, required: true, trim: true, maxlength: 1000 },
+    editedAt: { type: Date, default: null },
+    // Soft delete: the bubble stays in the thread as "message deleted"
+    // so the conversation flow isn't silently rewritten.
+    deleted: { type: Boolean, default: false },
   },
   { timestamps: { createdAt: true, updatedAt: false } }
 );
@@ -66,6 +70,46 @@ router.post("/", ...guard, async (req, res) => {
     res.status(201).json(msg.toObject());
   } catch (e) {
     res.status(500).json({ message: "Failed to send." });
+  }
+});
+
+// Edit own message (admin may edit anyone's). Re-edits allowed; the
+// bubble shows an "edited" tag from editedAt.
+router.patch("/:id", ...guard, async (req, res) => {
+  try {
+    const text = String(req.body?.text || "").trim();
+    if (!text) return res.status(400).json({ message: "Message is empty." });
+    if (text.length > 1000) return res.status(400).json({ message: "Message too long (1000 max)." });
+    const msg = await ChatMessage.findById(req.params.id);
+    if (!msg || msg.deleted) return res.status(404).json({ message: "Message not found." });
+    const isOwner = msg.fromId === String(req.user?.id || req.user?._id || "");
+    if (!isOwner && req.user?.role !== "admin") {
+      return res.status(403).json({ message: "You can only edit your own messages." });
+    }
+    msg.text = text;
+    msg.editedAt = new Date();
+    await msg.save();
+    res.json(msg.toObject());
+  } catch (e) {
+    res.status(500).json({ message: "Failed to edit." });
+  }
+});
+
+// Delete (soft) own message; admin may delete anyone's.
+router.delete("/:id", ...guard, async (req, res) => {
+  try {
+    const msg = await ChatMessage.findById(req.params.id);
+    if (!msg) return res.status(404).json({ message: "Message not found." });
+    const isOwner = msg.fromId === String(req.user?.id || req.user?._id || "");
+    if (!isOwner && req.user?.role !== "admin") {
+      return res.status(403).json({ message: "You can only delete your own messages." });
+    }
+    // updateOne sidesteps the required-text validator; the original
+    // text is wiped so a deleted message can't be recovered via API.
+    await ChatMessage.updateOne({ _id: msg._id }, { $set: { deleted: true, text: "(deleted)" } });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ message: "Failed to delete." });
   }
 });
 
