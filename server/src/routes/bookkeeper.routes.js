@@ -24,6 +24,7 @@ import LoanApplication from "../models/LoanApplication.js";
 import CbuTransaction from "../models/CbuTransaction.js";
 import { ProductLoanCatalog, ProductLoanApplication } from "../models/ProductLoan.js";
 import LoanSettings from "../models/LoanSettings.js";
+import { freshenBill } from "../utils/penalty.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
 const router = express.Router();
@@ -166,8 +167,30 @@ router.get("/members-cbu", ...guard, async (req, res) => {
     //   • Reconnection Fee: one-shot ₱200 after grace runs out
     // Together they add to bill.totalDue. We pull the reconnection
     // amount from WaterSettings so the split tracks any admin change.
-    const waterSettings = await WaterSettings.findOne().lean();
-    const reconnectFee = Number(waterSettings?.penaltyAfterGraceAmount ?? 200);
+    const waterSettings = await WaterSettings.findOne();
+    const waterSettingsLean = waterSettings ? waterSettings.toObject() : null;
+    const reconnectFee = Number(waterSettingsLean?.penaltyAfterGraceAmount ?? 200);
+
+    // Freshen overdue bills before aggregating so the row totals match
+    // what the cashier would see at the counter right now (penalty
+    // accrues daily — a bill freshened yesterday under-reports today).
+    // freshenBill is a no-op if nothing moved, so the cost is one
+    // find() + zero writes when everyone is already up to date.
+    if (pnNos.length) {
+      const candidates = await WaterBill.find({
+        pnNo: { $in: pnNos },
+        status: { $in: ["unpaid", "overdue"] },
+        dueDate: { $lt: new Date() },
+      });
+      for (const b of candidates) {
+        try {
+          await freshenBill(b, { settings: waterSettingsLean });
+        } catch (e) {
+          console.error("members-cbu freshenBill failed:", b._id?.toString(), e.message);
+          // continue — one bad row shouldn't break the whole list
+        }
+      }
+    }
 
     const waterArAgg = pnNos.length
       ? await WaterBill.aggregate([
@@ -297,6 +320,21 @@ router.get("/members-cbu/:pnNo", ...guard, async (req, res) => {
     const pnNo = String(req.params.pnNo || "").toUpperCase().trim();
     const member = await WaterMember.findOne({ pnNo }).select("pnNo accountName cbuBalance accountStatus").lean();
     if (!member) return res.status(404).json({ message: "Member not found." });
+
+    // Same freshen pass as the list endpoint so a drill-down never
+    // shows different numbers from the table the user just clicked.
+    const settings = await WaterSettings.findOne();
+    const settingsLean = settings ? settings.toObject() : null;
+    const overdue = await WaterBill.find({
+      pnNo,
+      status: { $in: ["unpaid", "overdue"] },
+      dueDate: { $lt: new Date() },
+    });
+    for (const b of overdue) {
+      try { await freshenBill(b, { settings: settingsLean }); } catch (e) {
+        console.error("members-cbu/:pnNo freshenBill failed:", b._id?.toString(), e.message);
+      }
+    }
 
     const [ledger, waterBills, loans, productLoans] = await Promise.all([
       CbuTransaction.find({ pnNo }).sort({ createdAt: -1 }).limit(200).lean(),
