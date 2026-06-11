@@ -47,6 +47,8 @@ export default function LoanDuesLookup() {
   const [todayStats, setTodayStats] = useState(null);
   const [recents, setRecents] = useState(() => loadRecents());
   const searchRef = useRef(null);
+  // Map of productLoanId → ₱ amount to settle on this OR.
+  const [productLoanPicks, setProductLoanPicks] = useState({});
 
   function openPay(loan) {
     setPayLoan(loan);
@@ -61,7 +63,18 @@ export default function LoanDuesLookup() {
     setPayOR("");
     setPayReceived(String(loan.monthlyPayment || ""));
     setPayCbu("");
+    setProductLoanPicks({});
   }
+
+  const productLoanSum = Object.values(productLoanPicks).reduce(
+    (s, v) => s + (Number(v) || 0),
+    0,
+  );
+  // Open product loans/rentals for this borrower (the cashier loan
+  // lookup endpoint returns them on every search result).
+  const borrowerProductLoans = (data?.productLoans || []).filter(
+    (pl) => pl.pnNo === payLoan?.borrowerPnNo,
+  );
 
   // Build the set of period numbers already paid for a given loan,
   // unioning every prior payment's periodsPaid array. For legacy
@@ -106,7 +119,13 @@ export default function LoanDuesLookup() {
     if (periodsSet.size === 0) return toast.error("Tick at least one period to pay.");
     const billPortion = Number(payReceived) || 0;
     const cbuPortion = Math.max(0, Number(payCbu) || 0);
-    const totalReceived = billPortion + cbuPortion;
+    // Same bundling pattern as the water side — pre-build the
+    // product-loan payment array and include it in amountReceived
+    // so the server can deduct each pick from the right account.
+    const productLoanPayments = Object.entries(productLoanPicks)
+      .map(([id, amount]) => ({ id, amount: Number(amount) || 0 }))
+      .filter((p) => p.amount > 0);
+    const totalReceived = billPortion + cbuPortion + productLoanSum;
     if (!payOR.trim()) return toast.error("Enter the OR number.");
     if (billPortion < installmentTotal) return toast.error(`Loan amount must be at least ₱${installmentTotal.toFixed(2)}.`);
     setPaying(true);
@@ -127,6 +146,7 @@ export default function LoanDuesLookup() {
           periods: periodsArr,
           periodsCovered: periodsArr.length,
           method: "cash",
+          productLoanPayments,
         },
       });
       toast.success(res.message || "Payment posted.");
@@ -609,13 +629,93 @@ export default function LoanDuesLookup() {
                 <div className="mt-1 text-[10px] text-slate-500">Optional. Extra for Capital Build-Up.</div>
               </div>
             </div>
+
+            {/* Product-loan / rental balances owned by THIS borrower —
+                bundled onto the same OR receipt when ticked. Same
+                pattern as the water-pay modal. */}
+            {borrowerProductLoans.length > 0 && (
+              <div className="rounded-xl border border-violet-200 bg-violet-50/40 p-3">
+                <div className="text-[11px] font-bold uppercase tracking-widest text-violet-800 mb-2">
+                  Include product-loan / rental balances on this OR
+                </div>
+                <div className="space-y-1.5">
+                  {borrowerProductLoans.map((pl) => {
+                    const checked = pl._id in productLoanPicks;
+                    return (
+                      <label
+                        key={pl._id}
+                        className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 text-sm cursor-pointer transition ${
+                          checked
+                            ? "border-violet-300 bg-white shadow-sm"
+                            : "border-slate-200 bg-white hover:bg-violet-50"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => {
+                            setProductLoanPicks((prev) => {
+                              const next = { ...prev };
+                              if (e.target.checked) {
+                                next[pl._id] = Number(pl.balance || 0).toFixed(2);
+                              } else {
+                                delete next[pl._id];
+                              }
+                              return next;
+                            });
+                          }}
+                          className="h-4 w-4"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold text-slate-800 truncate">
+                            {pl.productName}
+                            <span className="ml-2 text-[10px] font-mono uppercase rounded bg-slate-100 px-1.5 py-0.5">
+                              {pl.transactionType}
+                            </span>
+                            {pl.productCategory && (
+                              <span className="ml-1 text-[10px] text-slate-500">· {pl.productCategory}</span>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-slate-500">
+                            balance {peso(pl.balance)}
+                            {pl.dueDate && ` · due ${new Date(pl.dueDate).toLocaleDateString("en-PH", { year: "2-digit", month: "short", day: "numeric" })}`}
+                            {pl.transactionType === "rental" && pl.returnDate &&
+                              ` · return ${new Date(pl.returnDate).toLocaleDateString("en-PH", { year: "2-digit", month: "short", day: "numeric" })}`}
+                          </div>
+                        </div>
+                        {checked && (
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            max={pl.balance}
+                            value={productLoanPicks[pl._id]}
+                            onChange={(e) =>
+                              setProductLoanPicks((prev) => ({ ...prev, [pl._id]: e.target.value }))
+                            }
+                            onClick={(e) => e.stopPropagation()}
+                            className="w-24 rounded-lg border border-violet-300 bg-violet-50 px-2 py-1 font-mono text-sm text-right"
+                          />
+                        )}
+                      </label>
+                    );
+                  })}
+                </div>
+                {productLoanSum > 0 && (
+                  <div className="mt-2 text-[11px] text-violet-800 font-semibold text-right">
+                    Product-loan portion: <b>{peso(productLoanSum)}</b>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Same three-line breakdown as the Water side: total
                 cash from the member, posted-to-loan portion, CBU
                 extracted. Live-updates with the inputs. */}
             {(() => {
               const billNum = Number(payReceived) || 0;
               const cbuNum = Math.max(0, Number(payCbu) || 0);
-              const totalNum = billNum + cbuNum;
+              const totalNum = billNum + cbuNum + productLoanSum;
               return (
                 <div className="rounded-xl border-2 border-emerald-300 bg-emerald-50 p-3 space-y-1.5">
                   <div className="flex items-center justify-between border-b border-emerald-200 pb-1.5">
@@ -626,6 +726,12 @@ export default function LoanDuesLookup() {
                     <span className="text-xs text-slate-700">↳ Posted to loan</span>
                     <span className="font-mono text-sm font-bold text-slate-800">{peso(billNum)}</span>
                   </div>
+                  {productLoanSum > 0 && (
+                    <div className="flex items-center justify-between pl-3">
+                      <span className="text-xs text-violet-700">↳ Applied to product loan(s)</span>
+                      <span className="font-mono text-sm font-bold text-violet-800">+{peso(productLoanSum)}</span>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between pl-3">
                     <span className="text-xs text-violet-700"><Wallet size={11} className="-mt-0.5 mr-1 inline" />↳ Extracted to CBU</span>
                     <span className="font-mono text-sm font-bold text-violet-800">+{peso(cbuNum)}</span>

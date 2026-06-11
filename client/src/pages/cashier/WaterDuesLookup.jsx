@@ -55,13 +55,25 @@ export default function WaterDuesLookup() {
   const [todayStats, setTodayStats] = useState(null);
   const [recents, setRecents] = useState(() => loadRecents());
   const searchRef = useRef(null);
+  // Map of productLoanId → ₱ amount to include on this OR. Reset
+  // every time the Pay modal opens so a previous pick doesn't bleed
+  // across receipts.
+  const [productLoanPicks, setProductLoanPicks] = useState({});
 
   function openPay(bill) {
     setPayTarget(bill);
     setPayOR("");
     setPayReceived(String(bill.totalDue || ""));
     setPayCbu("");
+    setProductLoanPicks({});
   }
+
+  // Sum of the cashier's product-loan picks — added to the bill
+  // portion to compute the total cash collected.
+  const productLoanSum = Object.values(productLoanPicks).reduce(
+    (s, v) => s + (Number(v) || 0),
+    0,
+  );
 
   async function submitPay(e) {
     e?.preventDefault?.();
@@ -69,11 +81,13 @@ export default function WaterDuesLookup() {
     const due = Number(payTarget.totalDue) || 0;
     const billPortion = Number(payReceived) || 0;
     const cbuPortion = Math.max(0, Number(payCbu) || 0);
-    // amountReceived sent to the server is the COMBINED cash collected.
-    // Anything beyond the bill portion is treated as CBU contribution
-    // server-side via the existing excess-to-CBU path, so no API change
-    // is needed — the UI just makes the split explicit.
-    const totalReceived = billPortion + cbuPortion;
+    // amountReceived now also includes any bundled product-loan picks.
+    // The server will deduct each pick from the matching product loan
+    // and only treat the rest as CBU excess.
+    const productLoanPayments = Object.entries(productLoanPicks)
+      .map(([id, amount]) => ({ id, amount: Number(amount) || 0 }))
+      .filter((p) => p.amount > 0);
+    const totalReceived = billPortion + cbuPortion + productLoanSum;
     if (!payOR.trim()) return toast.error("Enter the OR number.");
     if (billPortion < due) return toast.error(`Bill amount must be at least ₱${due.toFixed(2)}.`);
     setPaying(true);
@@ -90,6 +104,7 @@ export default function WaterDuesLookup() {
           orNo,
           amountReceived: totalReceived,
           method: "cash",
+          productLoanPayments,
         },
       });
       toast.success(res.message || "Payment posted.");
@@ -553,6 +568,88 @@ export default function WaterDuesLookup() {
                 <div className="mt-1 text-[10px] text-slate-500">Optional. Extra cash for Capital Build-Up.</div>
               </div>
             </div>
+
+            {/* Bundled product-loan / rental balances. Picker shows
+                every open product loan owned by this member; tick a
+                row → its balance gets pre-filled (cashier can edit
+                down for a partial). The OR receipt that comes out
+                covers water + every ticked product loan in one go. */}
+            {Array.isArray(data?.productLoans) && data.productLoans.length > 0 && (
+              <div className="rounded-xl border border-violet-200 bg-violet-50/40 p-3">
+                <div className="text-[11px] font-bold uppercase tracking-widest text-violet-800 mb-2">
+                  Include product-loan / rental balances on this OR
+                </div>
+                <div className="space-y-1.5">
+                  {data.productLoans.map((pl) => {
+                    const checked = pl._id in productLoanPicks;
+                    return (
+                      <label
+                        key={pl._id}
+                        className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 text-sm cursor-pointer transition ${
+                          checked
+                            ? "border-violet-300 bg-white shadow-sm"
+                            : "border-slate-200 bg-white hover:bg-violet-50"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => {
+                            setProductLoanPicks((prev) => {
+                              const next = { ...prev };
+                              if (e.target.checked) {
+                                next[pl._id] = Number(pl.balance || 0).toFixed(2);
+                              } else {
+                                delete next[pl._id];
+                              }
+                              return next;
+                            });
+                          }}
+                          className="h-4 w-4"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold text-slate-800 truncate">
+                            {pl.productName}
+                            <span className="ml-2 text-[10px] font-mono uppercase rounded bg-slate-100 px-1.5 py-0.5">
+                              {pl.transactionType}
+                            </span>
+                            {pl.productCategory && (
+                              <span className="ml-1 text-[10px] text-slate-500">· {pl.productCategory}</span>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-slate-500">
+                            balance {peso(pl.balance)}
+                            {pl.dueDate && ` · due ${new Date(pl.dueDate).toLocaleDateString("en-PH", { year: "2-digit", month: "short", day: "numeric" })}`}
+                            {pl.transactionType === "rental" && pl.returnDate &&
+                              ` · return ${new Date(pl.returnDate).toLocaleDateString("en-PH", { year: "2-digit", month: "short", day: "numeric" })}`}
+                          </div>
+                        </div>
+                        {checked && (
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            max={pl.balance}
+                            value={productLoanPicks[pl._id]}
+                            onChange={(e) =>
+                              setProductLoanPicks((prev) => ({ ...prev, [pl._id]: e.target.value }))
+                            }
+                            onClick={(e) => e.stopPropagation()}
+                            className="w-24 rounded-lg border border-violet-300 bg-violet-50 px-2 py-1 font-mono text-sm text-right"
+                          />
+                        )}
+                      </label>
+                    );
+                  })}
+                </div>
+                {productLoanSum > 0 && (
+                  <div className="mt-2 text-[11px] text-violet-800 font-semibold text-right">
+                    Product-loan portion: <b>{peso(productLoanSum)}</b>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Three-line breakdown so the cashier sees exactly how
                 the money splits before posting. Top-line is the cash
                 the member hands over; the indented rows show how much
@@ -561,7 +658,7 @@ export default function WaterDuesLookup() {
             {(() => {
               const billNum = Number(payReceived) || 0;
               const cbuNum = Math.max(0, Number(payCbu) || 0);
-              const totalNum = billNum + cbuNum;
+              const totalNum = billNum + cbuNum + productLoanSum;
               return (
                 <div className="rounded-xl border-2 border-emerald-300 bg-emerald-50 p-3 space-y-1.5">
                   <div className="flex items-center justify-between border-b border-emerald-200 pb-1.5">
@@ -572,6 +669,12 @@ export default function WaterDuesLookup() {
                     <span className="text-xs text-slate-700">↳ Posted to bill</span>
                     <span className="font-mono text-sm font-bold text-slate-800">{peso(billNum)}</span>
                   </div>
+                  {productLoanSum > 0 && (
+                    <div className="flex items-center justify-between pl-3">
+                      <span className="text-xs text-violet-700">↳ Applied to product loan(s)</span>
+                      <span className="font-mono text-sm font-bold text-violet-800">+{peso(productLoanSum)}</span>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between pl-3">
                     <span className="text-xs text-violet-700">↳ Extracted to CBU</span>
                     <span className="font-mono text-sm font-bold text-violet-800">+{peso(cbuNum)}</span>
