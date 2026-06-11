@@ -14,9 +14,11 @@ import mongoose from "mongoose";
 
 const BalanceAdjustmentSchema = new mongoose.Schema(
   {
-    module: { type: String, enum: ["cbu", "savings"], required: true, index: true },
+    module: { type: String, enum: ["cbu", "savings", "loan"], required: true, index: true },
     pnNo: { type: String, required: true, uppercase: true, trim: true, index: true },
     accountName: { type: String, default: "" }, // snapshot at request time
+    // For module="loan": the LoanApplication.loanId being adjusted.
+    refId: { type: String, default: "" },
 
     // credit = add to the member's balance; debit = subtract.
     type: { type: String, enum: ["credit", "debit"], required: true },

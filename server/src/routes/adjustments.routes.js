@@ -19,6 +19,7 @@ import WaterMember from "../models/WaterMember.js";
 import CbuTransaction from "../models/CbuTransaction.js";
 import SavingsAccount from "../models/SavingsAccount.js";
 import SavingsTransaction from "../models/SavingsTransaction.js";
+import LoanApplication from "../models/LoanApplication.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
 const router = express.Router();
@@ -44,8 +45,9 @@ router.post("/", requestGuard, async (req, res) => {
     const type = String(req.body?.type || "");
     const amount = round2(Number(req.body?.amount));
     const reason = String(req.body?.reason || "").trim();
+    const refId = String(req.body?.refId || "").trim().toUpperCase();
 
-    if (!["cbu", "savings"].includes(module)) return res.status(400).json({ message: "module must be cbu or savings." });
+    if (!["cbu", "savings", "loan"].includes(module)) return res.status(400).json({ message: "module must be cbu, savings, or loan." });
     if (!pnNo) return res.status(400).json({ message: "Account number is required." });
     if (!["credit", "debit"].includes(type)) return res.status(400).json({ message: "type must be credit or debit." });
     if (!(amount > 0)) return res.status(400).json({ message: "Amount must be greater than 0." });
@@ -59,11 +61,18 @@ router.post("/", requestGuard, async (req, res) => {
       if (!acct) return res.status(400).json({ message: "Member has no savings account." });
       if (acct.status === "closed") return res.status(400).json({ message: "Savings account is closed." });
     }
+    if (module === "loan") {
+      if (!refId) return res.status(400).json({ message: "Loan ID is required for loan adjustments." });
+      const loan = await LoanApplication.findOne({ loanId: refId }).select("loanId borrowerPnNo").lean();
+      if (!loan) return res.status(404).json({ message: `Loan ${refId} not found.` });
+      if (loan.borrowerPnNo !== pnNo) return res.status(400).json({ message: `Loan ${refId} belongs to a different member.` });
+    }
 
     const adj = await BalanceAdjustment.create({
       module,
       pnNo,
       accountName: member.accountName || "",
+      refId: module === "loan" ? refId : "",
       type,
       amount,
       reason,
@@ -144,6 +153,30 @@ router.post("/:id/approve", reviewGuard, async (req, res) => {
         });
         adj.balanceBefore = round2(newBal - signed);
         adj.balanceAfter = newBal;
+      } else if (adj.module === "loan") {
+        // Loan adjustment moves totalPaid (a CREDIT = additional amount
+        // recorded as paid → balance shrinks; a DEBIT = paid amount
+        // reduced → balance grows). The recompute follows the same
+        // balance = totalPayment − totalPaid pattern as every payment
+        // path so nothing desyncs.
+        const loan = await LoanApplication.findOne({ loanId: adj.refId });
+        if (!loan) throw new Error(`Loan ${adj.refId} no longer exists.`);
+        if (adj.type === "debit" && Number(loan.totalPaid || 0) < adj.amount) {
+          throw new Error(`Loan totalPaid is below ₱${adj.amount} — cannot debit.`);
+        }
+        await LoanApplication.updateOne(
+          { _id: loan._id },
+          { $inc: { totalPaid: adj.type === "credit" ? adj.amount : -adj.amount } }
+        );
+        const fresh = await LoanApplication.findById(loan._id).select("totalPayment totalPaid status");
+        const newBalance = round2(Math.max(0, Number(fresh.totalPayment || 0) - Number(fresh.totalPaid || 0)));
+        const setOps = { balance: newBalance };
+        // Close when fully paid; reopen if a debit re-exposed a balance.
+        if (newBalance <= 0 && fresh.status === "released") setOps.status = "closed";
+        if (newBalance > 0 && fresh.status === "closed") setOps.status = "released";
+        await LoanApplication.updateOne({ _id: loan._id }, { $set: setOps });
+        adj.balanceBefore = round2(newBalance + (adj.type === "credit" ? adj.amount : -adj.amount));
+        adj.balanceAfter = newBalance;
       } else {
         const cond = adj.type === "debit"
           ? { pnNo: adj.pnNo, status: "active", balance: { $gte: adj.amount } }

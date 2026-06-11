@@ -45,6 +45,7 @@ import maintenanceRoutes from "./routes/admin/maintenance.routes.js";
 
 import { auditLogger } from "./middleware/auditLogger.js";
 import { ensureBootstrapAdmin } from "./utils/ensureAdmin.js";
+import { startSavingsInterestJob } from "./jobs/savingsInterest.js";
 
 dotenv.config();
 
@@ -214,6 +215,9 @@ async function connectDB() {
     } catch (e) {
       console.error("⚠️  Bootstrap admin seeding failed (continuing):", e.message);
     }
+    // Hourly savings-interest check; no-op until the admin sets a
+    // non-zero rate in Savings Policy. Idempotent per period.
+    startSavingsInterestJob();
   } catch (err) {
     console.error("❌ MongoDB connection failed; retrying in 5s:", err.message);
     setTimeout(connectDB, 5000);

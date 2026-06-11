@@ -37,7 +37,7 @@ export default function AdjustmentsPanel() {
 
   // New-request modal (admin)
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ module: "cbu", pnNo: "", type: "credit", amount: "", reason: "" });
+  const [form, setForm] = useState({ module: "cbu", pnNo: "", refId: "", type: "credit", amount: "", reason: "" });
   const [memberLookup, setMemberLookup] = useState({ status: "idle", name: "", error: "" });
   const [submitting, setSubmitting] = useState(false);
 
@@ -76,6 +76,7 @@ export default function AdjustmentsPanel() {
 
   async function submit() {
     if (!form.pnNo.trim()) return toast.error("Account number is required.");
+    if (form.module === "loan" && !form.refId.trim()) return toast.error("Loan ID is required for loan adjustments.");
     if (!(Number(form.amount) > 0)) return toast.error("Enter an amount greater than 0.");
     if (!form.reason.trim()) return toast.error("A reason is required — it goes on the permanent record.");
     setSubmitting(true);
@@ -86,6 +87,7 @@ export default function AdjustmentsPanel() {
         body: {
           module: form.module,
           pnNo: form.pnNo.trim().toUpperCase(),
+          refId: form.refId.trim().toUpperCase(),
           type: form.type,
           amount: Number(form.amount),
           reason: form.reason.trim(),
@@ -93,7 +95,7 @@ export default function AdjustmentsPanel() {
       });
       toast.success("Adjustment filed — awaiting bookkeeper approval.");
       setOpen(false);
-      setForm({ module: "cbu", pnNo: "", type: "credit", amount: "", reason: "" });
+      setForm({ module: "cbu", pnNo: "", refId: "", type: "credit", amount: "", reason: "" });
       load();
     } catch (e) {
       toast.error(e.message);
@@ -197,9 +199,10 @@ export default function AdjustmentsPanel() {
                     {row.appliedRefOrNo && <div className="mt-0.5 font-mono text-[10px] text-slate-500">{row.appliedRefOrNo}</div>}
                   </td>
                   <td className="px-3 py-2">
-                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${row.module === "cbu" ? "bg-blue-100 text-blue-700" : "bg-pink-100 text-pink-700"}`}>
-                      {row.module === "cbu" ? "CBU" : "SAVINGS"}
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${row.module === "cbu" ? "bg-blue-100 text-blue-700" : row.module === "loan" ? "bg-violet-100 text-violet-700" : "bg-pink-100 text-pink-700"}`}>
+                      {row.module.toUpperCase()}
                     </span>
+                    {row.refId && <div className="mt-0.5 font-mono text-[10px] text-slate-500">{row.refId}</div>}
                   </td>
                   <td className="px-3 py-2">
                     <div className="font-semibold">{row.accountName}</div>
@@ -258,6 +261,7 @@ export default function AdjustmentsPanel() {
               <select value={form.module} onChange={(e) => setF("module", e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm">
                 <option value="cbu">Share Capital (CBU)</option>
                 <option value="savings">Voluntary Savings</option>
+                <option value="loan">Loan (paid amount)</option>
               </select>
             </div>
             <div>
@@ -283,6 +287,20 @@ export default function AdjustmentsPanel() {
               <div className="mt-1 rounded-xl bg-red-50 px-3 py-1.5 text-xs text-red-700">{memberLookup.error}</div>
             )}
           </div>
+          {form.module === "loan" && (
+            <div>
+              <label className="text-xs font-semibold text-slate-600">Loan ID</label>
+              <input
+                value={form.refId}
+                onChange={(e) => setF("refId", e.target.value)}
+                placeholder="e.g. LN-2026-0012"
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-mono uppercase"
+              />
+              <div className="mt-1 text-[10px] text-slate-500">
+                Credit = record additional paid amount (balance shrinks). Debit = reduce recorded paid (balance grows).
+              </div>
+            </div>
+          )}
           <div>
             <label className="text-xs font-semibold text-slate-600">Amount (₱)</label>
             <input
