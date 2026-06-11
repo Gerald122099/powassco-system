@@ -5,6 +5,7 @@ import Navbar from "../../components/Navbar";
 import PublicAppInstallBanner from "../../components/PublicAppInstallBanner";
 import logo from "../../assets/logo.png";
 import bg from "../../assets/bg.jpg";
+import developerPhoto from "../../assets/developer.jpg";
 import {
   Droplets,
   FileSearch,
@@ -14,7 +15,87 @@ import {
   ShieldCheck,
   Clock,
   Users,
+  Code2,
+  Send,
+  CheckCircle2,
 } from "lucide-react";
+
+// Public "message the developer" form. Submissions land in the admin
+// dashboard's Dev Feedback inbox (POST /public/dev-feedback — rate
+// limited to 5 per 10 minutes per IP against spam).
+function DeveloperFeedbackForm() {
+  const [name, setName] = useState("");
+  const [contact, setContact] = useState("");
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [err, setErr] = useState("");
+
+  async function submit(e) {
+    e.preventDefault();
+    setErr("");
+    if (message.trim().length < 5) { setErr("Please write a short message first."); return; }
+    setBusy(true);
+    try {
+      await apiFetch("/public/dev-feedback", {
+        method: "POST",
+        body: { name: name.trim(), contact: contact.trim(), message: message.trim(), page: window.location.pathname },
+      });
+      setSent(true);
+    } catch (e2) {
+      setErr(e2.message || "Failed to send — try again later.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (sent) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center rounded-2xl border border-emerald-300 bg-emerald-50 p-8 text-center">
+        <CheckCircle2 size={36} className="text-emerald-600" />
+        <div className="mt-3 font-bold text-emerald-900">Message sent — thank you!</div>
+        <div className="mt-1 text-sm text-emerald-700">Your feedback goes straight to the developer's inbox.</div>
+      </div>
+    );
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Your name (optional)"
+          maxLength={80}
+          className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+        />
+        <input
+          value={contact}
+          onChange={(e) => setContact(e.target.value)}
+          placeholder="Email / phone (optional)"
+          maxLength={120}
+          className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+        />
+      </div>
+      <textarea
+        value={message}
+        onChange={(e) => setMessage(e.target.value)}
+        rows={4}
+        maxLength={2000}
+        placeholder="Bug report, suggestion, or any feedback about the system…"
+        className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+        required
+      />
+      {err && <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{err}</div>}
+      <button
+        disabled={busy}
+        className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60"
+      >
+        <Send size={14} /> {busy ? "Sending…" : "Send to Developer"}
+      </button>
+    </form>
+  );
+}
 
 const services = [
   { icon: FileSearch, title: "Bill Inquiry", desc: "Check your water bill, consumption history, and payment status online.", to: "/inquiry", cta: "Check your bill" },
@@ -175,6 +256,64 @@ export default function HomePage() {
           <Link to="/inquiry" className="mt-6 inline-flex items-center gap-2 rounded-xl bg-white px-6 py-3 text-sm font-semibold text-emerald-800 shadow-lg transition hover:bg-emerald-50">
             Go to Bill Inquiry <ArrowRight size={16} />
           </Link>
+        </div>
+      </section>
+
+      {/* Developer spotlight + feedback inbox */}
+      <section className="mx-auto max-w-6xl px-5 pb-16">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <div className="rounded-3xl border border-slate-200 bg-gradient-to-br from-slate-900 to-slate-800 p-8 text-white shadow-xl">
+            <div className="inline-flex items-center gap-2 rounded-full bg-emerald-500/20 px-3 py-1 text-xs font-semibold text-emerald-300">
+              <Code2 size={14} /> System Developer
+            </div>
+            <div className="mt-4 flex items-center gap-4">
+              <img
+                src={developerPhoto}
+                alt="Gerald Durano"
+                className="h-20 w-20 rounded-2xl border-2 border-emerald-400/60 object-cover shadow-lg"
+              />
+              <div>
+                <h3 className="text-2xl font-extrabold tracking-tight">Gerald Durano</h3>
+                <a
+                  href="https://www.facebook.com/gerald.durano.16"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-1 inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-300 hover:text-emerald-200"
+                >
+                  {/* Facebook glyph (inline SVG — lucide has no brand icons) */}
+                  <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
+                    <path d="M24 12.073C24 5.405 18.627 0 12 0S0 5.405 0 12.073C0 18.1 4.388 23.094 10.125 24v-8.437H7.078v-3.49h3.047v-2.66c0-3.025 1.792-4.697 4.533-4.697 1.313 0 2.686.236 2.686.236v2.97H15.83c-1.491 0-1.956.93-1.956 1.886v2.265h3.328l-.532 3.49h-2.796V24C19.612 23.094 24 18.1 24 12.073z" />
+                  </svg>
+                  Contact Developer on Facebook
+                </a>
+              </div>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {[
+                "Full Stack Developer",
+                "MERN Software Engineer",
+                "AI Engineer",
+                "Data Analyst",
+                "Project Manager",
+                "Security Consultant",
+              ].map((t) => (
+                <span key={t} className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold text-slate-100">
+                  {t}
+                </span>
+              ))}
+            </div>
+            <p className="mt-4 text-sm leading-relaxed text-slate-300">
+              Designed and built the POWASSCO management system end to end — water billing, loans,
+              savings, payroll, online payments, and the member-facing PWA you're using right now.
+            </p>
+          </div>
+          <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
+            <h3 className="text-lg font-bold text-slate-900">Message the Developer</h3>
+            <p className="mt-1 mb-4 text-sm text-slate-500">
+              Found a bug? Have a suggestion? Send it straight to the developer's inbox.
+            </p>
+            <DeveloperFeedbackForm />
+          </div>
         </div>
       </section>
 

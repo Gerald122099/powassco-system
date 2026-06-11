@@ -8,6 +8,7 @@ import DangerZonePanel from "./DangerZonePanel";
 import MaintenancePanel from "./MaintenancePanel";
 import SavingsSettingsPanel from "./SavingsSettingsPanel";
 import AdjustmentsPanel from "../../components/AdjustmentsPanel";
+import DevFeedbackPanel from "./DevFeedbackPanel";
 import Card from "../../components/Card";
 import Modal from "../../components/Modal";
 import { apiFetch } from "../../lib/api";
@@ -109,6 +110,7 @@ const adminNavItems = [
   { key: "payments", label: "Payments", icon: CreditCard, desc: "Online payment mode, QR PH, and transaction fee" },
   { key: "security", label: "Security", icon: ShieldCheck, desc: "Two-factor authentication and access controls" },
   { key: "adjustments", label: "Adjustments", icon: Scale, desc: "File CBU / savings balance corrections — bookkeeper approves" },
+  { key: "dev-feedback", label: "Dev Feedback", icon: Inbox, desc: "Messages from the public 'Message the Developer' form" },
   { key: "savings-settings", label: "Savings Policy", icon: PiggyBank, desc: "Interest, minimum balance, opening fee for voluntary savings" },
   { key: "maintenance", label: "Maintenance", icon: Wrench, desc: "One-shot data fixes (e.g. regen amortization on imported loans)" },
   { key: "danger", label: "Danger Zone", icon: AlertTriangle, desc: "Reset operational data — keeps users, employees, settings" },
@@ -448,6 +450,7 @@ export default function AdminDashboard() {
 
         {/* Danger Zone — irreversible data reset (admin + password + 2FA) */}
         {activeTab === "adjustments" && <AdjustmentsPanel />}
+        {activeTab === "dev-feedback" && <DevFeedbackPanel />}
         {activeTab === "savings-settings" && <SavingsSettingsPanel />}
         {activeTab === "maintenance" && <MaintenancePanel />}
         {activeTab === "danger" && <DangerZonePanel />}
