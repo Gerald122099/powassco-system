@@ -15,9 +15,10 @@ import DashboardLayout from "../../components/DashboardLayout";
 import WaterDuesLookup from "./WaterDuesLookup";
 import LoanDuesLookup from "./LoanDuesLookup";
 import CollectionTodayPanel from "../../components/CollectionTodayPanel";
+import TransactionsPanel from "../bookkeeper/TransactionsPanel";
 import { apiFetch } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
-import { Droplets, Banknote, ReceiptText, Wallet, CheckCircle, TrendingUp } from "lucide-react";
+import { Droplets, Banknote, ReceiptText, Wallet, CheckCircle, TrendingUp, History } from "lucide-react";
 
 const peso = (n) =>
   "₱" + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -137,6 +138,7 @@ export default function CashierDashboard() {
             { key: "water", label: "Water Dues", icon: Droplets },
             { key: "loan", label: "Loan Dues", icon: Banknote },
             { key: "collections", label: "Today's Collection", icon: ReceiptText },
+            { key: "history", label: "Transaction History", icon: History },
           ].map(({ key, label, icon: Icon }) => (
             <button
               key={key}
@@ -160,6 +162,7 @@ export default function CashierDashboard() {
         {view === "water" && <WaterDuesLookup />}
         {view === "loan" && <LoanDuesLookup />}
         {view === "collections" && <CollectionTodayPanel module="all" />}
+        {view === "history" && <TransactionsPanel />}
       </div>
     </DashboardLayout>
   );

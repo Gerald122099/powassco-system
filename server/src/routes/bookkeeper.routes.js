@@ -41,7 +41,10 @@ function dateRange(fromStr, toStr) {
 }
 
 // ----- Transactions feed (cashier postings) -----
-router.get("/transactions", ...guard, async (req, res) => {
+// Cashier also reads this — they need to look up past ORs at the
+// counter ("did we already post this?", "show me yesterday's loan
+// payments by member X"). Read-only access.
+router.get("/transactions", requireAuth, requireRole(["admin", "bookkeeper", "cashier"]), async (req, res) => {
   try {
     const moduleParam = String(req.query.module || "all").toLowerCase();
     const q = String(req.query.q || "").trim();
@@ -50,6 +53,17 @@ router.get("/transactions", ...guard, async (req, res) => {
     const baseMatch = {};
     if (rangePaidAt) baseMatch.paidAt = rangePaidAt;
 
+    // Name search: WaterPayment / LoanPayment don't store accountName,
+    // so a free-text "Cudis Cinderila" wouldn't match either doc. We
+    // first map the query to the set of matching pnNos via WaterMember
+    // and OR that into the match.
+    const pnFromName = q
+      ? (await WaterMember.find({ accountName: { $regex: q, $options: "i" } })
+          .select("pnNo")
+          .limit(100)
+          .lean()).map((m) => m.pnNo)
+      : [];
+
     const orMatch = q
       ? [
           { orNo: { $regex: q, $options: "i" } },
@@ -57,6 +71,7 @@ router.get("/transactions", ...guard, async (req, res) => {
           { meterNumber: { $regex: q, $options: "i" } },
           { loanId: { $regex: q, $options: "i" } },
           { borrowerPnNo: { $regex: q, $options: "i" } },
+          ...(pnFromName.length ? [{ pnNo: { $in: pnFromName } }, { borrowerPnNo: { $in: pnFromName } }] : []),
         ]
       : null;
 
@@ -167,9 +182,12 @@ router.get("/members-cbu", ...guard, async (req, res) => {
       : [];
     const loanAr = new Map(loanArAgg.map((x) => [x._id, x]));
 
-    // AR Product Loan — sum of outstanding balance on active product
-    // loans + rentals owned by the member. Sales paid in full carry no
-    // balance so they roll up to 0.
+    // AR Product Loan — split into:
+    //   • TNPL: product loans where category="materials" (the paper
+    //     Cash Disbursement sheet's "AR TNPL" column).
+    //   • Other: every other product-loan category (frozen_goods,
+    //     rice, rental, appliance, construction, other).
+    // Sales paid in full carry no balance so they roll up to 0.
     const productArAgg = pnNos.length
       ? await ProductLoanApplication.aggregate([
           { $match: {
@@ -177,27 +195,40 @@ router.get("/members-cbu", ...guard, async (req, res) => {
               status: { $in: ["active", "released", "approved", "overdue"] },
               transactionType: { $in: ["loan", "rental"] },
             } },
-          { $group: { _id: "$borrowerPnNo", arProduct: { $sum: "$balance" }, productCount: { $sum: 1 } } },
+          { $group: {
+              _id: { pn: "$borrowerPnNo", isMaterials: { $eq: ["$category", "materials"] } },
+              ar: { $sum: "$balance" },
+              count: { $sum: 1 },
+            } },
         ])
       : [];
-    const productAr = new Map(productArAgg.map((x) => [x._id, x]));
+    const tnplAr = new Map();      // materials only
+    const otherProductAr = new Map(); // everything else
+    for (const row of productArAgg) {
+      const bucket = row._id.isMaterials ? tnplAr : otherProductAr;
+      bucket.set(row._id.pn, { ar: row.ar, count: row.count });
+    }
 
     const enriched = members.map((m) => {
       const w = waterAr.get(m.pnNo);
       const l = loanAr.get(m.pnNo);
-      const p = productAr.get(m.pnNo);
+      const t = tnplAr.get(m.pnNo);
+      const o = otherProductAr.get(m.pnNo);
       const arWater = round2(w?.arWater || 0);
       const arLoan = round2(l?.arLoan || 0);
-      const arProduct = round2(p?.arProduct || 0);
+      const arTnpl = round2(t?.ar || 0);
+      const arProduct = round2(o?.ar || 0);
       return {
         ...m,
         arWater,
         arWaterCount: w?.billCount || 0,
         arLoan,
         arLoanCount: l?.loanCount || 0,
+        arTnpl,
+        arTnplCount: t?.count || 0,
         arProduct,
-        arProductCount: p?.productCount || 0,
-        totalReceivable: round2(arWater + arLoan + arProduct),
+        arProductCount: o?.count || 0,
+        totalReceivable: round2(arWater + arLoan + arTnpl + arProduct),
       };
     });
 
@@ -206,9 +237,10 @@ router.get("/members-cbu", ...guard, async (req, res) => {
       cbu: total,
       arWater: round2(enriched.reduce((s, m) => s + m.arWater, 0)),
       arLoan: round2(enriched.reduce((s, m) => s + m.arLoan, 0)),
+      arTnpl: round2(enriched.reduce((s, m) => s + m.arTnpl, 0)),
       arProduct: round2(enriched.reduce((s, m) => s + m.arProduct, 0)),
     };
-    totals.totalReceivable = round2(totals.arWater + totals.arLoan + totals.arProduct);
+    totals.totalReceivable = round2(totals.arWater + totals.arLoan + totals.arTnpl + totals.arProduct);
 
     res.json({ members: enriched, total, totals, count: enriched.length });
   } catch (e) {

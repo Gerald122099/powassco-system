@@ -24,13 +24,13 @@ const fmtDateOnly = (d) => (d ? new Date(d).toLocaleDateString(undefined, { date
 function TotalsStrip({ totals, count }) {
   if (!totals) return null;
   return (
-    <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
+    <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
       <div className="rounded-xl border border-slate-200 bg-slate-50 p-2 text-xs">
         <div className="text-[10px] uppercase tracking-wide text-slate-500">Accounts shown</div>
         <div className="mt-0.5 font-mono text-base font-bold text-slate-800">{count}</div>
       </div>
       <div className="rounded-xl border border-blue-200 bg-blue-50 p-2 text-xs">
-        <div className="text-[10px] uppercase tracking-wide text-blue-700">CBU on file</div>
+        <div className="text-[10px] uppercase tracking-wide text-blue-700">Share Capital (CBU)</div>
         <div className="mt-0.5 font-mono text-base font-bold text-blue-800">{peso(totals.cbu)}</div>
       </div>
       <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-2 text-xs">
@@ -40,6 +40,10 @@ function TotalsStrip({ totals, count }) {
       <div className="rounded-xl border border-violet-200 bg-violet-50 p-2 text-xs">
         <div className="text-[10px] uppercase tracking-wide text-violet-700">AR Loan</div>
         <div className="mt-0.5 font-mono text-base font-bold text-violet-800">{peso(totals.arLoan)}</div>
+      </div>
+      <div className="rounded-xl border border-pink-200 bg-pink-50 p-2 text-xs">
+        <div className="text-[10px] uppercase tracking-wide text-pink-700">AR TNPL (Materials)</div>
+        <div className="mt-0.5 font-mono text-base font-bold text-pink-800">{peso(totals.arTnpl || 0)}</div>
       </div>
       <div className="rounded-xl border border-amber-200 bg-amber-50 p-2 text-xs">
         <div className="text-[10px] uppercase tracking-wide text-amber-700">Total receivable</div>
@@ -129,18 +133,19 @@ export default function MembersCbuPanel() {
                 <th className="px-3 py-2">Account No.</th>
                 <th className="px-3 py-2">Account name</th>
                 <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2 text-right">CBU</th>
+                <th className="px-3 py-2 text-right">Share Capital (CBU)</th>
                 <th className="px-3 py-2 text-right">AR Water</th>
                 <th className="px-3 py-2 text-right">AR Loan</th>
-                <th className="px-3 py-2 text-right">AR Product</th>
+                <th className="px-3 py-2 text-right">AR TNPL</th>
+                <th className="px-3 py-2 text-right">AR Other</th>
                 <th className="px-3 py-2 text-right">Total receivable</th>
               </tr>
             </thead>
             <tbody>
               {!data ? (
-                <tr><td colSpan={8} className="py-10 text-center text-slate-500">Loading…</td></tr>
+                <tr><td colSpan={9} className="py-10 text-center text-slate-500">Loading…</td></tr>
               ) : data.members.length === 0 ? (
-                <tr><td colSpan={8} className="py-10 text-center text-slate-500">No accounts match.</td></tr>
+                <tr><td colSpan={9} className="py-10 text-center text-slate-500">No accounts match.</td></tr>
               ) : (
                 data.members.map((m) => {
                   const hasReceivable = m.totalReceivable > 0;
@@ -164,6 +169,9 @@ export default function MembersCbuPanel() {
                       <td className={`px-3 py-2 text-right font-mono ${m.arLoan > 0 ? "text-violet-700 font-bold" : "text-slate-400"}`}>
                         {peso(m.arLoan)}{m.arLoanCount > 0 && <span className="ml-1 text-[10px] text-slate-500">({m.arLoanCount})</span>}
                       </td>
+                      <td className={`px-3 py-2 text-right font-mono ${m.arTnpl > 0 ? "text-pink-700 font-bold" : "text-slate-400"}`}>
+                        {peso(m.arTnpl || 0)}{m.arTnplCount > 0 && <span className="ml-1 text-[10px] text-slate-500">({m.arTnplCount})</span>}
+                      </td>
                       <td className={`px-3 py-2 text-right font-mono ${m.arProduct > 0 ? "text-orange-700 font-bold" : "text-slate-400"}`}>
                         {peso(m.arProduct)}{m.arProductCount > 0 && <span className="ml-1 text-[10px] text-slate-500">({m.arProductCount})</span>}
                       </td>
@@ -182,7 +190,7 @@ export default function MembersCbuPanel() {
       <Modal
         open={!!openMember}
         title={openMember ? openMember.accountName : ""}
-        subtitle={openMember ? `${openMember.pnNo} • CBU ${peso(openMember.cbuBalance)} • Receivable ${peso(openMember.totalReceivable)}` : ""}
+        subtitle={openMember ? `${openMember.pnNo} • Share Capital (CBU) ${peso(openMember.cbuBalance)} • Receivable ${peso(openMember.totalReceivable)}` : ""}
         onClose={() => { setOpenMember(null); setDetail(null); }}
         size="xl"
       >
@@ -309,7 +317,7 @@ export default function MembersCbuPanel() {
             <DetailSection
               icon={Wallet}
               color="blue"
-              title="CBU ledger"
+              title="Share Capital (CBU) ledger"
               count={detail.ledger.length}
               total={openMember?.cbuBalance || 0}
               emptyText="No CBU activity yet."
