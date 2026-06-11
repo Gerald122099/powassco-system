@@ -25,7 +25,20 @@ const CbuTransactionSchema = new mongoose.Schema(
     // the cashier; "manual_adjust" / "product_loan_charge" = bookkeeper.
     source: {
       type: String,
-      enum: ["water_overpay", "loan_overpay", "manual_adjust", "product_loan_charge", "withdrawal"],
+      enum: [
+        "water_overpay",
+        "loan_overpay",
+        "manual_adjust",
+        "product_loan_charge",
+        "withdrawal",
+        // Cashier-initiated direct CBU credit bundled into a water/loan
+        // OR (added 2026-06-12). The previous enum was missing this and
+        // every direct contribution silently 500'd AFTER the bill was
+        // already marked paid — leaving split state.
+        "cashier_contribution",
+        // Reserved for the upcoming interest-accrual cron (Phase 6).
+        "interest",
+      ],
       required: true,
       index: true,
     },

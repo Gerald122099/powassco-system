@@ -36,17 +36,28 @@ const payGuard = [requireAuth, requireRole(["admin", "cashier"])];
 
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
-// Append a CBU credit and bump the member's running balance. Returns the new balance.
+// Append a CBU credit and bump the member's running balance.
+// CRITICAL: uses $inc with findOneAndUpdate, NOT member.save() with a
+// precomputed value. Two concurrent credits (water_overpay + a bundled
+// cashier_contribution on the same OR; or two cashiers in parallel)
+// would otherwise both load the same pre-balance and the second
+// .save() would silently overwrite the first's increment — money lost
+// from the cached balance while the ledger rows show both credits.
 async function creditCbu({ member, amount, source, refOrNo, waterPaymentId = null, loanPaymentId = null, postedBy, note = "" }) {
   if (!member || !(amount > 0)) return Number(member?.cbuBalance || 0);
-  member.cbuBalance = round2(Number(member.cbuBalance || 0) + Number(amount));
-  await member.save();
+  const amt = round2(Number(amount));
+  const updated = await WaterMember.findOneAndUpdate(
+    { _id: member._id },
+    { $inc: { cbuBalance: amt } },
+    { new: true }
+  );
+  const newBal = round2(Number(updated?.cbuBalance || 0));
   await CbuTransaction.create({
     pnNo: member.pnNo,
     accountName: member.accountName,
     type: "credit",
-    amount: round2(amount),
-    balanceAfter: member.cbuBalance,
+    amount: amt,
+    balanceAfter: newBal,
     source,
     refOrNo,
     waterPaymentId,
@@ -54,7 +65,7 @@ async function creditCbu({ member, amount, source, refOrNo, waterPaymentId = nul
     note,
     postedBy,
   });
-  return member.cbuBalance;
+  return newBal;
 }
 
 const escapeRegex = (s) => String(s || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

@@ -48,22 +48,22 @@ function isValidPin(v) {
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 const normPN = (s) => String(s || "").toUpperCase().trim();
 
-// Yearly-ish OR sequence for savings receipts. Format: SAV-YYYYMMDD-NNNNN.
-// Counter is per-day so we don't need a separate collection; we just
-// count today's transactions and add 1. Collision is ruled out by the
-// unique index on orNo (race => 11000 dup error => we retry once).
-async function nextSavingsOr() {
+// OR sequence for savings receipts. Format: SAV-YYYYMMDD-HHMMSS-RAND.
+// The previous count-based generator was racy: two concurrent deposits
+// both read N and both minted SAV-…-(N+1), causing E11000 on insert
+// (audit finding #4). Using timestamp + a 4-char random suffix is
+// effectively collision-free; the unique index on orNo is still the
+// race breaker if luck ever turns up a dup (route retries once).
+function makeSavingsOr() {
   const now = new Date();
   const y = now.getFullYear();
   const m = String(now.getMonth() + 1).padStart(2, "0");
   const d = String(now.getDate()).padStart(2, "0");
-  const prefix = `SAV-${y}${m}${d}`;
-  const startOfDay = new Date(y, now.getMonth(), now.getDate());
-  const startOfNextDay = new Date(y, now.getMonth(), now.getDate() + 1);
-  const count = await SavingsTransaction.countDocuments({
-    createdAt: { $gte: startOfDay, $lt: startOfNextDay },
-  });
-  return `${prefix}-${String(count + 1).padStart(5, "0")}`;
+  const hh = String(now.getHours()).padStart(2, "0");
+  const mm = String(now.getMinutes()).padStart(2, "0");
+  const ss = String(now.getSeconds()).padStart(2, "0");
+  const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
+  return `SAV-${y}${m}${d}-${hh}${mm}${ss}-${rand}`;
 }
 
 // ─── Settings ──────────────────────────────────────────────────────
@@ -201,6 +201,11 @@ router.post("/deposit", txGuard, async (req, res) => {
     const amount = round2(Number(req.body?.amount));
     const method = req.body?.method || "cash";
     const note = String(req.body?.note || "").trim();
+    // Idempotency key — client-supplied, used to dedupe a double-click
+    // or retry over a flaky network. If absent, we fall back to a
+    // single-use generator (no idempotency, no harm but no protection
+    // either).
+    const clientKey = String(req.body?.idempotencyKey || "").trim();
     if (!pnNo) return res.status(400).json({ message: "Account number is required." });
     if (!(amount > 0)) return res.status(400).json({ message: "Deposit amount must be greater than 0." });
 
@@ -208,14 +213,18 @@ router.post("/deposit", txGuard, async (req, res) => {
     if (!account) return res.status(404).json({ message: "No savings account for this member. Open one first." });
     if (account.status === "closed") return res.status(400).json({ message: "Account is closed." });
 
-    const orNo = await nextSavingsOr();
-    // Increment balance atomically. Even if two deposits race, both
-    // succeed because $inc is commutative — final balance is correct.
-    const updated = await SavingsAccount.findOneAndUpdate(
-      { _id: account._id },
-      { $inc: { balance: amount } },
-      { new: true }
-    );
+    // Dedupe: if the client retried with the same key, return the
+    // previous tx instead of double-crediting.
+    if (clientKey) {
+      const prior = await SavingsTransaction.findOne({ note: { $regex: new RegExp(`\\bIDEMP:${clientKey}\\b`) } });
+      if (prior) return res.status(200).json({ tx: prior, account: account.toObject(), idempotent: true });
+    }
+
+    const orNo = makeSavingsOr();
+    // CRITICAL: insert ledger row FIRST. If the $inc later fails for
+    // any reason, the orphaned ledger row is detectable (it has no
+    // matching balance delta) — better than the reverse where balance
+    // moves but no row exists. Unique index on orNo blocks dup-insert.
     const tx = await SavingsTransaction.create({
       pnNo,
       type: "deposit",
@@ -223,11 +232,23 @@ router.post("/deposit", txGuard, async (req, res) => {
       orNo,
       method,
       receivedBy: req.user?.fullName || req.user?.employeeId || "",
-      balanceAfter: round2(updated.balance),
-      note,
+      balanceAfter: 0, // filled in below after the $inc
+      paidAt: new Date(),
+      note: clientKey ? `${note} IDEMP:${clientKey}`.trim() : note,
     });
+    // Atomic increment. Two concurrent deposits both succeed; final
+    // balance equals account.balance + both amounts.
+    const updated = await SavingsAccount.findOneAndUpdate(
+      { _id: account._id },
+      { $inc: { balance: amount } },
+      { new: true }
+    );
+    // Update the ledger row's balanceAfter to the post-increment value.
+    tx.balanceAfter = round2(updated.balance);
+    await tx.save();
     res.status(201).json({ tx: tx.toObject(), account: updated.toObject() });
   } catch (e) {
+    if (e?.code === 11000) return res.status(409).json({ message: "OR number race — retry the deposit." });
     res.status(500).json({ message: e.message || "Failed to record deposit." });
   }
 });
@@ -263,12 +284,13 @@ router.post("/withdraw", txGuard, async (req, res) => {
       });
     }
 
-    const orNo = await nextSavingsOr();
+    const orNo = makeSavingsOr();
     // Race-safe decrement: only if balance still has enough at the
     // moment of the write. If a concurrent withdrawal drained it
     // first, the update matches zero docs and we surface a clean error.
+    const minRequired = closing ? amount : amount + minBal;
     const updated = await SavingsAccount.findOneAndUpdate(
-      { _id: account._id, balance: { $gte: amount } },
+      { _id: account._id, balance: { $gte: minRequired } },
       { $inc: { balance: -amount } },
       { new: true }
     );
@@ -283,10 +305,12 @@ router.post("/withdraw", txGuard, async (req, res) => {
       method,
       receivedBy: req.user?.fullName || req.user?.employeeId || "",
       balanceAfter: round2(updated.balance),
+      paidAt: new Date(),
       note,
     });
     res.status(201).json({ tx: tx.toObject(), account: updated.toObject() });
   } catch (e) {
+    if (e?.code === 11000) return res.status(409).json({ message: "OR number race — retry the withdrawal." });
     res.status(500).json({ message: e.message || "Failed to record withdrawal." });
   }
 });
