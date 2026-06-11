@@ -3,10 +3,17 @@ import Card from "../../components/Card";
 import Modal from "../../components/Modal";
 import { apiFetch } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
-import { Plus, Pencil, Trash2, RefreshCw, Wallet } from "lucide-react";
+import { Plus, Pencil, Trash2, RefreshCw, Wallet, Check, X, Send, Clock } from "lucide-react";
 
 const PAGE_SIZE = 15;
 const METHODS = ["cash", "check", "bank", "gcash", "other"];
+
+const STATUS_BADGE = {
+  pending: "bg-amber-100 text-amber-800",
+  approved: "bg-blue-100 text-blue-800",
+  disbursed: "bg-emerald-100 text-emerald-800",
+  rejected: "bg-rose-100 text-rose-800",
+};
 
 function peso(n) {
   return "₱ " + Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -20,12 +27,13 @@ function today() {
 const inputCls =
   "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100";
 
-const EMPTY = { date: today(), category: "", description: "", payee: "", amount: "", reference: "", paymentMethod: "cash", notes: "" };
+const EMPTY = { date: today(), category: "", description: "", payee: "", amount: "", reference: "", paymentMethod: "cash", notes: "", asRequest: true };
 
 export default function ExpensesPanel() {
   const { token } = useAuth();
   const [q, setQ] = useState("");
   const [category, setCategory] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [page, setPage] = useState(1);
@@ -54,6 +62,7 @@ export default function ExpensesPanel() {
     setErr("");
     try {
       const qs = new URLSearchParams({ q, category, from, to, page: String(page), limit: String(PAGE_SIZE) });
+      if (statusFilter) qs.set("status", statusFilter);
       const [list, sum] = await Promise.all([
         apiFetch(`/expenses?${qs}`, { token }),
         apiFetch(`/expenses/summary?${new URLSearchParams({ from, to })}`, { token }),
@@ -69,7 +78,19 @@ export default function ExpensesPanel() {
   }
   useEffect(() => {
     load(); /* eslint-disable-next-line */
-  }, [q, category, from, to, page]);
+  }, [q, category, statusFilter, from, to, page]);
+
+  async function approve(row) {
+    if (!confirm(`Approve ${peso(row.amount)} to ${row.payee || "—"}?`)) return;
+    try { await apiFetch(`/expenses/${row._id}/approve`, { method: "POST", token }); flash("Approved."); await load(); }
+    catch (e) { setErr(e.message); }
+  }
+  async function reject(row) {
+    const reason = prompt("Reason for rejecting this request?", "");
+    if (reason === null) return;
+    try { await apiFetch(`/expenses/${row._id}/reject`, { method: "POST", token, body: { reason } }); flash("Rejected."); await load(); }
+    catch (e) { setErr(e.message); }
+  }
 
   function flash(m) {
     setToast(m);
@@ -176,6 +197,24 @@ export default function ExpensesPanel() {
           <option value="">All categories</option>
           {cats.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
+        <div className="inline-flex rounded-xl border border-slate-200 p-1">
+          {[
+            ["", "All"],
+            ["pending", "Pending"],
+            ["approved", "Approved"],
+            ["disbursed", "Disbursed"],
+            ["rejected", "Rejected"],
+          ].map(([k, label]) => (
+            <button
+              key={k || "all"}
+              type="button"
+              onClick={() => { setPage(1); setStatusFilter(k); }}
+              className={`rounded-lg px-3 py-1 text-xs font-semibold ${statusFilter === k ? "bg-emerald-600 text-white" : "text-slate-700 hover:bg-slate-50"}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <div>
           <label className="block text-xs font-semibold text-slate-600">From</label>
           <input type="date" value={from} onChange={(e) => { setPage(1); setFrom(e.target.value); }} className="rounded-xl border border-slate-200 px-3 py-2 text-sm" />
@@ -192,6 +231,7 @@ export default function ExpensesPanel() {
           <thead className="bg-slate-50 text-left text-slate-500">
             <tr>
               <th className="px-4 py-3">Date</th>
+              <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3">Category</th>
               <th className="px-4 py-3">Payee / Description</th>
               <th className="px-4 py-3">OR / Ref</th>
@@ -201,13 +241,21 @@ export default function ExpensesPanel() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={6} className="py-10 text-center text-slate-500">Loading…</td></tr>
+              <tr><td colSpan={7} className="py-10 text-center text-slate-500">Loading…</td></tr>
             ) : items.length === 0 ? (
-              <tr><td colSpan={6} className="py-10 text-center text-slate-500">No expenses found.</td></tr>
+              <tr><td colSpan={7} className="py-10 text-center text-slate-500">No expenses found.</td></tr>
             ) : (
-              items.map((row) => (
+              items.map((row) => {
+                const status = row.status || "disbursed";
+                return (
                 <tr key={row._id} className="border-t hover:bg-slate-50/60">
                   <td className="px-4 py-3 whitespace-nowrap">{dt(row.date)}</td>
+                  <td className="px-4 py-3">
+                    <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase ${STATUS_BADGE[status] || STATUS_BADGE.disbursed}`}>{status}</span>
+                    {status === "disbursed" && row.disbursementOr && (
+                      <div className="mt-0.5 text-[10px] text-slate-500">OR {row.disbursementOr}</div>
+                    )}
+                  </td>
                   <td className="px-4 py-3"><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">{row.category}</span></td>
                   <td className="px-4 py-3">
                     <div className="font-medium text-slate-800">{row.payee || "—"}</div>
@@ -219,11 +267,21 @@ export default function ExpensesPanel() {
                   </td>
                   <td className="px-4 py-3 text-right font-bold text-slate-900 whitespace-nowrap">{peso(row.amount)}</td>
                   <td className="px-4 py-3 text-right whitespace-nowrap">
+                    {status === "pending" && (
+                      <>
+                        <button onClick={() => approve(row)} className="mr-1 inline-flex items-center justify-center rounded-lg border border-emerald-200 p-2 text-emerald-700 hover:bg-emerald-50" title="Approve"><Check size={14} /></button>
+                        <button onClick={() => reject(row)} className="mr-1 inline-flex items-center justify-center rounded-lg border border-rose-200 p-2 text-rose-700 hover:bg-rose-50" title="Reject"><X size={14} /></button>
+                      </>
+                    )}
+                    {status === "approved" && (
+                      <span className="mr-2 inline-flex items-center gap-1 rounded-lg bg-blue-50 px-2 py-1 text-[10px] font-bold text-blue-700"><Clock size={12} /> awaiting cashier</span>
+                    )}
                     <button onClick={() => openEdit(row)} className="mr-1 inline-flex items-center justify-center rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50" title="Edit"><Pencil size={14} /></button>
                     <button onClick={() => remove(row)} className="inline-flex items-center justify-center rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50" title="Delete"><Trash2 size={14} /></button>
                   </td>
                 </tr>
-              ))
+                );
+              })
             )}
           </tbody>
         </table>
@@ -277,6 +335,26 @@ export default function ExpensesPanel() {
             <label className="text-xs font-semibold text-slate-600">Notes</label>
             <input value={form.notes} onChange={(e) => setF("notes", e.target.value)} className={`mt-1 ${inputCls}`} />
           </div>
+          {!editing && (
+            <div className="sm:col-span-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2">
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={!!form.asRequest}
+                  onChange={(e) => setF("asRequest", e.target.checked)}
+                  className="mt-0.5"
+                />
+                <div className="text-xs">
+                  <div className="font-bold text-blue-900 flex items-center gap-1"><Send size={12} /> File as disbursement request</div>
+                  <div className="text-blue-700">
+                    Checked: the cashier sees this in their Disbursements queue and pays it out (recording the OR/DV).
+                    <br />
+                    Unchecked: log it directly as already-disbursed (legacy entry, no cashier involvement).
+                  </div>
+                </div>
+              </label>
+            </div>
+          )}
         </div>
         {err && <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{err}</div>}
         <div className="mt-5 flex justify-end gap-2">

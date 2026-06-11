@@ -25,6 +25,29 @@ const ExpenseSchema = new mongoose.Schema(
     paymentMethod: { type: String, enum: ["cash", "check", "bank", "gcash", "other"], default: "cash" },
     notes: { type: String, default: "", trim: true },
     recordedBy: { type: String, default: "" },
+
+    // Request / approve / disburse workflow (added 2026-06-12).
+    //   pending   — admin/manager filed a request; awaits cashier action
+    //   approved  — admin/manager approved; awaits cashier disbursement
+    //   disbursed — cashier paid cash out and recorded the OR / DV
+    //   rejected  — admin/manager declined; no cash moves
+    // Legacy rows (no status set) are treated as already-disbursed by
+    // the read paths so this is backwards-compatible.
+    status: {
+      type: String,
+      enum: ["pending", "approved", "disbursed", "rejected"],
+      default: "disbursed",
+      index: true,
+    },
+    requestedBy: { type: String, default: "" },
+    approvedBy: { type: String, default: "" },
+    approvedAt: { type: Date, default: null },
+    disbursedBy: { type: String, default: "" }, // cashier name
+    disbursedAt: { type: Date, default: null },
+    disbursementOr: { type: String, default: "", trim: true }, // OR / DV no.
+    rejectedBy: { type: String, default: "" },
+    rejectedAt: { type: Date, default: null },
+    rejectionReason: { type: String, default: "" },
   },
   { timestamps: true }
 );

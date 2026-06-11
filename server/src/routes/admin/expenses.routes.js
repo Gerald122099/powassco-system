@@ -4,6 +4,11 @@ import { requireAuth, requireRole } from "../../middleware/auth.js";
 
 const router = express.Router();
 const guard = [requireAuth, requireRole(["admin"])];
+// Read-side endpoints (categories, list, summary) are also useful for
+// the bookkeeper / cashier so the disbursement queue and reports can
+// look up the same data without a duplicate route. Cashier needs access
+// for the Disbursements tab; bookkeeper for cash-out reporting.
+const readGuard = [requireAuth, requireRole(["admin", "bookkeeper", "cashier"])];
 
 function dateRange(from, to) {
   const range = {};
@@ -17,20 +22,26 @@ function dateRange(from, to) {
 }
 
 // Suggested categories for the UI dropdown
-router.get("/categories", guard, (req, res) => {
+router.get("/categories", readGuard, (req, res) => {
   res.json(EXPENSE_CATEGORIES);
 });
 
-// List with filters: q, category, from, to, page, limit
-router.get("/", guard, async (req, res) => {
-  const { q = "", category = "", from = "", to = "", page = "1", limit = "15" } = req.query;
+// List with filters: q, category, status, from, to, page, limit
+router.get("/", readGuard, async (req, res) => {
+  const { q = "", category = "", status = "", from = "", to = "", page = "1", limit = "15" } = req.query;
   const filter = {};
   if (category) filter.category = category;
+  if (status) {
+    // Comma-separated list ("pending,approved") is supported so the
+    // cashier's disbursement queue can ask for both with one call.
+    const arr = String(status).split(",").map((s) => s.trim()).filter(Boolean);
+    filter.status = arr.length === 1 ? arr[0] : { $in: arr };
+  }
   const dr = dateRange(from, to);
   if (dr) filter.date = dr;
   if (q) {
     const rx = new RegExp(String(q).trim(), "i");
-    filter.$or = [{ category: rx }, { description: rx }, { payee: rx }, { reference: rx }];
+    filter.$or = [{ category: rx }, { description: rx }, { payee: rx }, { reference: rx }, { disbursementOr: rx }];
   }
   const pg = Math.max(1, parseInt(page, 10) || 1);
   const lim = Math.min(100, Math.max(1, parseInt(limit, 10) || 15));
@@ -66,9 +77,14 @@ router.get("/summary", guard, async (req, res) => {
 });
 
 router.post("/", guard, async (req, res) => {
-  const { date, category, description, payee, amount, reference, paymentMethod, notes } = req.body;
+  const { date, category, description, payee, amount, reference, paymentMethod, notes, asRequest } = req.body;
   if (!category || !String(category).trim()) return res.status(400).json({ message: "Category is required." });
   if (!(Number(amount) >= 0)) return res.status(400).json({ message: "A valid amount is required." });
+  const userName = req.user?.fullName || req.user?.employeeId || "";
+  // asRequest=true → file a disbursement REQUEST for the cashier to pay.
+  // asRequest=false (default) → admin records a past-tense expense
+  // directly (legacy behavior; immediately disbursed).
+  const useRequestFlow = !!asRequest;
   const exp = await Expense.create({
     date: date ? new Date(date) : new Date(),
     category: String(category).trim(),
@@ -78,9 +94,69 @@ router.post("/", guard, async (req, res) => {
     reference: reference || "",
     paymentMethod: paymentMethod || "cash",
     notes: notes || "",
-    recordedBy: req.user?.fullName || req.user?.employeeId || "",
+    recordedBy: userName,
+    status: useRequestFlow ? "pending" : "disbursed",
+    requestedBy: useRequestFlow ? userName : "",
+    // For direct-entry (legacy) rows the admin IS the disburser of
+    // record, so the timestamps + name are filled inline.
+    disbursedBy: useRequestFlow ? "" : userName,
+    disbursedAt: useRequestFlow ? null : new Date(),
   });
   res.status(201).json(exp);
+});
+
+// Admin approve — a pending request becomes approved; cashier will see
+// it in the disbursement queue.
+router.post("/:id/approve", guard, async (req, res) => {
+  const exp = await Expense.findById(req.params.id);
+  if (!exp) return res.status(404).json({ message: "Expense not found." });
+  if (exp.status !== "pending") {
+    return res.status(409).json({ message: `Expense is ${exp.status}, can't approve.` });
+  }
+  exp.status = "approved";
+  exp.approvedBy = req.user?.fullName || req.user?.employeeId || "";
+  exp.approvedAt = new Date();
+  await exp.save();
+  res.json(exp);
+});
+
+// Admin reject — a pending request is declined.
+router.post("/:id/reject", guard, async (req, res) => {
+  const exp = await Expense.findById(req.params.id);
+  if (!exp) return res.status(404).json({ message: "Expense not found." });
+  if (exp.status !== "pending" && exp.status !== "approved") {
+    return res.status(409).json({ message: `Expense is ${exp.status}, can't reject.` });
+  }
+  exp.status = "rejected";
+  exp.rejectedBy = req.user?.fullName || req.user?.employeeId || "";
+  exp.rejectedAt = new Date();
+  exp.rejectionReason = String(req.body?.reason || "").trim();
+  await exp.save();
+  res.json(exp);
+});
+
+// Cashier disburse — records the OR / DV number and flips the row to
+// disbursed. Only approved rows can be disbursed (no double-spend).
+// Lives on this route so cashier + admin both hit the same endpoint;
+// the route guard widens to include cashier.
+router.post("/:id/disburse", requireAuth, requireRole(["admin", "cashier"]), async (req, res) => {
+  const { disbursementOr, paymentMethod, notes } = req.body || {};
+  if (!disbursementOr || !String(disbursementOr).trim()) {
+    return res.status(400).json({ message: "OR / DV number is required." });
+  }
+  const exp = await Expense.findById(req.params.id);
+  if (!exp) return res.status(404).json({ message: "Expense not found." });
+  if (exp.status !== "approved") {
+    return res.status(409).json({ message: `Expense is ${exp.status}, can't disburse.` });
+  }
+  exp.status = "disbursed";
+  exp.disbursedBy = req.user?.fullName || req.user?.employeeId || "";
+  exp.disbursedAt = new Date();
+  exp.disbursementOr = String(disbursementOr).trim();
+  if (paymentMethod) exp.paymentMethod = paymentMethod;
+  if (notes) exp.notes = String(notes).trim();
+  await exp.save();
+  res.json(exp);
 });
 
 router.put("/:id", guard, async (req, res) => {
