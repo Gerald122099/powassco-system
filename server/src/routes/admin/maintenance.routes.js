@@ -17,6 +17,7 @@
 import express from "express";
 import { requireAuth, requireRole } from "../../middleware/auth.js";
 import { regenLoanAmortization } from "../../scripts/regenLoanAmortization.js";
+import { rebuildLoanCharges } from "../../scripts/rebuildLoanCharges.js";
 
 const router = express.Router();
 const guard = [requireAuth, requireRole(["admin"])];
@@ -28,6 +29,19 @@ router.post("/regen-loan-amortization", guard, async (req, res) => {
   }
   try {
     const summary = await regenLoanAmortization({ all: Boolean(all), dry: Boolean(dry) });
+    res.json({ mode: { all: Boolean(all), dry: Boolean(dry) }, ...summary });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post("/rebuild-loan-charges", guard, async (req, res) => {
+  const { confirm, all = false, dry = true } = req.body || {};
+  if (confirm !== "REBUILD CHARGES") {
+    return res.status(400).json({ error: 'Pass { confirm: "REBUILD CHARGES" } to proceed.' });
+  }
+  try {
+    const summary = await rebuildLoanCharges({ all: Boolean(all), dry: Boolean(dry) });
     res.json({ mode: { all: Boolean(all), dry: Boolean(dry) }, ...summary });
   } catch (e) {
     res.status(500).json({ error: e.message });

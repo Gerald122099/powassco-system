@@ -18,6 +18,8 @@ import express from "express";
 import WaterPayment from "../models/WaterPayment.js";
 import LoanPayment from "../models/LoanPayment.js";
 import WaterMember from "../models/WaterMember.js";
+import WaterBill from "../models/WaterBill.js";
+import LoanApplication from "../models/LoanApplication.js";
 import CbuTransaction from "../models/CbuTransaction.js";
 import { ProductLoanCatalog, ProductLoanApplication } from "../models/ProductLoan.js";
 import LoanSettings from "../models/LoanSettings.js";
@@ -120,7 +122,10 @@ router.get("/transactions", ...guard, async (req, res) => {
   }
 });
 
-// ----- Per-member CBU balances + history -----
+// ----- Per-member balances (CBU + AR Water + AR Loan + AR Product) -----
+// Unified view the bookkeeper opens to see every receivable on an
+// account in one row. Each AR column is computed server-side so the
+// client doesn't have to fan out per-member.
 router.get("/members-cbu", ...guard, async (req, res) => {
   try {
     const q = String(req.query.q || "").trim();
@@ -132,27 +137,117 @@ router.get("/members-cbu", ...guard, async (req, res) => {
       : {};
     const members = await WaterMember.find(filter)
       .select("pnNo accountName cbuBalance accountStatus")
-      .sort({ cbuBalance: -1, accountName: 1 })
+      .sort({ accountName: 1 })
       .limit(500)
       .lean();
 
-    const total = round2(members.reduce((s, m) => s + Number(m.cbuBalance || 0), 0));
-    res.json({ members, total, count: members.length });
+    const pnNos = members.map((m) => m.pnNo);
+
+    // AR Water — sum of totalDue on every unpaid bill grouped by pnNo.
+    // Includes overdue penalties because totalDue is recomputed lazily
+    // on read in waterBills.routes.js (ensureOverdueAndPenalty). Here
+    // we read the persisted value — close enough for an audit summary
+    // (the cashier UI is the source of truth for the live amount).
+    const waterArAgg = pnNos.length
+      ? await WaterBill.aggregate([
+          { $match: { pnNo: { $in: pnNos }, status: { $in: ["unpaid", "overdue", "partial"] } } },
+          { $group: { _id: "$pnNo", arWater: { $sum: "$totalDue" }, billCount: { $sum: 1 } } },
+        ])
+      : [];
+    const waterAr = new Map(waterArAgg.map((x) => [x._id, x]));
+
+    // AR Loan — sum of outstanding balance on every active regular loan
+    // grouped by borrowerPnNo. "released" is the only status that means
+    // money is actually owed (applied/approved haven't been disbursed).
+    const loanArAgg = pnNos.length
+      ? await LoanApplication.aggregate([
+          { $match: { borrowerPnNo: { $in: pnNos }, status: "released" } },
+          { $group: { _id: "$borrowerPnNo", arLoan: { $sum: "$balance" }, loanCount: { $sum: 1 } } },
+        ])
+      : [];
+    const loanAr = new Map(loanArAgg.map((x) => [x._id, x]));
+
+    // AR Product Loan — sum of outstanding balance on active product
+    // loans + rentals owned by the member. Sales paid in full carry no
+    // balance so they roll up to 0.
+    const productArAgg = pnNos.length
+      ? await ProductLoanApplication.aggregate([
+          { $match: {
+              borrowerPnNo: { $in: pnNos },
+              status: { $in: ["active", "released", "approved", "overdue"] },
+              transactionType: { $in: ["loan", "rental"] },
+            } },
+          { $group: { _id: "$borrowerPnNo", arProduct: { $sum: "$balance" }, productCount: { $sum: 1 } } },
+        ])
+      : [];
+    const productAr = new Map(productArAgg.map((x) => [x._id, x]));
+
+    const enriched = members.map((m) => {
+      const w = waterAr.get(m.pnNo);
+      const l = loanAr.get(m.pnNo);
+      const p = productAr.get(m.pnNo);
+      const arWater = round2(w?.arWater || 0);
+      const arLoan = round2(l?.arLoan || 0);
+      const arProduct = round2(p?.arProduct || 0);
+      return {
+        ...m,
+        arWater,
+        arWaterCount: w?.billCount || 0,
+        arLoan,
+        arLoanCount: l?.loanCount || 0,
+        arProduct,
+        arProductCount: p?.productCount || 0,
+        totalReceivable: round2(arWater + arLoan + arProduct),
+      };
+    });
+
+    const total = round2(enriched.reduce((s, m) => s + Number(m.cbuBalance || 0), 0));
+    const totals = {
+      cbu: total,
+      arWater: round2(enriched.reduce((s, m) => s + m.arWater, 0)),
+      arLoan: round2(enriched.reduce((s, m) => s + m.arLoan, 0)),
+      arProduct: round2(enriched.reduce((s, m) => s + m.arProduct, 0)),
+    };
+    totals.totalReceivable = round2(totals.arWater + totals.arLoan + totals.arProduct);
+
+    res.json({ members: enriched, total, totals, count: enriched.length });
   } catch (e) {
-    res.status(500).json({ message: "Failed to load CBU." });
+    res.status(500).json({ message: "Failed to load member balances." });
   }
 });
 
-// Per-member CBU history (last N ledger entries).
+// Per-member ledger drill-down. Returns CBU history, unpaid water
+// bills, outstanding regular loans, and outstanding product loans so
+// the bookkeeper can drill into every receivable from one place.
 router.get("/members-cbu/:pnNo", ...guard, async (req, res) => {
   try {
     const pnNo = String(req.params.pnNo || "").toUpperCase().trim();
     const member = await WaterMember.findOne({ pnNo }).select("pnNo accountName cbuBalance accountStatus").lean();
     if (!member) return res.status(404).json({ message: "Member not found." });
-    const ledger = await CbuTransaction.find({ pnNo }).sort({ createdAt: -1 }).limit(200).lean();
-    res.json({ member, ledger });
+
+    const [ledger, waterBills, loans, productLoans] = await Promise.all([
+      CbuTransaction.find({ pnNo }).sort({ createdAt: -1 }).limit(200).lean(),
+      WaterBill.find({ pnNo, status: { $in: ["unpaid", "overdue", "partial"] } })
+        .sort({ periodKey: 1 })
+        .select("periodKey meterNumber consumption totalDue penaltyAmount status dueDate")
+        .lean(),
+      LoanApplication.find({ borrowerPnNo: pnNo, status: "released" })
+        .sort({ releasedAt: -1 })
+        .select("loanId principal balance totalPayment monthlyPayment termMonths releasedAt maturityDate amortizationSchedule")
+        .lean(),
+      ProductLoanApplication.find({
+        borrowerPnNo: pnNo,
+        status: { $in: ["active", "released", "approved", "overdue"] },
+        transactionType: { $in: ["loan", "rental"] },
+      })
+        .sort({ createdAt: -1 })
+        .select("productName category transactionType principal balance dueDate borrowDate returnDate status")
+        .lean(),
+    ]);
+
+    res.json({ member, ledger, waterBills, loans, productLoans });
   } catch (e) {
-    res.status(500).json({ message: "Failed to load CBU history." });
+    res.status(500).json({ message: "Failed to load member ledger." });
   }
 });
 
