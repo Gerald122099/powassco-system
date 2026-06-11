@@ -229,6 +229,9 @@ export default function CashierSalesPanel() {
         </div>
       </div>
 
+      {/* Receive a payment on an existing product loan / rental */}
+      <ProductLoanPaySection token={token} />
+
       {/* Recent sales */}
       <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
         <div className="bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-700">Recent sales</div>
@@ -468,5 +471,182 @@ export default function CashierSalesPanel() {
         )}
       </Modal>
     </Card>
+  );
+}
+
+// ─── Pay Product Loan ───────────────────────────────────────────────
+// Standalone payment against an existing product loan / rental — for
+// members who come in JUST to pay their product balance (no water or
+// loan bill on the same visit; those flows have their own bundling
+// pickers). Search the member, pick the open item, enter OR + amount.
+function ProductLoanPaySection({ token }) {
+  const [q, setQ] = useState("");
+  const [member, setMember] = useState(null);
+  const [loans, setLoans] = useState([]);
+  const [lookupErr, setLookupErr] = useState("");
+  const [target, setTarget] = useState(null);
+  const [payOr, setPayOr] = useState("");
+  const [payAmount, setPayAmount] = useState("");
+  const [payMethod, setPayMethod] = useState("cash");
+  const [posting, setPosting] = useState(false);
+  // Monotonic search id — stale responses (slow earlier keystrokes)
+  // are ignored so the result can't flicker back to a previous member.
+  const searchSeq = useRef(0);
+
+  useEffect(() => {
+    const text = q.trim();
+    if (text.length < 2) { setMember(null); setLoans([]); setLookupErr(""); return; }
+    const mySeq = ++searchSeq.current;
+    const t = setTimeout(async () => {
+      try {
+        const res = await apiFetch(`/cashier/water?q=${encodeURIComponent(text)}`, { token });
+        if (mySeq !== searchSeq.current) return; // stale — a newer search ran
+        if (res?.member) {
+          setMember(res.member);
+          setLoans(res.productLoans || []);
+          setLookupErr((res.productLoans || []).length ? "" : "No open product loans / rentals on this account.");
+        } else if (res?.candidates?.length) {
+          setMember(null); setLoans([]);
+          setLookupErr(`${res.candidates.length} matches — type the full account number (e.g. ${res.candidates[0].pnNo}).`);
+        }
+      } catch (e) {
+        if (mySeq !== searchSeq.current) return;
+        setMember(null); setLoans([]);
+        setLookupErr(e.message || "Not found.");
+      }
+    }, 350);
+    return () => clearTimeout(t);
+  }, [q, token]);
+
+  function openPay(pl) {
+    setTarget(pl);
+    setPayOr("");
+    setPayAmount(String(pl.balance || ""));
+    setPayMethod("cash");
+  }
+
+  async function post() {
+    if (!target) return;
+    if (!payOr.trim()) { toast.error("Enter the OR number."); return; }
+    const amt = Number(payAmount);
+    if (!(amt > 0)) { toast.error("Enter an amount greater than 0."); return; }
+    setPosting(true);
+    try {
+      const res = await apiFetch(`/bookkeeper/product-applications/${target._id}/pay`, {
+        method: "POST",
+        token,
+        body: { orNo: payOr.trim().toUpperCase(), amount: amt, method: payMethod },
+      });
+      toast.success(`Posted ₱${res.applied} on ${target.productName} • OR ${payOr.trim().toUpperCase()}`);
+      setTarget(null);
+      // Refresh the open-items list for this member.
+      const res2 = await apiFetch(`/cashier/water?q=${encodeURIComponent(member.pnNo)}`, { token });
+      if (res2?.member) setLoans(res2.productLoans || []);
+    } catch (e) {
+      toast.error(e.message || "Payment failed.");
+    } finally {
+      setPosting(false);
+    }
+  }
+
+  return (
+    <div className="mt-4 rounded-2xl border border-violet-200">
+      <div className="bg-violet-50 px-4 py-2 text-xs font-semibold text-violet-800">
+        Pay Product Loan / Rental — search member, pick the item, post with OR
+      </div>
+      <div className="p-3 space-y-3">
+        <div className="relative max-w-md">
+          <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Account number or member name"
+            className="w-full rounded-xl border border-slate-200 pl-9 pr-3 py-2.5 text-sm"
+          />
+        </div>
+        {lookupErr && <div className="rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-800">{lookupErr}</div>}
+        {member && loans.length > 0 && (
+          <div className="overflow-x-auto rounded-xl border border-slate-200">
+            <table className="w-full text-sm">
+              <thead className="bg-white text-left text-xs text-slate-500">
+                <tr>
+                  <th className="px-3 py-2">Product</th>
+                  <th className="px-3 py-2">Type</th>
+                  <th className="px-3 py-2">Due / return</th>
+                  <th className="px-3 py-2 text-right">Balance</th>
+                  <th className="px-3 py-2 text-right"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {loans.map((pl) => (
+                  <tr key={pl._id} className="border-t">
+                    <td className="px-3 py-2 font-semibold">{pl.productName}</td>
+                    <td className="px-3 py-2 text-xs">{pl.transactionType}</td>
+                    <td className="px-3 py-2 text-xs">{(pl.returnDate || pl.dueDate) ? new Date(pl.returnDate || pl.dueDate).toLocaleDateString() : "—"}</td>
+                    <td className="px-3 py-2 text-right font-mono font-bold text-violet-800">{peso(pl.balance)}</td>
+                    <td className="px-3 py-2 text-right">
+                      <button
+                        onClick={() => openPay(pl)}
+                        className="rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-violet-700"
+                      >
+                        Pay
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {target && (
+          <div className="rounded-xl border border-violet-300 bg-violet-50/50 p-3">
+            <div className="text-sm font-bold text-violet-900">
+              {target.productName} — balance {peso(target.balance)} ({member?.accountName})
+            </div>
+            <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div>
+                <label className="text-xs font-semibold text-slate-600">OR number *</label>
+                <input
+                  value={payOr}
+                  onChange={(e) => setPayOr(e.target.value)}
+                  autoFocus
+                  placeholder="from receipt booklet"
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-mono uppercase"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-600">Amount (₱)</label>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={payAmount}
+                  onChange={(e) => setPayAmount(e.target.value)}
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-mono"
+                />
+                <div className="mt-0.5 text-[10px] text-slate-500">Max {peso(target.balance)} — extra is capped.</div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-600">Method</label>
+                <select value={payMethod} onChange={(e) => setPayMethod(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm capitalize">
+                  {METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="mt-3 flex justify-end gap-2">
+              <button onClick={() => setTarget(null)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold hover:bg-slate-50">Cancel</button>
+              <button
+                onClick={post}
+                disabled={posting || !payOr.trim() || !(Number(payAmount) > 0)}
+                className="rounded-xl bg-violet-600 px-5 py-2 text-sm font-bold text-white hover:bg-violet-700 disabled:opacity-50"
+              >
+                {posting ? "Posting…" : `Post Payment ${payAmount ? peso(payAmount) : ""}`}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

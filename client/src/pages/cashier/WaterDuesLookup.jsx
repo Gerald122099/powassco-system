@@ -61,6 +61,8 @@ export default function WaterDuesLookup() {
   const [productLoanPicks, setProductLoanPicks] = useState({});
   // Bundled additions on the same OR (zero by default; cashier opts in).
   const [paySavings, setPaySavings] = useState("");
+  // Where any automatic excess (bill input > total due) routes.
+  const [payExcessTo, setPayExcessTo] = useState("cbu");
 
   function openPay(bill) {
     setPayTarget(bill);
@@ -68,6 +70,7 @@ export default function WaterDuesLookup() {
     setPayReceived(String(bill.totalDue || ""));
     setPayCbu("");
     setPaySavings("");
+    setPayExcessTo("cbu");
     setProductLoanPicks({});
   }
 
@@ -115,6 +118,7 @@ export default function WaterDuesLookup() {
           productLoanPayments,
           savingsDeposit: savingsPortion,
           cbuContribution: cbuPortion,
+          excessTo: payExcessTo,
         },
       });
       toast.success(res.message || "Payment posted.");
@@ -742,6 +746,36 @@ export default function WaterDuesLookup() {
                       <span className="text-xs text-violet-700">↳ Extracted to CBU</span>
                       <span className="font-mono text-sm font-bold text-violet-800">+{peso(cbuNum)}</span>
                     </div>
+                    {billNum > Number(payTarget.totalDue) && (
+                      <div className="mt-1 rounded-lg border border-emerald-200 bg-white px-2 py-1.5">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-[11px] font-semibold text-emerald-800">
+                            Excess {peso(billNum - Number(payTarget.totalDue))} →
+                          </span>
+                          {[
+                            ["cbu", "CBU"],
+                            ["savings", "Savings"],
+                            ["split", "Split 50/50"],
+                          ].map(([k, label]) => (
+                            <label key={k} className={`inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-[11px] font-semibold cursor-pointer ${payExcessTo === k ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-700"} ${k !== "cbu" && !data.savingsAccount ? "opacity-40 cursor-not-allowed" : ""}`}>
+                              <input
+                                type="radio"
+                                name="excessTo"
+                                value={k}
+                                checked={payExcessTo === k}
+                                disabled={k !== "cbu" && !data.savingsAccount}
+                                onChange={() => setPayExcessTo(k)}
+                                className="hidden"
+                              />
+                              {label}
+                            </label>
+                          ))}
+                          {!data.savingsAccount && (
+                            <span className="text-[10px] text-slate-400">(no savings account)</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
                     {Number(payReceived) < Number(payTarget.totalDue) && (
                       <div className="mt-1 rounded-lg bg-red-50 border border-red-200 px-2 py-1 text-[11px] font-semibold text-red-800">
                         Bill amount must be ≥ ₱{Number(payTarget.totalDue).toFixed(2)}.

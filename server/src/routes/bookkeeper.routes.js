@@ -673,6 +673,10 @@ router.post("/product-applications/:id/pay", ...cashierGuard, async (req, res) =
   try {
     const amount = round2(Number(req.body?.amount || 0));
     if (!(amount > 0)) return res.status(400).json({ message: "Amount must be > 0." });
+    const payOr = String(req.body?.orNo || "").toUpperCase().trim();
+    if (!payOr) return res.status(400).json({ message: "OR number is required." });
+    const dupOr = await ProductLoanApplication.findOne({ "payments.orNo": payOr }).select("_id").lean();
+    if (dupOr) return res.status(409).json({ message: `OR ${payOr} already used on a product transaction.` });
     const app = await ProductLoanApplication.findById(req.params.id);
     if (!app) return res.status(404).json({ message: "Transaction not found." });
     if (app.transactionType === "sale") {
@@ -683,7 +687,7 @@ router.post("/product-applications/:id/pay", ...cashierGuard, async (req, res) =
     }
     const applied = Math.min(amount, app.balance);
     app.payments.push({
-      orNo: String(req.body?.orNo || "").toUpperCase().trim(),
+      orNo: payOr,
       amount: applied,
       method: req.body?.method || "cash",
       paidAt: new Date(),

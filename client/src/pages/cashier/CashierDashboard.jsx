@@ -85,13 +85,20 @@ export default function CashierDashboard() {
     (todayStats?.totals?.loan?.cash || 0) +
     (todayStats?.totals?.loan?.online || 0);
   const cbuOnFile = todayStats?.cbuOnFile?.total ?? 0;
+  const savingsIn = todayStats?.totals?.savings?.in ?? 0;
+  const savingsOut = todayStats?.totals?.savings?.out ?? 0;
+  const disbursedToday = todayStats?.totals?.disbursed?.total ?? 0;
+  // Server-computed when available; falls back to local math against
+  // an older API build.
+  const drawerNet = todayStats?.totals?.drawerNet
+    ?? (Number(todayStats?.totals?.cash || 0) + savingsIn - savingsOut - disbursedToday);
 
   return (
     <DashboardLayout title="Cashier" accent="emerald" items={items} active="counter" onSelect={() => { /* single screen */ }}>
       {/* Unified today-totals strip — water, loan, CBU, grand. Always
           visible regardless of which lookup panel is open below. */}
       <div className="space-y-3">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
           <Kpi
             label="Water — Bills today"
             value={peso(waterBills)}
@@ -100,7 +107,7 @@ export default function CashierDashboard() {
             tone="blue"
           />
           <Kpi
-            label="Water — Cash drawer"
+            label="Water — Cash"
             value={peso(waterCash)}
             icon={Wallet}
             tone="amber"
@@ -113,22 +120,36 @@ export default function CashierDashboard() {
             tone="violet"
           />
           <Kpi
-            label="Loan — Cash drawer"
+            label="Loan — Cash"
             value={peso(loanCash)}
             icon={Wallet}
             tone="amber"
           />
           <Kpi
-            label="CBU collected today"
+            label="CBU today"
             value={peso(cbuToday)}
-            sub={`${todayStats?.cbuOnFile?.members ?? 0} on file · ₱${Number(cbuOnFile).toLocaleString()}`}
+            sub={`on file ₱${Number(cbuOnFile).toLocaleString()}`}
             icon={CheckCircle}
             tone="emerald"
           />
           <Kpi
-            label="GRAND TOTAL"
-            value={peso(grandToday)}
-            sub="Water + Loan · cash + online"
+            label="Savings IN"
+            value={peso(savingsIn)}
+            sub={`${todayStats?.totals?.savings?.inCount ?? 0} deposit(s)`}
+            icon={TrendingUp}
+            tone="emerald"
+          />
+          <Kpi
+            label="Cash OUT"
+            value={peso(savingsOut + disbursedToday)}
+            sub={`withdrawals ₱${Number(savingsOut).toLocaleString()} · disbursed ₱${Number(disbursedToday).toLocaleString()}`}
+            icon={Wallet}
+            tone="amber"
+          />
+          <Kpi
+            label="NET DRAWER"
+            value={peso(drawerNet)}
+            sub={`collections ₱${Number(grandToday).toLocaleString()} gross`}
             icon={TrendingUp}
             tone="emerald"
           />

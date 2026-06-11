@@ -43,6 +43,7 @@ export default function LoanDuesLookup() {
   const [payReceived, setPayReceived] = useState("");
   const [payCbu, setPayCbu] = useState("");
   const [paySavings, setPaySavings] = useState("");
+  const [payExcessTo, setPayExcessTo] = useState("cbu");
   const [paying, setPaying] = useState(false);
   const [justPaid, setJustPaid] = useState(null);
   const [todayStats, setTodayStats] = useState(null);
@@ -65,6 +66,7 @@ export default function LoanDuesLookup() {
     setPayReceived(String(loan.monthlyPayment || ""));
     setPayCbu("");
     setPaySavings("");
+    setPayExcessTo("cbu");
     setProductLoanPicks({});
   }
 
@@ -162,6 +164,7 @@ export default function LoanDuesLookup() {
           productLoanPayments,
           savingsDeposit: savingsPortion,
           cbuContribution: cbuPortion,
+          excessTo: payExcessTo,
         },
       });
       toast.success(res.message || "Payment posted.");
@@ -803,6 +806,36 @@ export default function LoanDuesLookup() {
                       <span className="text-xs text-violet-700"><Wallet size={11} className="-mt-0.5 mr-1 inline" />↳ Extracted to CBU</span>
                       <span className="font-mono text-sm font-bold text-violet-800">+{peso(cbuNum)}</span>
                     </div>
+                    {billNum > installmentTotal && (
+                      <div className="mt-1 rounded-lg border border-emerald-200 bg-white px-2 py-1.5">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-[11px] font-semibold text-emerald-800">
+                            Excess {peso(billNum - installmentTotal)} →
+                          </span>
+                          {[
+                            ["cbu", "CBU"],
+                            ["savings", "Savings"],
+                            ["split", "Split 50/50"],
+                          ].map(([k, label]) => (
+                            <label key={k} className={`inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-[11px] font-semibold cursor-pointer ${payExcessTo === k ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-700"} ${k !== "cbu" && !savingsForBorrower ? "opacity-40 cursor-not-allowed" : ""}`}>
+                              <input
+                                type="radio"
+                                name="loanExcessTo"
+                                value={k}
+                                checked={payExcessTo === k}
+                                disabled={k !== "cbu" && !savingsForBorrower}
+                                onChange={() => setPayExcessTo(k)}
+                                className="hidden"
+                              />
+                              {label}
+                            </label>
+                          ))}
+                          {!savingsForBorrower && (
+                            <span className="text-[10px] text-slate-400">(no savings account)</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </>
               );

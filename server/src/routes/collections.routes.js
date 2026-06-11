@@ -15,6 +15,8 @@ import WaterBill from "../models/WaterBill.js";
 import WaterMember from "../models/WaterMember.js";
 import CbuTransaction from "../models/CbuTransaction.js";
 import LoanApplication from "../models/LoanApplication.js";
+import SavingsTransaction from "../models/SavingsTransaction.js";
+import Expense from "../models/Expense.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
 const router = express.Router();
@@ -116,6 +118,38 @@ router.get("/today", ...guard, async (req, res) => {
     const billCollectedTotal = waterBillCollected + loanBillCollected;
     const grand = cashTotal + onlineTotal;
 
+    // Savings cash movements today. INT-/ADJ- references are excluded —
+    // interest accrual and dual-control adjustments move balances, not
+    // physical cash in the drawer. Bundled deposits (OR suffixed -SAV)
+    // ARE included: their cash arrived at the counter but is not part
+    // of waterCash/loanCash (those only count the bill + CBU portions).
+    const savingsToday = await SavingsTransaction.aggregate([
+      { $match: {
+          paidAt: { $gte: start, $lt: end },
+          orNo: { $not: /^(INT|ADJ)-/ },
+        } },
+      { $group: { _id: "$type", total: { $sum: "$amount" }, count: { $sum: 1 } } },
+    ]);
+    let savingsIn = 0, savingsInCount = 0, savingsOut = 0, savingsOutCount = 0;
+    for (const row of savingsToday) {
+      if (row._id === "deposit") { savingsIn = Number(row.total || 0); savingsInCount = row.count; }
+      else if (row._id === "withdrawal") { savingsOut = Number(row.total || 0); savingsOutCount = row.count; }
+    }
+
+    // Expense disbursements paid out by the cashier today (approved
+    // requests they handed cash for). Deducts from the drawer.
+    const disbursedAgg = await Expense.aggregate([
+      { $match: { status: "disbursed", disbursedAt: { $gte: start, $lt: end } } },
+      { $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 } } },
+    ]);
+    const disbursedTotal = Number(disbursedAgg[0]?.total || 0);
+    const disbursedCount = Number(disbursedAgg[0]?.count || 0);
+
+    // Net physical drawer position for the day: collections in (cash
+    // only) + savings deposits − savings withdrawals − cash handed out
+    // for disbursements.
+    const drawerNet = Number((cashTotal + savingsIn - savingsOut - disbursedTotal).toFixed(2));
+
     // System-wide outstanding (unsettled receivables) + total CBU
     // held across every active member account. All three are cheap
     // single-pass aggregates over indexed fields.
@@ -196,6 +230,9 @@ router.get("/today", ...guard, async (req, res) => {
         cbu: cbuTotal,              // CBU portion (cash + online)
         billCollected: billCollectedTotal, // bill portion (cash + online)
         grand,                      // cash + online (== bill + cbu)
+        savings: { in: savingsIn, inCount: savingsInCount, out: savingsOut, outCount: savingsOutCount },
+        disbursed: { total: disbursedTotal, count: disbursedCount },
+        drawerNet,                  // cash + savings in − savings out − disbursed
         water: {
           // backward-compatible aliases
           cash: waterCashGross,     // total cash drawer water

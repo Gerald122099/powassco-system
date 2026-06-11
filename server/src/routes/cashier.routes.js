@@ -318,6 +318,9 @@ router.post("/pay-water", ...payGuard, async (req, res) => {
     //                       automatic excess routing below)
     const savingsDeposit = Math.max(0, round2(Number(req.body?.savingsDeposit || 0)));
     const cbuContribution = Math.max(0, round2(Number(req.body?.cbuContribution || 0)));
+    // Where the automatic excess (received − expected) goes:
+    //   cbu (default) | savings | split (50/50, odd centavo to CBU)
+    const excessTo = ["cbu", "savings", "split"].includes(req.body?.excessTo) ? req.body.excessTo : "cbu";
 
     if (!pnNo || !meterNumber || !periodKey) return res.status(400).json({ message: "pnNo, meterNumber and periodKey are required." });
     if (!orNo) return res.status(400).json({ message: "OR number is required." });
@@ -355,13 +358,14 @@ router.post("/pay-water", ...payGuard, async (req, res) => {
     // No silent open — the cashier opens through the Savings tab first
     // so this validation surfaces missing setup early.
     let savingsAccountForBundle = null;
-    if (savingsDeposit > 0) {
+    if (savingsDeposit > 0 || excessTo !== "cbu") {
       savingsAccountForBundle = await SavingsAccount.findOne({ pnNo });
-      if (!savingsAccountForBundle) {
-        return res.status(400).json({ message: "Member has no savings account. Open one in the Savings tab before bundling." });
-      }
-      if (savingsAccountForBundle.status === "closed") {
-        return res.status(400).json({ message: "Savings account is closed." });
+      if (!savingsAccountForBundle || savingsAccountForBundle.status === "closed") {
+        return res.status(400).json({
+          message: savingsDeposit > 0
+            ? "Member has no active savings account. Open one in the Savings tab before bundling."
+            : "Excess can't route to savings — member has no active savings account.",
+        });
       }
     }
 
@@ -378,6 +382,20 @@ router.post("/pay-water", ...payGuard, async (req, res) => {
 
     const cbuExcess = round2(amountReceived - totalExpected);
     const receivedBy = req.user?.fullName || req.user?.employeeId || "";
+
+    // Split the excess per the cashier's routing choice. The payment
+    // doc's cbuExcess field stores only the CBU-bound portion so the
+    // drawer/CBU reports stay exact; the savings-bound portion gets
+    // its own ledger row below (OR suffixed -EXC).
+    let excessCbuPart = cbuExcess;
+    let excessSavingsPart = 0;
+    if (cbuExcess > 0 && excessTo === "savings") {
+      excessCbuPart = 0;
+      excessSavingsPart = cbuExcess;
+    } else if (cbuExcess > 0 && excessTo === "split") {
+      excessSavingsPart = round2(Math.floor((cbuExcess / 2) * 100) / 100);
+      excessCbuPart = round2(cbuExcess - excessSavingsPart); // odd centavo → CBU
+    }
 
     // STEP 1 — atomic status flip. If the bill is already paid (or doesn't
     // exist any more), this returns null and we abort. This is the single
@@ -402,7 +420,7 @@ router.post("/pay-water", ...payGuard, async (req, res) => {
         method,
         amountPaid: totalDue,
         amountReceived: round2(amountReceived),
-        cbuExcess,
+        cbuExcess: excessCbuPart,
         discountApplied: claimed.discount || 0,
         penaltyApplied: claimed.penaltyApplied || 0,
         classification: claimed.classification,
@@ -423,15 +441,38 @@ router.post("/pay-water", ...payGuard, async (req, res) => {
     // only), but the atomic status flip above means we get here exactly
     // once per OR, so no double-credit risk.
     let newCbuBalance = 0;
-    if (cbuExcess > 0) {
+    if (excessCbuPart > 0) {
       const member = await WaterMember.findOne({ pnNo: claimed.pnNo });
       if (member) {
         newCbuBalance = await creditCbu({
-          member, amount: cbuExcess, source: "water_overpay", refOrNo: orNo,
+          member, amount: excessCbuPart, source: "water_overpay", refOrNo: orNo,
           waterPaymentId: payment._id, postedBy: receivedBy,
           note: `Excess from OR ${orNo} (water bill ${claimed.periodCovered || claimed.periodKey})`,
         });
       }
+    }
+
+    // Savings-bound excess (cashier picked savings / split routing).
+    let excessSavingsResult = null;
+    if (excessSavingsPart > 0 && savingsAccountForBundle) {
+      const updatedExc = await SavingsAccount.findOneAndUpdate(
+        { _id: savingsAccountForBundle._id },
+        { $inc: { balance: excessSavingsPart } },
+        { new: true }
+      );
+      await SavingsTransaction.create({
+        pnNo,
+        type: "deposit",
+        amount: excessSavingsPart,
+        orNo: `${orNo}-EXC`,
+        method,
+        receivedBy,
+        balanceAfter: round2(updatedExc.balance),
+        paidAt: new Date(),
+        note: `Excess from water OR ${orNo} routed to savings`,
+        bundledWithOr: orNo,
+      });
+      excessSavingsResult = { amount: excessSavingsPart, newBalance: updatedExc.balance };
     }
 
     // STEP 3 — apply any bundled product-loan / rental payments. Same
@@ -505,7 +546,8 @@ router.post("/pay-water", ...payGuard, async (req, res) => {
       message: cbuExcess > 0
         ? `Posted ₱${totalDue} (water)${productLoanTotal > 0 ? ` + ₱${productLoanTotal} (product loans)` : ""}${savingsDeposit > 0 ? ` + ₱${savingsDeposit} (savings)` : ""}${cbuContribution > 0 ? ` + ₱${cbuContribution} (CBU)` : ""}. Excess ₱${cbuExcess} → CBU (new balance ₱${newCbuBalance}).`
         : `Posted ₱${totalDue} (water)${productLoanTotal > 0 ? ` + ₱${productLoanTotal} (product loans)` : ""}${savingsDeposit > 0 ? ` + ₱${savingsDeposit} (savings)` : ""}${cbuContribution > 0 ? ` + ₱${cbuContribution} (CBU)` : ""}.`,
-      payment, cbuExcess, newCbuBalance,
+      payment, cbuExcess: excessCbuPart, totalExcess: cbuExcess, newCbuBalance,
+      excessSavings: excessSavingsResult,
       productLoanPayments: productLoanResults,
       productLoanTotal,
       savingsDeposit: savingsResult,
@@ -547,6 +589,7 @@ router.post("/pay-loan", ...payGuard, async (req, res) => {
     // Bundled additions (same OR): savings deposit + direct CBU contribution.
     const savingsDeposit = Math.max(0, round2(Number(req.body?.savingsDeposit || 0)));
     const cbuContribution = Math.max(0, round2(Number(req.body?.cbuContribution || 0)));
+    const excessTo = ["cbu", "savings", "split"].includes(req.body?.excessTo) ? req.body.excessTo : "cbu";
 
     if (!loanId) return res.status(400).json({ message: "loanId is required." });
     if (!orNo) return res.status(400).json({ message: "OR number is required." });
@@ -616,15 +659,16 @@ router.post("/pay-loan", ...payGuard, async (req, res) => {
     }
     const productLoanTotal = productLoanPayments.reduce((s, p) => s + p.amount, 0);
 
-    // Pre-validate savings account for bundled deposit.
+    // Pre-validate savings account for bundled deposit / excess routing.
     let savingsAccountForBundle = null;
-    if (savingsDeposit > 0) {
+    if (savingsDeposit > 0 || excessTo !== "cbu") {
       savingsAccountForBundle = await SavingsAccount.findOne({ pnNo: loan.borrowerPnNo });
-      if (!savingsAccountForBundle) {
-        return res.status(400).json({ message: "Borrower has no savings account. Open one in the Savings tab before bundling." });
-      }
-      if (savingsAccountForBundle.status === "closed") {
-        return res.status(400).json({ message: "Savings account is closed." });
+      if (!savingsAccountForBundle || savingsAccountForBundle.status === "closed") {
+        return res.status(400).json({
+          message: savingsDeposit > 0
+            ? "Borrower has no active savings account. Open one in the Savings tab before bundling."
+            : "Excess can't route to savings — borrower has no active savings account.",
+        });
       }
     }
 
@@ -641,6 +685,17 @@ router.post("/pay-loan", ...payGuard, async (req, res) => {
     const cbuExcess = round2(amountReceived - totalExpected);
     const receivedBy = req.user?.fullName || req.user?.employeeId || "";
 
+    // Excess routing split — same scheme as pay-water.
+    let excessCbuPart = cbuExcess;
+    let excessSavingsPart = 0;
+    if (cbuExcess > 0 && excessTo === "savings") {
+      excessCbuPart = 0;
+      excessSavingsPart = cbuExcess;
+    } else if (cbuExcess > 0 && excessTo === "split") {
+      excessSavingsPart = round2(Math.floor((cbuExcess / 2) * 100) / 100);
+      excessCbuPart = round2(cbuExcess - excessSavingsPart);
+    }
+
     // Create the LoanPayment first. Unique-index on orNo is the race
     // breaker: two concurrent cashier clicks with the same OR will see
     // E11000 here. We do this BEFORE incrementing the loan so a failed
@@ -655,7 +710,7 @@ router.post("/pay-loan", ...payGuard, async (req, res) => {
         method,
         amountPaid: totalDue,
         amountReceived: round2(amountReceived),
-        cbuExcess,
+        cbuExcess: excessCbuPart,
         periodsCovered: upcoming.length,
         periodsPaid: periodNumbers,
         paidAt: new Date(),
@@ -681,15 +736,38 @@ router.post("/pay-loan", ...payGuard, async (req, res) => {
     await LoanApplication.updateOne({ _id: loan._id }, { $set: setOps });
 
     let newCbuBalance = 0;
-    if (cbuExcess > 0) {
+    if (excessCbuPart > 0) {
       const member = await WaterMember.findOne({ pnNo: String(loan.borrowerPnNo || "").toUpperCase() });
       if (member) {
         newCbuBalance = await creditCbu({
-          member, amount: cbuExcess, source: "loan_overpay", refOrNo: orNo,
+          member, amount: excessCbuPart, source: "loan_overpay", refOrNo: orNo,
           loanPaymentId: payment._id, postedBy: receivedBy,
           note: `Excess from OR ${orNo} (loan ${loan.loanId})`,
         });
       }
+    }
+
+    // Savings-bound excess.
+    let excessSavingsResult = null;
+    if (excessSavingsPart > 0 && savingsAccountForBundle) {
+      const updatedExc = await SavingsAccount.findOneAndUpdate(
+        { _id: savingsAccountForBundle._id },
+        { $inc: { balance: excessSavingsPart } },
+        { new: true }
+      );
+      await SavingsTransaction.create({
+        pnNo: loan.borrowerPnNo,
+        type: "deposit",
+        amount: excessSavingsPart,
+        orNo: `${orNo}-EXC`,
+        method,
+        receivedBy,
+        balanceAfter: round2(updatedExc.balance),
+        paidAt: new Date(),
+        note: `Excess from loan OR ${orNo} routed to savings`,
+        bundledWithOr: orNo,
+      });
+      excessSavingsResult = { amount: excessSavingsPart, newBalance: updatedExc.balance };
     }
 
     // Apply bundled product-loan / rental payments. Same OR ties
@@ -762,7 +840,8 @@ router.post("/pay-loan", ...payGuard, async (req, res) => {
       message: cbuExcess > 0
         ? `Posted ₱${totalDue} for ${upcoming.length} period(s)${productLoanTotal > 0 ? ` + ₱${productLoanTotal} (product loans)` : ""}${savingsDeposit > 0 ? ` + ₱${savingsDeposit} (savings)` : ""}${cbuContribution > 0 ? ` + ₱${cbuContribution} (CBU)` : ""}. Excess ₱${cbuExcess} → CBU (new balance ₱${newCbuBalance}).`
         : `Posted ₱${totalDue} for ${upcoming.length} period(s)${productLoanTotal > 0 ? ` + ₱${productLoanTotal} (product loans)` : ""}${savingsDeposit > 0 ? ` + ₱${savingsDeposit} (savings)` : ""}${cbuContribution > 0 ? ` + ₱${cbuContribution} (CBU)` : ""}.`,
-      payment, cbuExcess, newCbuBalance, periodsCovered: upcoming.length, totalDue,
+      payment, cbuExcess: excessCbuPart, totalExcess: cbuExcess, newCbuBalance, periodsCovered: upcoming.length, totalDue,
+      excessSavings: excessSavingsResult,
       productLoanPayments: productLoanResults,
       productLoanTotal,
       savingsDeposit: savingsResult,

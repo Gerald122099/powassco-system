@@ -74,15 +74,24 @@ export default function CashierSavingsPanel() {
   const searchRef = useRef(null);
   useEffect(() => { searchRef.current?.focus(); }, []);
 
+  // Monotonic search sequence — a slow response from an earlier
+  // keystroke must NOT overwrite a newer result. Without this guard
+  // the panel "glitched": member A's account flashed in after the
+  // cashier had already typed member B's name (two in-flight requests
+  // resolving out of order).
+  const searchSeq = useRef(0);
+
   // Debounced member + savings lookup
   useEffect(() => {
     const text = q.trim();
+    const mySeq = ++searchSeq.current;
     if (!text) {
       setMember(null); setAccount(null); setLedger([]);
       setMemberLookup({ status: "idle", error: "" });
       return;
     }
     setMemberLookup({ status: "loading", error: "" });
+    const stale = () => mySeq !== searchSeq.current;
     const t = setTimeout(async () => {
       try {
         // Try exact account number first
@@ -90,11 +99,13 @@ export default function CashierSavingsPanel() {
         try {
           foundMember = await apiFetch(`/water/members/pn/${encodeURIComponent(text.toUpperCase())}`, { token });
         } catch { /* fall through */ }
+        if (stale()) return;
         if (!foundMember) {
           // /cashier/water returns { member } (full payload) on a single
           // match and { candidates: [...] } when a name matches several
           // accounts — there is no `members` key.
           const res = await apiFetch(`/cashier/water?q=${encodeURIComponent(text)}`, { token });
+          if (stale()) return;
           if (res?.member) {
             foundMember = res.member;
           } else if (res?.candidates?.length) {
@@ -112,9 +123,11 @@ export default function CashierSavingsPanel() {
         // Fetch savings account (404 = no account yet)
         try {
           const data = await apiFetch(`/savings/${foundMember.pnNo}`, { token });
+          if (stale()) return;
           setAccount(data.account);
           setLedger(data.ledger || []);
         } catch (e) {
+          if (stale()) return;
           if (/not found|no savings/i.test(e.message || "")) {
             setAccount(null); setLedger([]);
           } else {
@@ -122,6 +135,7 @@ export default function CashierSavingsPanel() {
           }
         }
       } catch (e) {
+        if (stale()) return;
         setMemberLookup({ status: "missing", error: e.message || "Lookup failed." });
         setMember(null); setAccount(null); setLedger([]);
       }
