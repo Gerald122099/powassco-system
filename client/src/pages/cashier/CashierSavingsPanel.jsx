@@ -90,11 +90,14 @@ export default function CashierSavingsPanel() {
           foundMember = await apiFetch(`/water/members/pn/${encodeURIComponent(text.toUpperCase())}`, { token });
         } catch { /* fall through */ }
         if (!foundMember) {
+          // /cashier/water returns { member } (full payload) on a single
+          // match and { candidates: [...] } when a name matches several
+          // accounts — there is no `members` key.
           const res = await apiFetch(`/cashier/water?q=${encodeURIComponent(text)}`, { token });
-          const candidates = res?.members || [];
-          if (candidates.length === 1) foundMember = candidates[0];
-          else if (candidates.length > 1) {
-            setMemberLookup({ status: "ambiguous", error: `${candidates.length} matches — narrow your search.` });
+          if (res?.member) {
+            foundMember = res.member;
+          } else if (res?.candidates?.length) {
+            setMemberLookup({ status: "ambiguous", error: `${res.candidates.length} matches — type the full account number (e.g. ${res.candidates[0].pnNo}).` });
             setMember(null); setAccount(null); setLedger([]);
             return;
           } else {

@@ -129,15 +129,16 @@ export default function CashierSalesPanel() {
             return;
           }
         } catch {/* fall through to name search */}
-        // Name search via cashier water endpoint (returns members)
+        // Name search via the cashier water endpoint. Single match →
+        // { member } (full payload); several name matches →
+        // { candidates: [...] }. There is no `members` key.
         const res = await apiFetch(`/cashier/water?q=${encodeURIComponent(q)}`, { token });
-        const candidates = res?.members || [];
-        if (candidates.length === 1) {
-          setMember(candidates[0]);
+        if (res?.member) {
+          setMember(res.member);
           setMemberLookup({ status: "found", error: "" });
-        } else if (candidates.length > 1) {
+        } else if (res?.candidates?.length) {
           setMember(null);
-          setMemberLookup({ status: "ambiguous", error: `${candidates.length} matches — type the full account number.` });
+          setMemberLookup({ status: "ambiguous", error: `${res.candidates.length} matches — type the full account number (e.g. ${res.candidates[0].pnNo}).` });
         } else {
           setMember(null);
           setMemberLookup({ status: "missing", error: "Not found." });
