@@ -20,8 +20,14 @@ const SavingsTransactionSchema = new mongoose.Schema(
     // payment (water + CBU + savings on one OR), this links it to the
     // parent water/loan payment so the bookkeeper can reconcile.
     bundledWithOr: { type: String, default: "" },
+    // Client-supplied dedupe key (double-click / flaky-network retry).
+    // Sparse index: only deposits that send a key pay the index cost.
+    idempotencyKey: { type: String, default: undefined },
   },
   { timestamps: true }
 );
+
+SavingsTransactionSchema.index({ idempotencyKey: 1 }, { sparse: true });
+SavingsTransactionSchema.index({ pnNo: 1, createdAt: -1 });
 
 export default mongoose.model("SavingsTransaction", SavingsTransactionSchema);

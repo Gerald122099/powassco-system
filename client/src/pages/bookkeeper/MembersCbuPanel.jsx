@@ -423,10 +423,10 @@ export default function MembersCbuPanel() {
                   {detail.productLoans.map((p) => (
                     <tr key={p._id} className="border-t">
                       <td className="px-3 py-1.5 font-semibold">{p.productName}</td>
-                      <td className="px-3 py-1.5 text-slate-500">{p.category}</td>
+                      <td className="px-3 py-1.5 text-slate-500">{p.productCategory}</td>
                       <td className="px-3 py-1.5">{p.transactionType}</td>
                       <td className="px-3 py-1.5">{fmtDateOnly(p.returnDate || p.dueDate)}</td>
-                      <td className="px-3 py-1.5 text-right font-mono">{peso(p.principal)}</td>
+                      <td className="px-3 py-1.5 text-right font-mono">{peso(p.totalPrice)}</td>
                       <td className="px-3 py-1.5 text-right font-mono font-bold text-orange-800">{peso(p.balance)}</td>
                     </tr>
                   ))}

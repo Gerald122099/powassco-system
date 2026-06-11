@@ -187,11 +187,18 @@ router.get("/members-cbu", ...guard, async (req, res) => {
     // freshenBill is a no-op if nothing moved, so the cost is one
     // find() + zero writes when everyone is already up to date.
     if (pnNos.length) {
+      // Cap the freshen pass so a heavy dataset can't stall this list
+      // endpoint: at most 300 stalest bills per request (ordered by
+      // penaltyComputedAt so repeat loads work through the backlog).
+      // Bills beyond the cap show their last-persisted totals — still
+      // correct as of their last freshen, just possibly a day stale.
       const candidates = await WaterBill.find({
         pnNo: { $in: pnNos },
         status: { $in: ["unpaid", "overdue"] },
         dueDate: { $lt: new Date() },
-      });
+      })
+        .sort({ penaltyComputedAt: 1 })
+        .limit(300);
       for (const b of candidates) {
         try {
           await freshenBill(b, { settings: waterSettingsLean });
@@ -256,8 +263,12 @@ router.get("/members-cbu", ...guard, async (req, res) => {
     //   • Other: every other product-loan category (frozen_goods,
     //     rice, rental, appliance, construction, other).
     // Sales paid in full carry no balance so they roll up to 0.
+    // NOTE: ProductLoanApplication keys the member by `pnNo`, NOT
+    // `borrowerPnNo` (that's LoanApplication's field). Querying the
+    // wrong name silently matched nothing — AR TNPL / AR Other were
+    // always ₱0. Fixed 2026-06-12.
     const productArMatch = {
-      borrowerPnNo: { $in: pnNos },
+      pnNo: { $in: pnNos },
       status: { $in: ["active", "released", "approved", "overdue"] },
       transactionType: { $in: ["loan", "rental"] },
     };
@@ -266,7 +277,9 @@ router.get("/members-cbu", ...guard, async (req, res) => {
       ? await ProductLoanApplication.aggregate([
           { $match: productArMatch },
           { $group: {
-              _id: { pn: "$borrowerPnNo", isMaterials: { $eq: ["$category", "materials"] } },
+              // Snapshot field is productCategory (not category — that's
+              // the catalog's field name).
+              _id: { pn: "$pnNo", isMaterials: { $eq: ["$productCategory", "materials"] } },
               ar: { $sum: "$balance" },
               count: { $sum: 1 },
             } },
@@ -374,12 +387,12 @@ router.get("/members-cbu/:pnNo", ...guard, async (req, res) => {
         .select("loanId principal balance totalPayment monthlyPayment termMonths releasedAt maturityDate amortizationSchedule")
         .lean(),
       ProductLoanApplication.find({
-        borrowerPnNo: pnNo,
+        pnNo, // ProductLoanApplication keys by pnNo, not borrowerPnNo
         status: { $in: ["active", "released", "approved", "overdue"] },
         transactionType: { $in: ["loan", "rental"] },
       })
         .sort({ createdAt: -1 })
-        .select("productName category transactionType principal balance dueDate borrowDate returnDate status")
+        .select("productName productCategory transactionType totalPrice balance dueDate borrowDate returnDate status")
         .lean(),
       SavingsAccount.findOne({ pnNo }).lean(),
       (async () => {

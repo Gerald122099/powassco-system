@@ -216,9 +216,10 @@ router.post("/deposit", txGuard, async (req, res) => {
     if (account.status === "closed") return res.status(400).json({ message: "Account is closed." });
 
     // Dedupe: if the client retried with the same key, return the
-    // previous tx instead of double-crediting.
+    // previous tx instead of double-crediting. Indexed equality match
+    // (sparse index) — O(1) even with millions of transactions.
     if (clientKey) {
-      const prior = await SavingsTransaction.findOne({ note: { $regex: new RegExp(`\\bIDEMP:${clientKey}\\b`) } });
+      const prior = await SavingsTransaction.findOne({ idempotencyKey: clientKey }).lean();
       if (prior) return res.status(200).json({ tx: prior, account: account.toObject(), idempotent: true });
     }
 
@@ -236,7 +237,8 @@ router.post("/deposit", txGuard, async (req, res) => {
       receivedBy: req.user?.fullName || req.user?.employeeId || "",
       balanceAfter: 0, // filled in below after the $inc
       paidAt: new Date(),
-      note: clientKey ? `${note} IDEMP:${clientKey}`.trim() : note,
+      note,
+      ...(clientKey ? { idempotencyKey: clientKey } : {}),
     });
     // Atomic increment. Two concurrent deposits both succeed; final
     // balance equals account.balance + both amounts.
