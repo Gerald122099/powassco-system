@@ -59,7 +59,7 @@ const fmtDateOnly = (d) => (d ? new Date(d).toLocaleDateString(undefined, { date
 function TotalsStrip({ totals, count }) {
   if (!totals) return null;
   return (
-    <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8">
+    <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-9">
       <div className="rounded-xl border border-slate-200 bg-slate-50 p-2 text-xs">
         <div className="text-[10px] uppercase tracking-wide text-slate-500">Accounts</div>
         <div className="mt-0.5 font-mono text-base font-bold text-slate-800">{count}</div>
@@ -87,6 +87,10 @@ function TotalsStrip({ totals, count }) {
       <div className="rounded-xl border border-pink-200 bg-pink-50 p-2 text-xs">
         <div className="text-[10px] uppercase tracking-wide text-pink-700">AR TNPL</div>
         <div className="mt-0.5 font-mono text-base font-bold text-pink-800">{peso(totals.arTnpl || 0)}</div>
+      </div>
+      <div className="rounded-xl border border-pink-200 bg-pink-50 p-2 text-xs">
+        <div className="text-[10px] uppercase tracking-wide text-pink-700">Savings (payable)</div>
+        <div className="mt-0.5 font-mono text-base font-bold text-pink-800">{peso(totals.savings || 0)}</div>
       </div>
       <div className="rounded-xl border border-amber-200 bg-amber-50 p-2 text-xs">
         <div className="text-[10px] uppercase tracking-wide text-amber-700">Total receivable</div>
@@ -229,6 +233,7 @@ export default function MembersCbuPanel() {
                 <th className="px-3 py-2">Account name</th>
                 <th className="px-3 py-2">Status</th>
                 <th className="px-3 py-2 text-right">Share Capital</th>
+                <th className="px-3 py-2 text-right">Savings</th>
                 <th className="px-3 py-2 text-right">AR Water</th>
                 <th className="px-3 py-2 text-right">Fines</th>
                 <th className="px-3 py-2 text-right">Reconnection</th>
@@ -240,9 +245,9 @@ export default function MembersCbuPanel() {
             </thead>
             <tbody>
               {!data ? (
-                <tr><td colSpan={11} className="py-10 text-center text-slate-500">Loading…</td></tr>
+                <tr><td colSpan={12} className="py-10 text-center text-slate-500">Loading…</td></tr>
               ) : data.members.length === 0 ? (
-                <tr><td colSpan={11} className="py-10 text-center text-slate-500">No accounts match.</td></tr>
+                <tr><td colSpan={12} className="py-10 text-center text-slate-500">No accounts match.</td></tr>
               ) : (
                 data.members.map((m) => {
                   const hasReceivable = m.totalReceivable > 0;
@@ -250,7 +255,7 @@ export default function MembersCbuPanel() {
                     <tr
                       key={m.pnNo}
                       onClick={() => openDetail(m)}
-                      className={`border-t cursor-pointer hover:bg-slate-50/70 ${hasReceivable ? "" : "text-slate-500"}`}
+                      className={`border-t cursor-pointer hover:bg-slate-50/70 ${hasReceivable || (m.savingsBalance || 0) > 0 ? "" : "text-slate-500"}`}
                     >
                       <td className="px-3 py-2 font-mono">{m.pnNo}</td>
                       <td className="px-3 py-2 font-semibold">{m.accountName}</td>
@@ -260,6 +265,9 @@ export default function MembersCbuPanel() {
                         </span>
                       </td>
                       <td className="px-3 py-2 text-right font-mono text-blue-700">{peso(m.cbuBalance)}</td>
+                      <td className={`px-3 py-2 text-right font-mono ${(m.savingsBalance || 0) > 0 ? "text-pink-700 font-bold" : "text-slate-400"}`}>
+                        {peso(m.savingsBalance || 0)}
+                      </td>
                       <td className={`px-3 py-2 text-right font-mono ${m.arWaterBase > 0 ? "text-cyan-700 font-bold" : "text-slate-400"}`}>
                         {peso(m.arWaterBase || 0)}{m.arWaterCount > 0 && <span className="ml-1 text-[10px] text-slate-500">({m.arWaterCount})</span>}
                       </td>

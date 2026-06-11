@@ -18,10 +18,11 @@ import CollectionTodayPanel from "../../components/CollectionTodayPanel";
 import TransactionsPanel from "../bookkeeper/TransactionsPanel";
 import CashierSalesPanel from "./CashierSalesPanel";
 import CashierDisbursementsPanel from "./CashierDisbursementsPanel";
+import CashierSavingsPanel from "./CashierSavingsPanel";
 import ReportsPanel from "../../components/ReportsPanel";
 import { apiFetch } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
-import { Droplets, Banknote, ReceiptText, Wallet, CheckCircle, TrendingUp, History, ShoppingBag, FileDown, Receipt } from "lucide-react";
+import { Droplets, Banknote, ReceiptText, Wallet, CheckCircle, TrendingUp, History, ShoppingBag, FileDown, Receipt, PiggyBank } from "lucide-react";
 
 const peso = (n) =>
   "₱" + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -141,6 +142,7 @@ export default function CashierDashboard() {
             { key: "water", label: "Water Dues", icon: Droplets },
             { key: "loan", label: "Loan Dues", icon: Banknote },
             { key: "sales", label: "Sales", icon: ShoppingBag },
+            { key: "savings", label: "Savings", icon: PiggyBank },
             { key: "disbursements", label: "Disbursements", icon: Receipt },
             { key: "collections", label: "Today's Collection", icon: ReceiptText },
             { key: "history", label: "Transaction History", icon: History },
@@ -168,6 +170,7 @@ export default function CashierDashboard() {
         {view === "water" && <WaterDuesLookup />}
         {view === "loan" && <LoanDuesLookup />}
         {view === "sales" && <CashierSalesPanel />}
+        {view === "savings" && <CashierSavingsPanel />}
         {view === "disbursements" && <CashierDisbursementsPanel />}
         {view === "collections" && <CollectionTodayPanel module="all" />}
         {view === "history" && <TransactionsPanel />}

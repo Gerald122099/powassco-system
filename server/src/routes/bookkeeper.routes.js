@@ -24,6 +24,7 @@ import LoanApplication from "../models/LoanApplication.js";
 import CbuTransaction from "../models/CbuTransaction.js";
 import { ProductLoanCatalog, ProductLoanApplication } from "../models/ProductLoan.js";
 import LoanSettings from "../models/LoanSettings.js";
+import SavingsAccount from "../models/SavingsAccount.js";
 import { freshenBill } from "../utils/penalty.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
@@ -278,6 +279,15 @@ router.get("/members-cbu", ...guard, async (req, res) => {
       bucket.set(row._id.pn, { ar: row.ar, count: row.count });
     }
 
+    // Voluntary Savings balance (payable: coop owes member). Status
+    // filter excludes closed accounts.
+    const savingsRows = pnNos.length
+      ? await SavingsAccount.find({ pnNo: { $in: pnNos }, status: "active" })
+          .select("pnNo balance")
+          .lean()
+      : [];
+    const savingsMap = new Map(savingsRows.map((s) => [s.pnNo, Number(s.balance) || 0]));
+
     const enriched = members.map((m) => {
       const w = waterAr.get(m.pnNo);
       const l = loanAr.get(m.pnNo);
@@ -304,6 +314,7 @@ router.get("/members-cbu", ...guard, async (req, res) => {
         arTnplCount: t?.count || 0,
         arProduct,
         arProductCount: o?.count || 0,
+        savingsBalance: round2(savingsMap.get(m.pnNo) || 0),
         totalReceivable: round2(arWater + arLoan + arTnpl + arProduct),
       };
     });
@@ -318,6 +329,7 @@ router.get("/members-cbu", ...guard, async (req, res) => {
       arLoan: round2(enriched.reduce((s, m) => s + m.arLoan, 0)),
       arTnpl: round2(enriched.reduce((s, m) => s + m.arTnpl, 0)),
       arProduct: round2(enriched.reduce((s, m) => s + m.arProduct, 0)),
+      savings: round2(enriched.reduce((s, m) => s + m.savingsBalance, 0)),
     };
     totals.totalReceivable = round2(totals.arWater + totals.arLoan + totals.arTnpl + totals.arProduct);
 
