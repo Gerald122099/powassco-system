@@ -19,6 +19,7 @@ import WaterPayment from "../models/WaterPayment.js";
 import LoanPayment from "../models/LoanPayment.js";
 import WaterMember from "../models/WaterMember.js";
 import WaterBill from "../models/WaterBill.js";
+import WaterSettings from "../models/WaterSettings.js";
 import LoanApplication from "../models/LoanApplication.js";
 import CbuTransaction from "../models/CbuTransaction.js";
 import { ProductLoanCatalog, ProductLoanApplication } from "../models/ProductLoan.js";
@@ -158,15 +159,45 @@ router.get("/members-cbu", ...guard, async (req, res) => {
 
     const pnNos = members.map((m) => m.pnNo);
 
-    // AR Water — sum of totalDue on every unpaid bill grouped by pnNo.
-    // Includes overdue penalties because totalDue is recomputed lazily
-    // on read in waterBills.routes.js (ensureOverdueAndPenalty). Here
-    // we read the persisted value — close enough for an audit summary
-    // (the cashier UI is the source of truth for the live amount).
+    // AR Water — split into 3 columns matching the paper Cash
+    // Disbursement sheet:
+    //   • AR Water (base): just bill.amount (water charge only)
+    //   • Fines: per-day penalty (₱10/day default) accumulated post-due
+    //   • Reconnection Fee: one-shot ₱200 after grace runs out
+    // Together they add to bill.totalDue. We pull the reconnection
+    // amount from WaterSettings so the split tracks any admin change.
+    const waterSettings = await WaterSettings.findOne().lean();
+    const reconnectFee = Number(waterSettings?.penaltyAfterGraceAmount ?? 200);
+
     const waterArAgg = pnNos.length
       ? await WaterBill.aggregate([
           { $match: { pnNo: { $in: pnNos }, status: { $in: ["unpaid", "overdue", "partial"] } } },
-          { $group: { _id: "$pnNo", arWater: { $sum: "$totalDue" }, billCount: { $sum: 1 } } },
+          { $project: {
+              pnNo: 1,
+              amount: 1,
+              penaltyApplied: 1,
+              subjectForDisconnection: 1,
+              reconnectPortion: {
+                $cond: [{ $eq: ["$subjectForDisconnection", true] }, reconnectFee, 0],
+              },
+              finesPortion: {
+                $max: [
+                  0,
+                  { $subtract: [
+                      "$penaltyApplied",
+                      { $cond: [{ $eq: ["$subjectForDisconnection", true] }, reconnectFee, 0] },
+                    ] },
+                ],
+              },
+            } },
+          { $group: {
+              _id: "$pnNo",
+              arWaterBase: { $sum: "$amount" },
+              arFines: { $sum: "$finesPortion" },
+              arReconnect: { $sum: "$reconnectPortion" },
+              billCount: { $sum: 1 },
+              disconnectCount: { $sum: { $cond: ["$subjectForDisconnection", 1, 0] } },
+            } },
         ])
       : [];
     const waterAr = new Map(waterArAgg.map((x) => [x._id, x]));
@@ -214,14 +245,21 @@ router.get("/members-cbu", ...guard, async (req, res) => {
       const l = loanAr.get(m.pnNo);
       const t = tnplAr.get(m.pnNo);
       const o = otherProductAr.get(m.pnNo);
-      const arWater = round2(w?.arWater || 0);
+      const arWaterBase = round2(w?.arWaterBase || 0);
+      const arFines = round2(w?.arFines || 0);
+      const arReconnect = round2(w?.arReconnect || 0);
+      const arWater = round2(arWaterBase + arFines + arReconnect); // legacy alias = totalDue sum
       const arLoan = round2(l?.arLoan || 0);
       const arTnpl = round2(t?.ar || 0);
       const arProduct = round2(o?.ar || 0);
       return {
         ...m,
+        arWaterBase,
+        arFines,
+        arReconnect,
         arWater,
         arWaterCount: w?.billCount || 0,
+        disconnectCount: w?.disconnectCount || 0,
         arLoan,
         arLoanCount: l?.loanCount || 0,
         arTnpl,
@@ -235,6 +273,9 @@ router.get("/members-cbu", ...guard, async (req, res) => {
     const total = round2(enriched.reduce((s, m) => s + Number(m.cbuBalance || 0), 0));
     const totals = {
       cbu: total,
+      arWaterBase: round2(enriched.reduce((s, m) => s + m.arWaterBase, 0)),
+      arFines: round2(enriched.reduce((s, m) => s + m.arFines, 0)),
+      arReconnect: round2(enriched.reduce((s, m) => s + m.arReconnect, 0)),
       arWater: round2(enriched.reduce((s, m) => s + m.arWater, 0)),
       arLoan: round2(enriched.reduce((s, m) => s + m.arLoan, 0)),
       arTnpl: round2(enriched.reduce((s, m) => s + m.arTnpl, 0)),
@@ -261,7 +302,7 @@ router.get("/members-cbu/:pnNo", ...guard, async (req, res) => {
       CbuTransaction.find({ pnNo }).sort({ createdAt: -1 }).limit(200).lean(),
       WaterBill.find({ pnNo, status: { $in: ["unpaid", "overdue", "partial"] } })
         .sort({ periodKey: 1 })
-        .select("periodKey meterNumber consumption totalDue penaltyAmount status dueDate")
+        .select("periodKey meterNumber consumption amount penaltyApplied totalDue subjectForDisconnection daysOverdue status dueDate")
         .lean(),
       LoanApplication.find({ borrowerPnNo: pnNo, status: "released" })
         .sort({ releasedAt: -1 })

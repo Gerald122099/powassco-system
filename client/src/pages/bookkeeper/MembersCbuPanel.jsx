@@ -24,25 +24,33 @@ const fmtDateOnly = (d) => (d ? new Date(d).toLocaleDateString(undefined, { date
 function TotalsStrip({ totals, count }) {
   if (!totals) return null;
   return (
-    <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+    <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8">
       <div className="rounded-xl border border-slate-200 bg-slate-50 p-2 text-xs">
-        <div className="text-[10px] uppercase tracking-wide text-slate-500">Accounts shown</div>
+        <div className="text-[10px] uppercase tracking-wide text-slate-500">Accounts</div>
         <div className="mt-0.5 font-mono text-base font-bold text-slate-800">{count}</div>
       </div>
       <div className="rounded-xl border border-blue-200 bg-blue-50 p-2 text-xs">
-        <div className="text-[10px] uppercase tracking-wide text-blue-700">Share Capital (CBU)</div>
+        <div className="text-[10px] uppercase tracking-wide text-blue-700">Share Capital</div>
         <div className="mt-0.5 font-mono text-base font-bold text-blue-800">{peso(totals.cbu)}</div>
       </div>
       <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-2 text-xs">
         <div className="text-[10px] uppercase tracking-wide text-cyan-700">AR Water</div>
-        <div className="mt-0.5 font-mono text-base font-bold text-cyan-800">{peso(totals.arWater)}</div>
+        <div className="mt-0.5 font-mono text-base font-bold text-cyan-800">{peso(totals.arWaterBase || 0)}</div>
+      </div>
+      <div className="rounded-xl border border-red-200 bg-red-50 p-2 text-xs">
+        <div className="text-[10px] uppercase tracking-wide text-red-700">Fines</div>
+        <div className="mt-0.5 font-mono text-base font-bold text-red-800">{peso(totals.arFines || 0)}</div>
+      </div>
+      <div className="rounded-xl border border-rose-200 bg-rose-50 p-2 text-xs">
+        <div className="text-[10px] uppercase tracking-wide text-rose-700">Reconnection</div>
+        <div className="mt-0.5 font-mono text-base font-bold text-rose-800">{peso(totals.arReconnect || 0)}</div>
       </div>
       <div className="rounded-xl border border-violet-200 bg-violet-50 p-2 text-xs">
         <div className="text-[10px] uppercase tracking-wide text-violet-700">AR Loan</div>
         <div className="mt-0.5 font-mono text-base font-bold text-violet-800">{peso(totals.arLoan)}</div>
       </div>
       <div className="rounded-xl border border-pink-200 bg-pink-50 p-2 text-xs">
-        <div className="text-[10px] uppercase tracking-wide text-pink-700">AR TNPL (Materials)</div>
+        <div className="text-[10px] uppercase tracking-wide text-pink-700">AR TNPL</div>
         <div className="mt-0.5 font-mono text-base font-bold text-pink-800">{peso(totals.arTnpl || 0)}</div>
       </div>
       <div className="rounded-xl border border-amber-200 bg-amber-50 p-2 text-xs">
@@ -133,19 +141,21 @@ export default function MembersCbuPanel() {
                 <th className="px-3 py-2">Account No.</th>
                 <th className="px-3 py-2">Account name</th>
                 <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2 text-right">Share Capital (CBU)</th>
+                <th className="px-3 py-2 text-right">Share Capital</th>
                 <th className="px-3 py-2 text-right">AR Water</th>
+                <th className="px-3 py-2 text-right">Fines</th>
+                <th className="px-3 py-2 text-right">Reconnection</th>
                 <th className="px-3 py-2 text-right">AR Loan</th>
                 <th className="px-3 py-2 text-right">AR TNPL</th>
                 <th className="px-3 py-2 text-right">AR Other</th>
-                <th className="px-3 py-2 text-right">Total receivable</th>
+                <th className="px-3 py-2 text-right">Total</th>
               </tr>
             </thead>
             <tbody>
               {!data ? (
-                <tr><td colSpan={9} className="py-10 text-center text-slate-500">Loading…</td></tr>
+                <tr><td colSpan={11} className="py-10 text-center text-slate-500">Loading…</td></tr>
               ) : data.members.length === 0 ? (
-                <tr><td colSpan={9} className="py-10 text-center text-slate-500">No accounts match.</td></tr>
+                <tr><td colSpan={11} className="py-10 text-center text-slate-500">No accounts match.</td></tr>
               ) : (
                 data.members.map((m) => {
                   const hasReceivable = m.totalReceivable > 0;
@@ -163,8 +173,14 @@ export default function MembersCbuPanel() {
                         </span>
                       </td>
                       <td className="px-3 py-2 text-right font-mono text-blue-700">{peso(m.cbuBalance)}</td>
-                      <td className={`px-3 py-2 text-right font-mono ${m.arWater > 0 ? "text-cyan-700 font-bold" : "text-slate-400"}`}>
-                        {peso(m.arWater)}{m.arWaterCount > 0 && <span className="ml-1 text-[10px] text-slate-500">({m.arWaterCount})</span>}
+                      <td className={`px-3 py-2 text-right font-mono ${m.arWaterBase > 0 ? "text-cyan-700 font-bold" : "text-slate-400"}`}>
+                        {peso(m.arWaterBase || 0)}{m.arWaterCount > 0 && <span className="ml-1 text-[10px] text-slate-500">({m.arWaterCount})</span>}
+                      </td>
+                      <td className={`px-3 py-2 text-right font-mono ${m.arFines > 0 ? "text-red-700 font-bold" : "text-slate-400"}`}>
+                        {peso(m.arFines || 0)}
+                      </td>
+                      <td className={`px-3 py-2 text-right font-mono ${m.arReconnect > 0 ? "text-rose-700 font-bold" : "text-slate-400"}`}>
+                        {peso(m.arReconnect || 0)}{m.disconnectCount > 0 && <span className="ml-1 text-[10px] text-slate-500">({m.disconnectCount})</span>}
                       </td>
                       <td className={`px-3 py-2 text-right font-mono ${m.arLoan > 0 ? "text-violet-700 font-bold" : "text-slate-400"}`}>
                         {peso(m.arLoan)}{m.arLoanCount > 0 && <span className="ml-1 text-[10px] text-slate-500">({m.arLoanCount})</span>}
@@ -215,26 +231,36 @@ export default function MembersCbuPanel() {
                     <th className="px-3 py-1.5 text-right">m³</th>
                     <th className="px-3 py-1.5">Status</th>
                     <th className="px-3 py-1.5">Due date</th>
-                    <th className="px-3 py-1.5 text-right">Penalty</th>
+                    <th className="px-3 py-1.5 text-right">Days OD</th>
+                    <th className="px-3 py-1.5 text-right">Water</th>
+                    <th className="px-3 py-1.5 text-right">Fines</th>
+                    <th className="px-3 py-1.5 text-right">Reconnect</th>
                     <th className="px-3 py-1.5 text-right">Total due</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {detail.waterBills.map((b) => (
-                    <tr key={b._id} className="border-t">
-                      <td className="px-3 py-1.5 font-mono">{b.periodKey}</td>
-                      <td className="px-3 py-1.5 font-mono">{b.meterNumber}</td>
-                      <td className="px-3 py-1.5 text-right font-mono">{b.consumption}</td>
-                      <td className="px-3 py-1.5">
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${b.status === "overdue" ? "bg-red-100 text-red-700" : b.status === "partial" ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-700"}`}>
-                          {b.status}
-                        </span>
-                      </td>
-                      <td className="px-3 py-1.5">{fmtDateOnly(b.dueDate)}</td>
-                      <td className="px-3 py-1.5 text-right font-mono text-red-600">{Number(b.penaltyAmount) > 0 ? peso(b.penaltyAmount) : "—"}</td>
-                      <td className="px-3 py-1.5 text-right font-mono font-bold text-cyan-800">{peso(b.totalDue)}</td>
-                    </tr>
-                  ))}
+                  {detail.waterBills.map((b) => {
+                    const reconnect = b.subjectForDisconnection ? 200 : 0;
+                    const fines = Math.max(0, Number(b.penaltyApplied || 0) - reconnect);
+                    return (
+                      <tr key={b._id} className="border-t">
+                        <td className="px-3 py-1.5 font-mono">{b.periodKey}</td>
+                        <td className="px-3 py-1.5 font-mono">{b.meterNumber}</td>
+                        <td className="px-3 py-1.5 text-right font-mono">{b.consumption}</td>
+                        <td className="px-3 py-1.5">
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${b.subjectForDisconnection ? "bg-rose-100 text-rose-700" : b.status === "overdue" ? "bg-red-100 text-red-700" : b.status === "partial" ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-700"}`}>
+                            {b.subjectForDisconnection ? "DISCONNECT" : b.status}
+                          </span>
+                        </td>
+                        <td className="px-3 py-1.5">{fmtDateOnly(b.dueDate)}</td>
+                        <td className="px-3 py-1.5 text-right font-mono">{Number(b.daysOverdue) > 0 ? `${b.daysOverdue}d` : "—"}</td>
+                        <td className="px-3 py-1.5 text-right font-mono text-cyan-800">{peso(b.amount || 0)}</td>
+                        <td className="px-3 py-1.5 text-right font-mono text-red-600">{fines > 0 ? peso(fines) : "—"}</td>
+                        <td className="px-3 py-1.5 text-right font-mono text-rose-700">{reconnect > 0 ? peso(reconnect) : "—"}</td>
+                        <td className="px-3 py-1.5 text-right font-mono font-bold text-amber-800">{peso(b.totalDue)}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </DetailSection>
