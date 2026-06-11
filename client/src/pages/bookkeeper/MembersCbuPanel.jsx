@@ -14,7 +14,42 @@ import Card from "../../components/Card";
 import Modal from "../../components/Modal";
 import { apiFetch } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
-import { Wallet, Search, RefreshCw, Droplets, Banknote, Package, AlertCircle } from "lucide-react";
+import { Wallet, Search, RefreshCw, Droplets, Banknote, Package, AlertCircle, Calendar } from "lucide-react";
+
+const DATE_PRESETS = [
+  { key: "all", label: "All time" },
+  { key: "today", label: "Today" },
+  { key: "thisWeek", label: "This week" },
+  { key: "thisMonth", label: "This month" },
+  { key: "thisYear", label: "This year" },
+  { key: "custom", label: "Custom" },
+];
+
+function ymd(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function rangeForPreset(key) {
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  if (key === "today") return { from: ymd(now), to: ymd(now) };
+  if (key === "thisWeek") {
+    const day = now.getDay() === 0 ? 6 : now.getDay() - 1;
+    const start = new Date(now); start.setDate(now.getDate() - day);
+    const end = new Date(start); end.setDate(start.getDate() + 6);
+    return { from: ymd(start), to: ymd(end) };
+  }
+  if (key === "thisMonth") {
+    return { from: ymd(new Date(now.getFullYear(), now.getMonth(), 1)), to: ymd(new Date(now.getFullYear(), now.getMonth() + 1, 0)) };
+  }
+  if (key === "thisYear") {
+    return { from: ymd(new Date(now.getFullYear(), 0, 1)), to: ymd(new Date(now.getFullYear(), 11, 31)) };
+  }
+  return { from: "", to: "" };
+}
 
 const peso = (n) =>
   "₱" + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -82,6 +117,9 @@ function DetailSection({ icon: Icon, color, title, count, total, children, empty
 export default function MembersCbuPanel() {
   const { token } = useAuth();
   const [q, setQ] = useState("");
+  const [preset, setPreset] = useState("all");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
   const [data, setData] = useState(null);
   const [busy, setBusy] = useState(false);
   const [openMember, setOpenMember] = useState(null);
@@ -90,11 +128,24 @@ export default function MembersCbuPanel() {
   const load = useCallback(async () => {
     setBusy(true);
     try {
-      const params = q.trim() ? `?q=${encodeURIComponent(q.trim())}` : "";
-      setData(await apiFetch(`/bookkeeper/members-cbu${params}`, { token }));
+      const qs = new URLSearchParams();
+      if (q.trim()) qs.set("q", q.trim());
+      if (from) qs.set("from", from);
+      if (to) qs.set("to", to);
+      const suffix = qs.toString() ? `?${qs.toString()}` : "";
+      setData(await apiFetch(`/bookkeeper/members-cbu${suffix}`, { token }));
     } catch {/* ignore */} finally { setBusy(false); }
-  }, [q, token]);
+  }, [q, from, to, token]);
   useEffect(() => { load(); }, [load]);
+
+  function pickPreset(k) {
+    setPreset(k);
+    if (k === "all") { setFrom(""); setTo(""); return; }
+    if (k !== "custom") {
+      const { from: f, to: t } = rangeForPreset(k);
+      setFrom(f); setTo(t);
+    }
+  }
 
   async function openDetail(m) {
     setOpenMember(m);
@@ -129,6 +180,42 @@ export default function MembersCbuPanel() {
             <RefreshCw size={14} className={busy ? "animate-spin" : ""} />
           </button>
         </form>
+      </div>
+
+      {/* Date-range filter — windows the AR rollups by record-created date.
+          "All time" disables the filter (current outstanding). */}
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+        <span className="flex items-center gap-1 text-slate-500"><Calendar size={12} /> Range:</span>
+        <div className="inline-flex rounded-xl border border-slate-200 p-1">
+          {DATE_PRESETS.map((p) => (
+            <button
+              key={p.key}
+              type="button"
+              onClick={() => pickPreset(p.key)}
+              className={`rounded-lg px-3 py-1 font-semibold ${preset === p.key ? "bg-blue-600 text-white" : "text-slate-700 hover:bg-slate-50"}`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <input
+          type="date"
+          value={from}
+          onChange={(e) => { setFrom(e.target.value); setPreset("custom"); }}
+          className="rounded-xl border border-slate-200 px-2 py-1"
+        />
+        <span className="text-slate-400">to</span>
+        <input
+          type="date"
+          value={to}
+          onChange={(e) => { setTo(e.target.value); setPreset("custom"); }}
+          className="rounded-xl border border-slate-200 px-2 py-1"
+        />
+        {(from || to) && (
+          <span className="text-[10px] text-slate-500 italic">
+            Showing AR originated in this range only — CBU balance is point-in-time.
+          </span>
+        )}
       </div>
 
       <TotalsStrip totals={data?.totals} count={data?.count || 0} />

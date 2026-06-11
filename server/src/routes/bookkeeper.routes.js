@@ -143,9 +143,18 @@ router.get("/transactions", requireAuth, requireRole(["admin", "bookkeeper", "ca
 // Unified view the bookkeeper opens to see every receivable on an
 // account in one row. Each AR column is computed server-side so the
 // client doesn't have to fan out per-member.
+//
+// Optional date range (?from=YYYY-MM-DD&to=YYYY-MM-DD) windows the
+// AR rollups by when the underlying record was created:
+//   • WaterBill — createdAt within range (bills generated this period)
+//   • LoanApplication — releasedAt within range (loans released)
+//   • ProductLoanApplication — createdAt within range
+// CBU balance is point-in-time and unaffected by the range. Without
+// a range, the endpoint behaves as before (all outstanding).
 router.get("/members-cbu", ...guard, async (req, res) => {
   try {
     const q = String(req.query.q || "").trim();
+    const dateRangeAR = dateRange(req.query.from, req.query.to);
     const filter = q
       ? { $or: [
           { pnNo: { $regex: q, $options: "i" } },
@@ -192,9 +201,11 @@ router.get("/members-cbu", ...guard, async (req, res) => {
       }
     }
 
+    const waterArMatch = { pnNo: { $in: pnNos }, status: { $in: ["unpaid", "overdue", "partial"] } };
+    if (dateRangeAR) waterArMatch.createdAt = dateRangeAR;
     const waterArAgg = pnNos.length
       ? await WaterBill.aggregate([
-          { $match: { pnNo: { $in: pnNos }, status: { $in: ["unpaid", "overdue", "partial"] } } },
+          { $match: waterArMatch },
           { $project: {
               pnNo: 1,
               amount: 1,
@@ -228,9 +239,11 @@ router.get("/members-cbu", ...guard, async (req, res) => {
     // AR Loan — sum of outstanding balance on every active regular loan
     // grouped by borrowerPnNo. "released" is the only status that means
     // money is actually owed (applied/approved haven't been disbursed).
+    const loanArMatch = { borrowerPnNo: { $in: pnNos }, status: "released" };
+    if (dateRangeAR) loanArMatch.releasedAt = dateRangeAR;
     const loanArAgg = pnNos.length
       ? await LoanApplication.aggregate([
-          { $match: { borrowerPnNo: { $in: pnNos }, status: "released" } },
+          { $match: loanArMatch },
           { $group: { _id: "$borrowerPnNo", arLoan: { $sum: "$balance" }, loanCount: { $sum: 1 } } },
         ])
       : [];
@@ -242,13 +255,15 @@ router.get("/members-cbu", ...guard, async (req, res) => {
     //   • Other: every other product-loan category (frozen_goods,
     //     rice, rental, appliance, construction, other).
     // Sales paid in full carry no balance so they roll up to 0.
+    const productArMatch = {
+      borrowerPnNo: { $in: pnNos },
+      status: { $in: ["active", "released", "approved", "overdue"] },
+      transactionType: { $in: ["loan", "rental"] },
+    };
+    if (dateRangeAR) productArMatch.createdAt = dateRangeAR;
     const productArAgg = pnNos.length
       ? await ProductLoanApplication.aggregate([
-          { $match: {
-              borrowerPnNo: { $in: pnNos },
-              status: { $in: ["active", "released", "approved", "overdue"] },
-              transactionType: { $in: ["loan", "rental"] },
-            } },
+          { $match: productArMatch },
           { $group: {
               _id: { pn: "$borrowerPnNo", isMaterials: { $eq: ["$category", "materials"] } },
               ar: { $sum: "$balance" },
