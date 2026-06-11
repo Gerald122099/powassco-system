@@ -259,7 +259,33 @@ export function printPromissory(loan) {
   printDoc("Promissory Note", body);
 }
 
+// Same breakdown logic as paymentReceiptPrint.js: sum the amortization
+// rows for whichever periods the payment covered, treat anything beyond
+// that as fines.
+function loanBreakdown(loan, payment) {
+  const sched = loan?.amortizationSchedule || [];
+  const periods = payment?.periodsPaid || [];
+  let principal = 0, interest = 0;
+  if (periods.length && sched.length) {
+    for (const p of periods) {
+      const row = sched.find((r) => r.period === p);
+      if (row) {
+        principal += Number(row.principal) || 0;
+        interest += Number(row.interest) || 0;
+      }
+    }
+  }
+  const amortTotal = principal + interest;
+  const paid = Number(payment?.amountPaid) || 0;
+  const fines = amortTotal > 0 ? Math.max(0, paid - amortTotal) : 0;
+  return { principal, interest, fines, hasBreakdown: amortTotal > 0 };
+}
+
 export function printReceipt({ loan, payment }) {
+  const bd = loanBreakdown(loan, payment);
+  const periodsLine = (payment.periodsPaid && payment.periodsPaid.length)
+    ? payment.periodsPaid.join(", ")
+    : `${payment.periodsCovered || 1} period(s)`;
   const body = `
     ${header()}
     <div class="title">PAYMENT RECEIPT</div>
@@ -270,11 +296,22 @@ export function printReceipt({ loan, payment }) {
       ${field("Reference Code", loan.referenceCode)}
       ${field("Borrower", `${loan.borrowerName} (${loan.borrowerPnNo})`)}
       ${field("Method", payment.method)}
+      ${field("Period(s) Paid", periodsLine)}
     </div>
     <div class="box" style="margin-top:14px; text-align:center;">
       <div class="lbl">Amount Received</div>
       <div style="font-size:22px; font-weight:800; color:#166534;">₱ ${peso(payment.amountPaid)}</div>
     </div>
+    ${bd.hasBreakdown ? `
+      <div class="box" style="margin-top:10px;">
+        <div class="lbl" style="margin-bottom:4px;">Payment breakdown</div>
+        <div class="grid2">
+          ${field("Loan Principal", `₱ ${peso(bd.principal)}`)}
+          ${field("Loan Interest", `₱ ${peso(bd.interest)}`)}
+          ${bd.fines > 0 ? field("Loan Fines / Penalty", `₱ ${peso(bd.fines)}`) : ""}
+        </div>
+      </div>
+    ` : ""}
     <div class="grid2" style="margin-top:14px;">
       ${field("Total Payable", `₱ ${peso(loan.totalPayment)}`)}
       ${field("Total Paid", `₱ ${peso(loan.totalPaid)}`)}

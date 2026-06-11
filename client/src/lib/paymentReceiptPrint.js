@@ -73,7 +73,37 @@ export function printWaterReceipt({ member, bill, payment }) {
   printDoc(`Receipt ${payment.orNo || bill.meterNumber}`, body);
 }
 
+// Derive a Principal / Interest / Fines split for a loan payment by
+// looking up the periods it covered against the loan's amortization
+// schedule. The schedule already carries the planned principal + interest
+// per period; whatever the payment paid beyond that sum is treated as
+// fines (late penalty). Returns zeros if periodsPaid is missing — older
+// rows that pre-date the field fall back to a single total line.
+function loanBreakdown(loan, payment) {
+  const sched = loan?.amortizationSchedule || [];
+  const periods = payment?.periodsPaid || [];
+  let principal = 0;
+  let interest = 0;
+  if (periods.length && sched.length) {
+    for (const p of periods) {
+      const row = sched.find((r) => r.period === p);
+      if (row) {
+        principal += Number(row.principal) || 0;
+        interest += Number(row.interest) || 0;
+      }
+    }
+  }
+  const amortTotal = principal + interest;
+  const paid = Number(payment?.amountPaid) || 0;
+  const fines = amortTotal > 0 ? Math.max(0, paid - amortTotal) : 0;
+  return { principal, interest, fines, hasBreakdown: amortTotal > 0 };
+}
+
 export function printLoanReceipt({ loan, payment }) {
+  const bd = loanBreakdown(loan, payment);
+  const periodsLine = (payment.periodsPaid && payment.periodsPaid.length)
+    ? payment.periodsPaid.join(", ")
+    : `${payment.periodsCovered || 1} period(s)`;
   const body = `
     ${header()}
     <div class="title">OFFICIAL RECEIPT — LOAN</div>
@@ -81,7 +111,14 @@ export function printLoanReceipt({ loan, payment }) {
     <div class="row"><span class="lbl">Date</span><span class="v">${d(payment.paidAt)}</span></div>
     <div class="divider"></div>
     <div class="row"><span class="lbl">Loan ID</span><span class="v">${safe(loan.loanId)}</span></div>
-    <div class="row"><span class="lbl">Principal</span><span class="v">${peso(loan.principal)}</span></div>
+    <div class="row"><span class="lbl">Principal (loan amount)</span><span class="v">${peso(loan.principal)}</span></div>
+    <div class="row"><span class="lbl">Period(s) paid</span><span class="v">${safe(periodsLine)}</span></div>
+    ${bd.hasBreakdown ? `
+      <div class="divider"></div>
+      <div class="row"><span class="lbl">Loan Principal</span><span class="v">${peso(bd.principal)}</span></div>
+      <div class="row"><span class="lbl">Loan Interest</span><span class="v">${peso(bd.interest)}</span></div>
+      ${bd.fines > 0 ? `<div class="row"><span class="lbl">Loan Fines / Penalty</span><span class="v">${peso(bd.fines)}</span></div>` : ""}
+    ` : ""}
     <div class="row"><span class="lbl">Remaining Balance</span><span class="v">${peso(loan.balance)}</span></div>
     <div class="total"><span class="v">AMOUNT PAID (${safe(payment.method)})</span><span class="amt">${peso(payment.amountPaid)}</span></div>
     <div class="paid">★ PAYMENT POSTED ★</div>
