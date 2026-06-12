@@ -48,6 +48,11 @@ const WaterSettingsSchema = new mongoose.Schema(
     penaltyGraceDays: { type: Number, default: 5, min: 0, max: 30 },
     penaltyAfterGraceAmount: { type: Number, default: 200, min: 0 },
 
+    // NEW-MEMBER FEES (Phase 9) — collected by the cashier when a new
+    // member registers. Editable in admin Water Settings.
+    membershipFee: { type: Number, default: 0, min: 0 },
+    tappingFee: { type: Number, default: 200, min: 0 },
+
     // DUE DATE SETTINGS — default to the 17th per coop policy.
     dueDayOfMonth: { type: Number, default: 17, min: 1, max: 31 },
     graceDays: { type: Number, default: 0, min: 0, max: 60 },

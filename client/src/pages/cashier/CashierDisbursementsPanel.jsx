@@ -175,6 +175,55 @@ function PayrollDisburseQueue({ token }) {
   );
 }
 
+// New-member fees (cash IN): membership + tapping fee owed at
+// registration. Paying records the OR + a drawer INFLOW.
+function MemberFeeQueue({ token }) {
+  const [items, setItems] = useState([]);
+  const load = useCallback(async () => {
+    try {
+      const res = await apiFetch("/cashier/member-fees", { token });
+      setItems(res.items || []);
+    } catch {/* ignore */}
+  }, [token]);
+  useEffect(() => { load(); }, [load]);
+
+  async function pay(f) {
+    const orNo = prompt("Collect PHP " + Number(f.total).toLocaleString() + " from " + f.accountName + " (membership " + f.membershipFee + " + tapping " + f.tappingFee + "). OR number:", "");
+    if (orNo === null || !orNo.trim()) return;
+    try {
+      await apiFetch("/cashier/pay-member-fee", { method: "POST", token, body: { id: f._id, orNo: orNo.trim() } });
+      toast.success("Member fees collected.");
+      load();
+    } catch (e) { toast.error(e.message); }
+  }
+
+  if (!items.length) return null;
+  return (
+    <div className="mt-4 overflow-hidden rounded-2xl border border-emerald-200">
+      <div className="bg-emerald-50 px-4 py-2 text-xs font-semibold text-emerald-800">
+        New-member fees to collect (cash IN) — {items.length}
+      </div>
+      <table className="w-full text-sm">
+        <tbody>
+          {items.map((f) => (
+            <tr key={f._id} className="border-t">
+              <td className="px-3 py-2">
+                <div className="font-semibold">{f.accountName}</div>
+                <div className="font-mono text-[10px] text-slate-500">{f.pnNo} - filed by {f.requestedBy}</div>
+              </td>
+              <td className="px-3 py-2 text-xs text-slate-600">membership {peso(f.membershipFee)}{Number(f.tappingFee) > 0 ? " + tapping " + peso(f.tappingFee) : " (no tapping)"}</td>
+              <td className="px-3 py-2 text-right font-mono font-bold text-emerald-700">{peso(f.total)}</td>
+              <td className="px-3 py-2 text-right">
+                <button onClick={() => pay(f)} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700">Collect</button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export default function CashierDisbursementsPanel() {
   const { token } = useAuth();
   const [pending, setPending] = useState([]);
@@ -271,6 +320,9 @@ export default function CashierDisbursementsPanel() {
 
       {/* Payroll + cash-advance payouts (Phase 5) */}
       <PayrollDisburseQueue token={token} />
+
+      {/* New-member fees (Phase 9, cash IN) */}
+      <MemberFeeQueue token={token} />
 
       {/* Approved — the actionable queue */}
       <Section

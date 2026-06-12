@@ -2,6 +2,8 @@ import express from "express";
 import WaterMember from "../../models/WaterMember.js";
 import WaterBill from "../../models/WaterBill.js";
 import { requireAuth, requireRole, requireAdminAuthz } from "../../middleware/auth.js";
+import WaterSettings from "../../models/WaterSettings.js";
+import MemberFeeRequest from "../../models/MemberFeeRequest.js";
 
 const router = express.Router();
 
@@ -404,7 +406,35 @@ router.post("/", ...guard, async (req, res) => {
     });
 
     await member.save();
-    res.status(201).json(member);
+
+    // Phase 9: NEW members owe membership + tapping fee at the cashier.
+    // The officer can exclude the tapping fee (body.includeTappingFee =
+    // false); migrated/existing members never get a fee request. A
+    // failed request never blocks the registration itself.
+    let feeRequest = null;
+    if (!isExisting) {
+      try {
+        const ws = await WaterSettings.findOne().lean();
+        const membershipFee = Number(ws?.membershipFee || 0);
+        const includeTapping = req.body.includeTappingFee !== false;
+        const tappingFee = includeTapping ? Number(ws?.tappingFee || 0) : 0;
+        const total = Math.round((membershipFee + tappingFee) * 100) / 100;
+        if (total > 0) {
+          feeRequest = await MemberFeeRequest.create({
+            pnNo: member.pnNo,
+            accountName: member.accountName,
+            membershipFee,
+            tappingFee,
+            total,
+            requestedBy: req.user?.fullName || req.user?.employeeId || "",
+          });
+        }
+      } catch (feeErr) {
+        console.error("member fee request failed (member still created):", feeErr.message);
+      }
+    }
+
+    res.status(201).json({ ...member.toObject(), feeRequest });
   } catch (error) {
     console.error("Error creating member:", error);
     

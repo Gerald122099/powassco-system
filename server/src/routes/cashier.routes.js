@@ -26,6 +26,7 @@ import SavingsTransaction from "../models/SavingsTransaction.js";
 import WaterSettings from "../models/WaterSettings.js";
 import Expense from "../models/Expense.js";
 import Payroll from "../models/Payroll.js";
+import MemberFeeRequest from "../models/MemberFeeRequest.js";
 import { BankAccount } from "../models/Treasury.js";
 import { TreasuryTransaction } from "../models/Treasury.js";
 import { freshenBill } from "../utils/penalty.js";
@@ -1006,6 +1007,36 @@ router.post("/disburse-payroll", ...payGuard, async (req, res) => {
     res.json({ ok: true, slip: claimed.toObject(), drawerAfter: round2(drawer - net) });
   } catch (e) {
     res.status(500).json({ message: e.message || "Disbursement failed." });
+  }
+});
+
+// ─── New-member fees (Phase 9) ──────────────────────────────────────
+router.get("/member-fees", ...payGuard, async (req, res) => {
+  const items = await MemberFeeRequest.find({ status: "pending" }).sort({ createdAt: 1 }).lean();
+  res.json({ items });
+});
+
+router.post("/pay-member-fee", ...payGuard, async (req, res) => {
+  try {
+    const orNo = String(req.body?.orNo || "").trim().toUpperCase();
+    if (!orNo) return res.status(400).json({ message: "OR number is required." });
+    const dup = await MemberFeeRequest.findOne({ orNo }).lean();
+    if (dup) return res.status(409).json({ message: `OR ${orNo} already used on a member fee.` });
+    const who = req.user?.fullName || req.user?.employeeId || "";
+    const claimed = await MemberFeeRequest.findOneAndUpdate(
+      { _id: req.body?.id, status: "pending" },
+      { $set: { status: "paid", orNo, paidBy: who, paidAt: new Date() } },
+      { new: true }
+    );
+    if (!claimed) return res.status(409).json({ message: "Fee request is not pending." });
+    await TreasuryTransaction.create({
+      target: "drawer", type: "in", amount: claimed.total, balanceAfter: null,
+      refNo: orNo, by: who,
+      note: `New-member fees ${claimed.pnNo} (${claimed.accountName}): membership ₱${claimed.membershipFee} + tapping ₱${claimed.tappingFee}`,
+    });
+    res.json({ ok: true, fee: claimed });
+  } catch (e) {
+    res.status(500).json({ message: e.message || "Payment failed." });
   }
 });
 

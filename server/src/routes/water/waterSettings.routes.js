@@ -152,6 +152,8 @@ router.put("/", ...adminGuard, async (req, res) => {
       penaltyDailyAmount,
       penaltyGraceDays,
       penaltyAfterGraceAmount,
+      membershipFee,
+      tappingFee,
       dueDayOfMonth,
       graceDays,
       readingStartDayOfMonth,
@@ -177,6 +179,8 @@ router.put("/", ...adminGuard, async (req, res) => {
       settings.penaltyGraceDays = Math.min(30, Math.max(0, Number(penaltyGraceDays) || 0));
     if (penaltyAfterGraceAmount !== undefined)
       settings.penaltyAfterGraceAmount = Math.max(0, Number(penaltyAfterGraceAmount) || 0);
+    if (membershipFee !== undefined) settings.membershipFee = Math.max(0, Number(membershipFee) || 0);
+    if (tappingFee !== undefined) settings.tappingFee = Math.max(0, Number(tappingFee) || 0);
 
     if (dueDayOfMonth !== undefined)
       settings.dueDayOfMonth = Math.min(31, Math.max(1, Number(dueDayOfMonth)));
