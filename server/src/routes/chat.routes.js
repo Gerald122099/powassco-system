@@ -38,6 +38,20 @@ ChatMessageSchema.index({ createdAt: -1 });
 ChatMessageSchema.index({ createdAt: 1 }, { expireAfterSeconds: 60 * 60 * 24 * 90 });
 const ChatMessage = mongoose.model("ChatMessage", ChatMessageSchema);
 
+// Read receipts: one row per user. lastSeenId >= a message's _id means
+// that user has seen it. Admin rows are hidden from non-admin viewers
+// (operator rule: staff can't see whether the admin has read them).
+const ChatSeenSchema = new mongoose.Schema(
+  {
+    userId: { type: String, required: true, unique: true },
+    name: { type: String, default: "" },
+    role: { type: String, default: "" },
+    lastSeenId: { type: String, default: "" },
+  },
+  { timestamps: true }
+);
+const ChatSeen = mongoose.model("ChatSeen", ChatSeenSchema);
+
 const router = express.Router();
 const CHAT_ROLES = ["admin", "manager", "cashier", "loan_officer", "water_bill_officer", "bookkeeper"];
 const guard = [requireAuth, requireRole(CHAT_ROLES)];
@@ -54,9 +68,28 @@ router.get("/", ...guard, async (req, res) => {
     const items = after
       ? await ChatMessage.find(filter).sort({ _id: 1 }).limit(200).lean()
       : (await ChatMessage.find({}).sort({ _id: -1 }).limit(100).lean()).reverse();
-    res.json({ items });
+    let seen = await ChatSeen.find({}).select("userId name role lastSeenId").lean();
+    if (req.user?.role !== "admin") seen = seen.filter((x) => x.role !== "admin");
+    res.json({ items, seen });
   } catch (e) {
     res.status(500).json({ message: "Failed to load chat." });
+  }
+});
+
+// Record how far this user has read. Called when the panel opens /
+// new messages arrive while open.
+router.post("/seen", ...guard, async (req, res) => {
+  try {
+    const lastId = String(req.body?.lastId || "");
+    if (!lastId) return res.json({ ok: true });
+    await ChatSeen.updateOne(
+      { userId: String(req.user?.id || req.user?._id || "") },
+      { $set: { name: req.user?.fullName || "", role: req.user?.role || "" }, $max: { lastSeenId: lastId } },
+      { upsert: true }
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ message: "Failed." });
   }
 });
 

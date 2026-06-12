@@ -42,6 +42,7 @@ export default function StaffChat() {
   const { token, user } = useAuth();
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState([]);
+  const [seenList, setSeenList] = useState([]);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [unread, setUnread] = useState(0);
@@ -67,9 +68,12 @@ export default function StaffChat() {
 
   const markSeen = useCallback((msgs) => {
     const newest = msgs[msgs.length - 1];
-    if (newest) localStorage.setItem(LAST_SEEN_KEY, newest._id);
+    if (newest) {
+      localStorage.setItem(LAST_SEEN_KEY, newest._id);
+      apiFetch("/chat/seen", { method: "POST", token, body: { lastId: newest._id } }).catch(() => {});
+    }
     setUnread(0);
-  }, []);
+  }, [token]);
 
   const myId = String(user?.id || user?._id || "");
 
@@ -79,6 +83,7 @@ export default function StaffChat() {
       const res = await apiFetch("/chat", { token });
       const msgs = res.items || [];
       setMessages(msgs);
+      setSeenList(res.seen || []);
       if (openRef.current) {
         markSeen(msgs);
       } else {
@@ -326,6 +331,19 @@ export default function StaffChat() {
             })}
           </div>
 
+          {(() => {
+            const last = messages[messages.length - 1];
+            if (!last) return null;
+            const seenBy = seenList.filter(
+              (x) => x.userId !== myId && x.lastSeenId && x.lastSeenId >= last._id
+            );
+            if (!seenBy.length) return null;
+            return (
+              <div className="border-t border-slate-100 bg-slate-50 px-3 py-1 text-right text-[10px] text-slate-400">
+                Seen by {seenBy.map((x) => x.name).join(", ")}
+              </div>
+            );
+          })()}
           <form onSubmit={send} className="flex items-center gap-2 border-t border-slate-200 bg-white p-2">
             <input
               value={text}
