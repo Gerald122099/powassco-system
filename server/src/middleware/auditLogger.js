@@ -1,4 +1,5 @@
 import AuditLog from "../models/AuditLog.js";
+import ErrorLog from "../models/ErrorLog.js";
 
 // Records every mutating API call (after it completes, so the authenticated
 // user set by requireAuth is available). Read-only GETs are not logged.
@@ -112,6 +113,19 @@ export function auditLogger(req, res, next) {
       ip: (req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "").toString().split(",")[0].trim(),
       meta,
     }).catch(() => {});
+    // Any 5xx lands in the error monitor so the admin can triage it
+    // (cause = path + payload; admin records the action taken).
+    if (res.statusCode >= 500) {
+      ErrorLog.create({
+        method: req.method,
+        path: (req.originalUrl || req.path).split("?")[0],
+        statusCode: res.statusCode,
+        actorName,
+        actorRole: req.user?.role || "",
+        ip: (req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "").toString().split(",")[0].trim(),
+        meta,
+      }).catch(() => {});
+    }
   });
 
   next();

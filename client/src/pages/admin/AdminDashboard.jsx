@@ -10,6 +10,7 @@ import SavingsSettingsPanel from "./SavingsSettingsPanel";
 import AdjustmentsPanel from "../../components/AdjustmentsPanel";
 import DevFeedbackPanel from "./DevFeedbackPanel";
 import BankSettingsPanel from "./BankSettingsPanel";
+import SystemMonitorPanel from "./SystemMonitorPanel";
 import TreasuryPanel from "../../components/TreasuryPanel";
 import Card from "../../components/Card";
 import Modal from "../../components/Modal";
@@ -111,6 +112,7 @@ const adminNavItems = [
   { key: "loans", label: "Loan Analytics", icon: Banknote, desc: "Capital, interest profit, collections, and outstanding" },
   { key: "collections", label: "Overall Collections", icon: ReceiptText, desc: "Combined water + loan daily collection — per-collector audit" },
   { key: "audit", label: "Audit Log", icon: ScrollText, desc: "System activity — who did what, and when" },
+  { key: "monitor", label: "System Monitor", icon: AlertTriangle, desc: "Captured server errors — cause, who hit it, action taken" },
   { key: "announcements", label: "Announcements", icon: Megaphone, desc: "Post announcements to the public homepage" },
   { key: "payments", label: "Payments", icon: CreditCard, desc: "Online payment mode, QR PH, and transaction fee" },
   { key: "bank-settings", label: "Bank Settings", icon: CreditCard, desc: "Register banks (name + logo) for the treasury module" },
@@ -429,6 +431,7 @@ export default function AdminDashboard() {
 
         {/* Audit Log Tab */}
         {activeTab === "audit" && <AuditLogPanel />}
+        {activeTab === "monitor" && <SystemMonitorPanel />}
 
         {/* Security / 2FA Tab */}
         {activeTab === "security" && <SecurityPanel />}
