@@ -131,11 +131,73 @@ function PayrollDisburseQueue({ token }) {
     const net = Number(p.netPay) || 0;
     const orNo = prompt("Pay PHP " + net.toLocaleString() + " to " + p.employeeName + ". OR / voucher number:", "");
     if (orNo === null || !orNo.trim()) return;
+    const receivedBy = prompt("Received by (the person who signed the payslip):", p.employeeName || "");
+    if (receivedBy === null) return;
     try {
-      const res = await apiFetch("/cashier/disburse-payroll", { method: "POST", token, body: { id: p._id, orNo: orNo.trim() } });
+      const res = await apiFetch("/cashier/disburse-payroll", {
+        method: "POST", token,
+        body: { id: p._id, orNo: orNo.trim(), receivedBy: receivedBy.trim() },
+      });
       toast.success("Paid - drawer now PHP " + res.drawerAfter.toLocaleString() + ".");
       load();
     } catch (e) { toast.error(e.message); }
+  }
+
+  // Printable payslip: earnings + deductions breakdown and four
+  // signature blocks. Cashier prints this FIRST, the employee signs
+  // the "Received by" line, then the cashier disburses.
+  function printPayslip(p) {
+    const w = window.open("", "_blank", "width=720,height=900");
+    if (!w) return alert("Allow pop-ups to print.");
+    const money = (n) => "PHP " + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const d = (x) => (x ? new Date(x).toLocaleDateString() : "-");
+    const lines = (arr, sign) => (arr || []).map((x) => `<tr><td>${x.label || ""}</td><td class="r">${sign}${money(x.amount)}</td></tr>`).join("");
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"/><title>Payslip - ${p.employeeName}</title>
+      <style>@page{size:A5;margin:10mm}body{font-family:Arial,sans-serif;color:#0f172a;font-size:12px;margin:0}
+      .head{text-align:center;border-bottom:2.5px solid #166534;padding-bottom:6px;margin-bottom:8px}
+      .coop{font-size:15px;font-weight:800;color:#166534}.sub{font-size:10px;color:#475569}
+      .title{text-align:center;font-size:13px;font-weight:800;color:#166534;letter-spacing:1px;margin:6px 0}
+      table{width:100%;border-collapse:collapse;font-size:11px}td,th{padding:3px 6px;border-bottom:1px solid #e2e8f0;text-align:left}
+      .r{text-align:right;font-family:monospace}.sect{background:#f1f5f9;font-weight:800;text-transform:uppercase;font-size:10px}
+      .net{display:flex;justify-content:space-between;border:2px solid #166534;border-radius:8px;padding:8px 12px;margin-top:10px;font-weight:800}
+      .net .amt{font-size:16px;color:#166534;font-family:monospace}
+      .sign{display:grid;grid-template-columns:1fr 1fr;gap:18px 24px;margin-top:26px;font-size:10px}
+      .sig{text-align:center}.line{border-top:1px solid #0f172a;margin-top:26px;padding-top:3px}
+      </style></head><body>
+      <div class="head"><div class="coop">POWASSCO MULTIPURPOSE COOPERATIVE</div>
+      <div class="sub">Owak, Asturias, Cebu &bull; C.D.A Reg. No. 9520-07014753</div></div>
+      <div class="title">${p.type === "cash_advance" ? "CASH ADVANCE SLIP" : "PAYSLIP"}</div>
+      <table>
+        <tr><td>Employee</td><td class="r"><b>${p.employeeName}</b>${p.employeeCode ? " (" + p.employeeCode + ")" : ""}</td></tr>
+        <tr><td>Position</td><td class="r">${p.position || "-"}</td></tr>
+        <tr><td>Pay period</td><td class="r">${d(p.periodStart)} - ${d(p.periodEnd)}</td></tr>
+        <tr><td>Rate</td><td class="r">${money(p.rate)} / ${p.rateType || "monthly"}${p.daysWorked ? " &bull; " + p.daysWorked + " day(s)" : ""}</td></tr>
+      </table>
+      ${p.type === "cash_advance" ? "" : `
+      <table style="margin-top:8px">
+        <tr class="sect"><td colspan="2">Earnings</td></tr>
+        <tr><td>Basic pay</td><td class="r">${money(p.basicPay)}</td></tr>
+        ${Number(p.overtimePay) > 0 ? `<tr><td>Overtime</td><td class="r">${money(p.overtimePay)}</td></tr>` : ""}
+        ${lines(p.allowances, "")}
+        <tr><td><b>Gross pay</b></td><td class="r"><b>${money(p.grossPay)}</b></td></tr>
+        <tr class="sect"><td colspan="2">Deductions</td></tr>
+        <tr><td>SSS</td><td class="r">-${money(p.sss)}</td></tr>
+        <tr><td>PhilHealth</td><td class="r">-${money(p.philhealth)}</td></tr>
+        <tr><td>Pag-IBIG</td><td class="r">-${money(p.pagibig)}</td></tr>
+        <tr><td>Withholding tax</td><td class="r">-${money(p.withholdingTax)}</td></tr>
+        ${lines(p.otherDeductions, "-")}
+        <tr><td><b>Total deductions</b></td><td class="r"><b>-${money(p.totalDeductions)}</b></td></tr>
+      </table>`}
+      <div class="net"><span>NET ${p.type === "cash_advance" ? "ADVANCE" : "PAY"}</span><span class="amt">${money(p.netPay)}</span></div>
+      <div class="sign">
+        <div class="sig"><div class="line">${p.recordedBy || "&nbsp;"}</div>Prepared by (Bookkeeper)</div>
+        <div class="sig"><div class="line">${p.approvedBy || "&nbsp;"}</div>Approved by (Manager)</div>
+        <div class="sig"><div class="line">&nbsp;</div>Disbursed by (Cashier)</div>
+        <div class="sig"><div class="line">&nbsp;</div>Received by (Employee signature)</div>
+      </div>
+      </body></html>`);
+    w.document.close();
+    setTimeout(() => { w.focus(); w.print(); }, 300);
   }
 
   if (!items.length) return null;
@@ -159,7 +221,12 @@ function PayrollDisburseQueue({ token }) {
                 </td>
                 <td className="px-3 py-2"><div className="font-semibold">{p.employeeName}</div><div className="text-[10px] text-slate-500">{p.position} - approved by {p.approvedBy}</div></td>
                 <td className="px-3 py-2 text-right font-mono font-bold text-emerald-700">{peso(net)}</td>
-                <td className="px-3 py-2 text-right">
+                <td className="px-3 py-2 text-right whitespace-nowrap">
+                  <button onClick={() => printPayslip(p)}
+                    className="mr-1 rounded-lg border border-amber-300 px-3 py-1.5 text-xs font-bold text-amber-700 hover:bg-amber-50"
+                    title="Print the payslip first - the employee signs it before payout">
+                    Payslip
+                  </button>
                   <button onClick={() => pay(p)} disabled={short}
                     title={short ? "Insufficient drawer - request cash from the vault" : ""}
                     className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-700 disabled:opacity-40">

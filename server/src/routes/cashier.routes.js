@@ -1070,7 +1070,7 @@ router.post("/disburse-loan", ...payGuard, async (req, res) => {
 router.get("/payroll-disbursements", ...payGuard, async (req, res) => {
   const [items, drawer] = await Promise.all([
     Payroll.find({ status: "approved" })
-      .select("employeeName employeeCode position netPay type approvedBy periodStart periodEnd notes")
+      .select("employeeName employeeCode position type notes periodStart periodEnd payDate rateType rate daysWorked basicPay overtimePay allowances grossPay sss philhealth pagibig withholdingTax otherDeductions totalDeductions netPay recordedBy approvedBy approvedAt")
       .sort({ createdAt: 1 }).lean(),
     drawerNetToday(),
   ]);
@@ -1081,6 +1081,7 @@ router.post("/disburse-payroll", ...payGuard, async (req, res) => {
   try {
     const orNo = String(req.body?.orNo || "").trim().toUpperCase();
     if (!orNo) return res.status(400).json({ message: "OR / voucher number is required." });
+    const receivedBy = String(req.body?.receivedBy || "").trim();
     const slip = await Payroll.findById(req.body?.id);
     if (!slip) return res.status(404).json({ message: "Payslip not found." });
     if (slip.status !== "approved") return res.status(409).json({ message: `Payslip is ${slip.status} — manager approval first.` });
@@ -1093,7 +1094,7 @@ router.post("/disburse-payroll", ...payGuard, async (req, res) => {
     const who = req.user?.fullName || req.user?.employeeId || "";
     const claimed = await Payroll.findOneAndUpdate(
       { _id: slip._id, status: "approved" },
-      { $set: { status: "disbursed", disbursedBy: who, disbursedAt: new Date(), disbursementOr: orNo } },
+      { $set: { status: "disbursed", disbursedBy: who, disbursedAt: new Date(), disbursementOr: orNo, receivedBy: receivedBy || slip.employeeName } },
       { new: true }
     );
     if (!claimed) return res.status(409).json({ message: "Already disbursed." });

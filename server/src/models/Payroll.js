@@ -52,6 +52,7 @@ const PayrollSchema = new mongoose.Schema(
     disbursedBy: { type: String, default: "" },
     disbursedAt: { type: Date },
     disbursementOr: { type: String, default: "" },
+    receivedBy: { type: String, default: "" }, // who signed for / received the cash
     rejectedBy: { type: String, default: "" },
     rejectNote: { type: String, default: "" },
   },
