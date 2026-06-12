@@ -30,24 +30,26 @@ function buildAddressText(addr = {}) {
   return [addr.houseLotNo, addr.streetSitioPurok, addr.barangay, addr.municipalityCity].filter(Boolean).join(", ");
 }
 
-// Compute loan-driven disconnections — any released loan whose schedule has
-// passed at least one unpaid period. We compare totalPaid against the sum of
-// scheduled payments whose dueDate < now.
+// Compute loan-driven disconnections. Operator rule (2026-06-13): a
+// loan account is subject for disconnection only once SIX MONTHS have
+// passed since the loan's LAST due date (maturityDate) with a balance
+// still outstanding — not on the first missed installment as before.
 async function loanDrivenPnos(now = new Date()) {
-  const loans = await LoanApplication.find({ status: "released", balance: { $gt: 0 } })
-    .select("loanId borrowerPnNo borrowerName amortizationSchedule totalPaid")
+  // maturityDate + 6 months <= now  ⇔  maturityDate <= now − 6 months
+  const cutoff = new Date(now);
+  cutoff.setMonth(cutoff.getMonth() - 6);
+  const loans = await LoanApplication.find({
+    status: "released",
+    balance: { $gt: 0 },
+    maturityDate: { $ne: null, $lte: cutoff },
+  })
+    .select("loanId borrowerPnNo borrowerName balance maturityDate")
     .lean();
-  const pn = new Map(); // pnNo -> { loanId, expected, paid, overdueAmount }
+  const pn = new Map(); // pnNo -> [{ loanId, owed }]
   for (const l of loans) {
-    const expectedByNow = (l.amortizationSchedule || [])
-      .filter((row) => row.dueDate && new Date(row.dueDate) < now)
-      .reduce((s, r) => s + (Number(r.payment) || 0), 0);
-    const paid = Number(l.totalPaid || 0);
-    if (expectedByNow > 0 && paid < expectedByNow) {
-      const key = up(l.borrowerPnNo);
-      if (!pn.has(key)) pn.set(key, []);
-      pn.get(key).push({ loanId: l.loanId, owed: expectedByNow - paid });
-    }
+    const key = up(l.borrowerPnNo);
+    if (!pn.has(key)) pn.set(key, []);
+    pn.get(key).push({ loanId: l.loanId, owed: Number(l.balance) || 0 });
   }
   return pn;
 }
