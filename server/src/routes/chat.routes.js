@@ -15,6 +15,7 @@
 import express from "express";
 import mongoose from "mongoose";
 import { requireAuth, requireRole } from "../middleware/auth.js";
+import User from "../models/User.js";
 
 const ChatMessageSchema = new mongoose.Schema(
   {
@@ -22,6 +23,9 @@ const ChatMessageSchema = new mongoose.Schema(
     fromName: { type: String, default: "" },
     fromRole: { type: String, default: "" },
     text: { type: String, required: true, trim: true, maxlength: 1000 },
+    fromAvatar: { type: String, default: "" }, // data-URL snapshot at send time
+    // One reaction per user; admin reactions render specially client-side.
+    reactions: { type: [{ emoji: String, by: String, byId: String, byRole: String }], default: [] },
     editedAt: { type: Date, default: null },
     // Soft delete: the bubble stays in the thread as "message deleted"
     // so the conversation flow isn't silently rewritten.
@@ -61,10 +65,12 @@ router.post("/", ...guard, async (req, res) => {
     const text = String(req.body?.text || "").trim();
     if (!text) return res.status(400).json({ message: "Message is empty." });
     if (text.length > 1000) return res.status(400).json({ message: "Message too long (1000 max)." });
+    const sender = await User.findById(req.user?.id || req.user?._id).select("avatar").lean();
     const msg = await ChatMessage.create({
       fromId: String(req.user?.id || req.user?._id || ""),
       fromName: req.user?.fullName || req.user?.employeeId || "Unknown",
       fromRole: req.user?.role || "",
+      fromAvatar: sender?.avatar || "",
       text,
     });
     res.status(201).json(msg.toObject());
@@ -110,6 +116,41 @@ router.delete("/:id", ...guard, async (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ message: "Failed to delete." });
+  }
+});
+
+// Toggle a reaction. One reaction per user per message — reacting again
+// with the same emoji removes it; a different emoji replaces it.
+router.post("/:id/react", ...guard, async (req, res) => {
+  try {
+    const emoji = String(req.body?.emoji || "").slice(0, 8);
+    if (!emoji) return res.status(400).json({ message: "Emoji required." });
+    const msg = await ChatMessage.findById(req.params.id);
+    if (!msg || msg.deleted) return res.status(404).json({ message: "Message not found." });
+    const myId = String(req.user?.id || req.user?._id || "");
+    const existing = msg.reactions.find((r) => r.byId === myId);
+    if (existing && existing.emoji === emoji) {
+      msg.reactions = msg.reactions.filter((r) => r.byId !== myId);
+    } else {
+      msg.reactions = msg.reactions.filter((r) => r.byId !== myId);
+      msg.reactions.push({ emoji, by: req.user?.fullName || "", byId: myId, byRole: req.user?.role || "" });
+    }
+    await msg.save();
+    res.json(msg.toObject());
+  } catch (e) {
+    res.status(500).json({ message: "Failed to react." });
+  }
+});
+
+// Set my profile photo (shown beside my chat messages going forward).
+router.post("/avatar", ...guard, async (req, res) => {
+  try {
+    const avatar = String(req.body?.avatar || "");
+    if (avatar.length > 150000) return res.status(400).json({ message: "Photo too large (100KB max)." });
+    await User.updateOne({ _id: req.user?.id || req.user?._id }, { $set: { avatar } });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ message: "Failed to save photo." });
   }
 });
 

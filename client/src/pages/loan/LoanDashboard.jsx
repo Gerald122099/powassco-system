@@ -18,7 +18,6 @@ const items = [
   { key: "loans", label: "Loans", icon: Landmark, desc: "All loan applications and records" },
   { key: "savings", label: "Savings", icon: PiggyBank, desc: "Open savings accounts for members + view balances" },
   { key: "collections", label: "Today's Collection", icon: Wallet, desc: "Daily loan collection — cash, online, total" },
-  { key: "online", label: "Online Payments", icon: Smartphone, desc: "Verify QR PH loan payments" },
   { key: "analytics", label: "Analytics", icon: BarChart3, desc: "Capital released, collections, and interest profit" },
   { key: "settings", label: "Settings", icon: Settings, desc: "Interest rate, default term, and charges" },
 ];
@@ -31,7 +30,6 @@ export default function LoanDashboard() {
       {tab === "loans" && <LoansPanel />}
       {tab === "savings" && <CashierSavingsPanel />}
       {tab === "collections" && <CollectionTodayPanel module="loan" defaultMine />}
-      {tab === "online" && <OnlinePaymentsPanel module="loan" />}
       {tab === "analytics" && <LoanAnalyticsPanel />}
       {tab === "settings" && <LoanSettingsPanel />}
     </DashboardLayout>

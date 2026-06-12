@@ -11,7 +11,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { apiFetch } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
-import { MessageCircle, X, Send, Pencil, Trash2, Check } from "lucide-react";
+import { MessageCircle, X, Send, Pencil, Trash2, Check, Camera, SmilePlus } from "lucide-react";
 
 const CHAT_ROLES = new Set(["admin", "manager", "cashier", "loan_officer", "water_bill_officer", "bookkeeper"]);
 const LAST_SEEN_KEY = "pow_chat_last_seen";
@@ -136,6 +136,27 @@ export default function StaffChat() {
     }
   }
 
+  async function setPhoto(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 100 * 1024) { alert("Photo must be 100KB or smaller."); return; }
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        await apiFetch("/chat/avatar", { method: "POST", token, body: { avatar: reader.result } });
+        alert("Photo saved — it shows on your new messages.");
+      } catch (err) { alert(err.message); }
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function react(m, emoji) {
+    try {
+      const updated = await apiFetch(`/chat/${m._id}/react`, { method: "POST", token, body: { emoji } });
+      setMessages((prev) => prev.map((x) => (x._id === m._id ? updated : x)));
+    } catch (err) { alert(err.message); }
+  }
+
   return (
     <>
       {/* Incoming-message preview popup (closed state only) */}
@@ -175,9 +196,15 @@ export default function StaffChat() {
             <div className="flex items-center gap-2 text-sm font-bold">
               <MessageCircle size={16} /> Team Chat
             </div>
-            <button onClick={() => setOpen(false)} className="rounded-lg p-1 hover:bg-emerald-700">
-              <X size={16} />
-            </button>
+            <div className="flex items-center gap-1">
+              <label className="cursor-pointer rounded-lg p-1 hover:bg-emerald-700" title="Set my profile photo">
+                <Camera size={15} />
+                <input type="file" accept="image/*" onChange={setPhoto} className="hidden" />
+              </label>
+              <button onClick={() => setOpen(false)} className="rounded-lg p-1 hover:bg-emerald-700">
+                <X size={16} />
+              </button>
+            </div>
           </div>
 
           <div ref={listRef} className="flex-1 space-y-2 overflow-y-auto bg-slate-50 px-3 py-3">
@@ -229,7 +256,12 @@ export default function StaffChat() {
                 );
               }
               return (
-                <div key={m._id} className={`group flex ${mine ? "justify-end" : "justify-start"}`}>
+                <div key={m._id} className={`group flex items-end gap-1.5 ${mine ? "justify-end" : "justify-start"}`}>
+                  {!mine && (
+                    m.fromAvatar
+                      ? <img src={m.fromAvatar} alt="" className="h-7 w-7 shrink-0 rounded-full object-cover border border-slate-200" />
+                      : <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-300 text-[10px] font-bold text-white">{(m.fromName || "?").slice(0, 2).toUpperCase()}</div>
+                  )}
                   <div className={`relative max-w-[80%] rounded-2xl px-3 py-2 shadow-sm ${mine ? "bg-emerald-600 text-white" : "bg-white border border-slate-200"}`}>
                     <div className="mb-0.5 flex items-center gap-1.5">
                       <span className={`text-[11px] font-bold ${mine ? "text-emerald-100" : m.fromRole === "admin" ? "text-amber-600" : "text-slate-800"}`}>
@@ -243,6 +275,24 @@ export default function StaffChat() {
                     <div className={`mt-0.5 flex items-center justify-end gap-1 text-[9px] ${mine ? "text-emerald-100" : "text-slate-400"}`}>
                       {m.editedAt && <span className="italic">edited</span>}
                       <span>{fmtTime(m.createdAt)}</span>
+                    </div>
+                    {(m.reactions || []).length > 0 && (
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {m.reactions.map((rx, i) => (
+                          <span key={i} title={`${rx.by} (${rx.byRole})`}
+                            className={`rounded-full px-1.5 py-0.5 text-[11px] ${rx.byRole === "admin" ? "bg-amber-200 ring-1 ring-amber-400" : "bg-slate-100"}`}>
+                            {rx.byRole === "admin" ? "👑" : ""}{rx.emoji}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <div className={`absolute -bottom-2 ${mine ? "-left-2" : "-right-2"} hidden gap-0.5 group-hover:flex`}>
+                      {["👍", "❤️", "😂", "✅"].map((e) => (
+                        <button key={e} onClick={() => react(m, e)}
+                          className="rounded-full border border-slate-200 bg-white px-1 text-[11px] shadow hover:scale-110">
+                          {e}
+                        </button>
+                      ))}
                     </div>
                     {canModerate && (
                       <div className={`absolute -top-2 ${mine ? "-left-2" : "-right-2"} hidden gap-0.5 group-hover:flex`}>

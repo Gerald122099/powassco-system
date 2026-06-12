@@ -20,7 +20,6 @@ const items = [
   { key: "payments", label: "Payments", icon: CreditCard, desc: "Record and track payments" },
   { key: "batches", label: "Batch Assignment", icon: Boxes, desc: "Assign meters to plumbers / field readers • delete with password + 2FA" },
   { key: "collections", label: "Today's Collection", icon: Wallet, desc: "Daily water collection — cash, online, total" },
-  { key: "online", label: "Online Payments", icon: Smartphone, desc: "Verify QR PH online payments" },
   { key: "disconnections", label: "Disconnections", icon: AlertTriangle, desc: "Accounts pending disconnection" },
   { key: "analytics", label: "Analytics", icon: BarChart3, desc: "Billing analytics and summaries" },
 ];
@@ -36,7 +35,6 @@ export default function WaterBillingDashboard() {
       {tab === "payments" && <PaymentsPanel />}
       {tab === "batches" && <BatchManagementPanel />}
       {tab === "collections" && <CollectionTodayPanel module="water" defaultMine />}
-      {tab === "online" && <OnlinePaymentsPanel module="water" />}
       {tab === "disconnections" && <DisconnectionsPanel />}
       {tab === "analytics" && <AnalyticsPanel />}
     </DashboardLayout>

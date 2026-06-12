@@ -11,6 +11,7 @@ const UserSchema = new mongoose.Schema(
       default: "water_bill_officer"
     },
     passwordHash: { type: String, required: true },
+    avatar: { type: String, default: "" }, // small data-URL profile photo (team chat)
     status: { type: String, enum: ["active", "inactive"], default: "active" },
 
     // Two-factor authentication (TOTP / authenticator app)
