@@ -23,6 +23,7 @@ import AnalyticsPanel from "../water/panels/AnalyticsPanel";
 import LoanAnalyticsPanel from "../loan/panels/LoanAnalyticsPanel";
 import CollectionTodayPanel from "../../components/CollectionTodayPanel";
 import TreasuryPanel from "../../components/TreasuryPanel";
+import LoanCollectionsPanel from "../../components/LoanCollectionsPanel";
 import {
   Wallet, UserCog, FileBarChart, Inbox, CalendarClock, Boxes,
   MapPin, BarChart3, Banknote, ReceiptText, Megaphone, Landmark,
@@ -40,6 +41,7 @@ const items = [
   { key: "members", label: "Water Members", icon: UserCog, desc: "View and edit water member accounts" },
   { key: "analytics", label: "Water Analytics", icon: BarChart3, desc: "Water billing analytics and summaries" },
   { key: "loans", label: "Loan Analytics", icon: Banknote, desc: "Capital, interest profit, collections, outstanding" },
+  { key: "loanperiod", label: "Loan Collections", icon: Banknote, desc: "Capital, interest, paid/unpaid by period" },
   { key: "collections", label: "Overall Collections", icon: ReceiptText, desc: "Combined water + loan daily collection" },
   { key: "announcements", label: "Announcements", icon: Megaphone, desc: "Post announcements to the public homepage" },
 ];
@@ -59,6 +61,7 @@ export default function ManagerDashboard() {
       {tab === "members" && <MembersPanel />}
       {tab === "analytics" && <AnalyticsPanel />}
       {tab === "loans" && <LoanAnalyticsPanel />}
+      {tab === "loanperiod" && <LoanCollectionsPanel />}
       {tab === "collections" && <CollectionTodayPanel module="all" />}
       {tab === "announcements" && <AnnouncementsPanel />}
     </DashboardLayout>

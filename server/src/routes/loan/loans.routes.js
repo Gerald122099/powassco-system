@@ -226,6 +226,77 @@ router.put("/settings", guard, async (req, res) => {
   res.json(s);
 });
 
+// ---- Collections summary (Phase 8) ----
+// Period totals for the loan business: capital released, interest,
+// deductions, collections, paid vs unpaid. Date range filters loans by
+// releasedAt and payments by paidAt; omit both for all-time.
+// Bookkeeper + manager read this too (their dashboards show the same
+// summary), hence the wider read guard.
+router.get("/collections-summary", requireAuth, requireRole(["admin", "manager", "loan_officer", "bookkeeper"]), async (req, res) => {
+  try {
+    const from = req.query.from ? new Date(String(req.query.from) + "T00:00:00") : null;
+    const to = req.query.to ? new Date(String(req.query.to) + "T23:59:59.999") : null;
+    const range = {};
+    if (from && !Number.isNaN(from.getTime())) range.$gte = from;
+    if (to && !Number.isNaN(to.getTime())) range.$lte = to;
+    const hasRange = Object.keys(range).length > 0;
+
+    const loanMatch = { status: { $in: ["released", "closed"] } };
+    if (hasRange) loanMatch.releasedAt = range;
+    const payMatch = {};
+    if (hasRange) payMatch.paidAt = range;
+
+    const [loanAgg, payAgg, outstandingAgg] = await Promise.all([
+      LoanApplication.aggregate([
+        { $match: loanMatch },
+        { $group: {
+            _id: null,
+            count: { $sum: 1 },
+            totalCapital: { $sum: "$principal" },
+            totalInterest: { $sum: "$totalInterest" },
+            totalDeductions: { $sum: "$totalCharges" },
+            totalPayable: { $sum: "$totalPayment" },
+            totalPaid: { $sum: "$totalPaid" },
+            totalUnpaid: { $sum: "$balance" },
+          } },
+      ]),
+      LoanPayment.aggregate([
+        { $match: payMatch },
+        { $group: { _id: null, count: { $sum: 1 }, collected: { $sum: "$amountPaid" }, cbuExcess: { $sum: "$cbuExcess" } } },
+      ]),
+      // All-time outstanding regardless of range — the receivable today.
+      LoanApplication.aggregate([
+        { $match: { status: "released", balance: { $gt: 0 } } },
+        { $group: { _id: null, count: { $sum: 1 }, balance: { $sum: "$balance" } } },
+      ]),
+    ]);
+
+    const L = loanAgg[0] || {};
+    const P = payAgg[0] || {};
+    const O = outstandingAgg[0] || {};
+    res.json({
+      range: { from: req.query.from || null, to: req.query.to || null },
+      loans: {
+        count: L.count || 0,
+        totalCapital: round2(L.totalCapital || 0),
+        totalInterest: round2(L.totalInterest || 0),
+        totalDeductions: round2(L.totalDeductions || 0),
+        totalPayable: round2(L.totalPayable || 0),
+        totalPaid: round2(L.totalPaid || 0),
+        totalUnpaid: round2(L.totalUnpaid || 0),
+      },
+      payments: {
+        count: P.count || 0,
+        collected: round2(P.collected || 0),
+        cbuExcess: round2(P.cbuExcess || 0),
+      },
+      outstandingNow: { count: O.count || 0, balance: round2(O.balance || 0) },
+    });
+  } catch (e) {
+    res.status(500).json({ message: e.message || "Failed to load summary." });
+  }
+});
+
 // ---- List applications ----
 router.get("/applications", guard, async (req, res) => {
   const { q = "", status = "", month = "", page = "1", limit = "12" } = req.query;

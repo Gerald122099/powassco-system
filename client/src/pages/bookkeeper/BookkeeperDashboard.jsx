@@ -7,6 +7,7 @@ import BookkeeperAnalyticsPanel from "./BookkeeperAnalyticsPanel";
 import ReportsPanel from "../../components/ReportsPanel";
 import AdjustmentsPanel from "../../components/AdjustmentsPanel";
 import TreasuryPanel from "../../components/TreasuryPanel";
+import LoanCollectionsPanel from "../../components/LoanCollectionsPanel";
 import PayrollPanel from "../admin/PayrollPanel";
 import { Receipt, Wallet, Package, BarChart3, Coins, FileDown, Scale, Landmark } from "lucide-react";
 
@@ -18,6 +19,7 @@ const items = [
   { key: "products", label: "Product Loans", icon: Package, desc: "Catalogue of available products + applications (meter, rice, …)" },
   { key: "reports", label: "Reports", icon: FileDown, desc: "Treasurer's Report — PDF/Excel by day, week, month, or custom range" },
   { key: "payroll", label: "Payroll", icon: Coins, desc: "Payslips with SSS, PhilHealth, Pag-IBIG, and withholding tax" },
+  { key: "loanperiod", label: "Loan Collections", icon: BarChart3, desc: "Loan capital, interest, paid/unpaid by period" },
   { key: "analytics", label: "Analytics", icon: BarChart3, desc: "Totals per water / loan / combined" },
 ];
 
@@ -32,6 +34,7 @@ export default function BookkeeperDashboard() {
       {tab === "products" && <ProductLoansPanel />}
       {tab === "reports" && <ReportsPanel />}
       {tab === "payroll" && <PayrollPanel />}
+      {tab === "loanperiod" && <LoanCollectionsPanel />}
       {tab === "analytics" && <BookkeeperAnalyticsPanel />}
     </DashboardLayout>
   );
