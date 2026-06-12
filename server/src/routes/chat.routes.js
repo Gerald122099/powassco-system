@@ -35,7 +35,7 @@ ChatMessageSchema.index({ createdAt: 1 }, { expireAfterSeconds: 60 * 60 * 24 * 9
 const ChatMessage = mongoose.model("ChatMessage", ChatMessageSchema);
 
 const router = express.Router();
-const CHAT_ROLES = ["admin", "cashier", "loan_officer", "water_bill_officer", "bookkeeper"];
+const CHAT_ROLES = ["admin", "manager", "cashier", "loan_officer", "water_bill_officer", "bookkeeper"];
 const guard = [requireAuth, requireRole(CHAT_ROLES)];
 
 router.get("/", ...guard, async (req, res) => {

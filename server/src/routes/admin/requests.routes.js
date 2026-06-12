@@ -3,7 +3,7 @@ import ServiceRequest from "../../models/ServiceRequest.js";
 import { requireAuth, requireRole } from "../../middleware/auth.js";
 
 const router = express.Router();
-const guard = [requireAuth, requireRole(["admin"])];
+const guard = [requireAuth, requireRole(["admin", "manager"])];
 
 router.get("/", guard, async (req, res) => {
   const { type = "", status = "", q = "", page = "1", limit = "20" } = req.query;

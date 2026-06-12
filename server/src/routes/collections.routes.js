@@ -22,7 +22,7 @@ import { requireAuth, requireRole } from "../middleware/auth.js";
 const router = express.Router();
 const guard = [
   requireAuth,
-  requireRole(["admin", "cashier", "water_bill_officer", "loan_officer"]),
+  requireRole(["admin", "manager", "cashier", "water_bill_officer", "loan_officer"]),
 ];
 
 function dayRange(dateStr) {

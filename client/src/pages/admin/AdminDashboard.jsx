@@ -29,6 +29,7 @@ import PaymentSettingsPanel from "./PaymentSettingsPanel";
 
 const ROLE_OPTIONS = [
   { value: "admin", label: "Admin" },
+  { value: "manager", label: "Manager (operations — expenses, employees, approvals)" },
   { value: "water_bill_officer", label: "Water Bill Officer" },
   { value: "loan_officer", label: "Loan Officer" },
   { value: "meter_reader", label: "Meter Reader (office)" },
@@ -90,7 +91,15 @@ function IconButton({ children, onClick, tone = "default", title }) {
   );
 }
 
-// UPDATED: Admin Tabs with Analytics
+// Danger Zone (irreversible data reset) is staging-only — the prod
+// admin must never be one click away from wiping operational data.
+// Detection: the staging client points VITE_API_BASE at the -staging
+// Render service (or localhost in dev).
+const IS_STAGING_ENV = /staging|localhost|127\.0\.0\.1/i.test(import.meta.env.VITE_API_BASE || "");
+
+// Admin tabs. Day-to-day operations (Expenses, Employees, Reports,
+// Requests, Calendar, Inventory) moved to the Manager dashboard —
+// admin keeps system administration + the shared monitoring views.
 const adminNavItems = [
   { key: "users", label: "User Management", icon: Users, desc: "Create employees, assign roles, manage accounts" },
   { key: "members", label: "Water Members", icon: UserCog, desc: "View, edit, and delete water member accounts" },
@@ -99,21 +108,17 @@ const adminNavItems = [
   { key: "analytics", label: "Water Analytics", icon: BarChart3, desc: "Water billing analytics and summaries" },
   { key: "loans", label: "Loan Analytics", icon: Banknote, desc: "Capital, interest profit, collections, and outstanding" },
   { key: "collections", label: "Overall Collections", icon: ReceiptText, desc: "Combined water + loan daily collection — per-collector audit" },
-  { key: "expenses", label: "Expenses", icon: Wallet, desc: "Log pipe repairs, utilities, office costs, and disbursements" },
-  { key: "employees", label: "Employees", icon: UserCog, desc: "Register staff, profiles, positions, and salary rates" },
-  { key: "reports", label: "Reports", icon: FileBarChart, desc: "Financial reports across expenses and loans" },
   { key: "audit", label: "Audit Log", icon: ScrollText, desc: "System activity — who did what, and when" },
-  { key: "requests", label: "Requests", icon: Inbox, desc: "New connection & reconnection requests from the public" },
-  { key: "meetings", label: "Calendar & Events", icon: CalendarClock, desc: "Schedule meetings & events shown on staff dashboards" },
   { key: "announcements", label: "Announcements", icon: Megaphone, desc: "Post announcements to the public homepage" },
-  { key: "assets", label: "Inventory", icon: Boxes, desc: "Equipment & device inventory with 6-month audits" },
   { key: "payments", label: "Payments", icon: CreditCard, desc: "Online payment mode, QR PH, and transaction fee" },
   { key: "security", label: "Security", icon: ShieldCheck, desc: "Two-factor authentication and access controls" },
   { key: "adjustments", label: "Adjustments", icon: Scale, desc: "File CBU / savings balance corrections — bookkeeper approves" },
   { key: "dev-feedback", label: "Dev Feedback", icon: Inbox, desc: "Messages from the public 'Message the Developer' form" },
   { key: "savings-settings", label: "Savings Policy", icon: PiggyBank, desc: "Interest, minimum balance, opening fee for voluntary savings" },
   { key: "maintenance", label: "Maintenance", icon: Wrench, desc: "One-shot data fixes (e.g. regen amortization on imported loans)" },
-  { key: "danger", label: "Danger Zone", icon: AlertTriangle, desc: "Reset operational data — keeps users, employees, settings" },
+  ...(IS_STAGING_ENV
+    ? [{ key: "danger", label: "Danger Zone", icon: AlertTriangle, desc: "STAGING ONLY — reset operational data" }]
+    : []),
 ];
 
 export default function AdminDashboard() {
@@ -418,32 +423,14 @@ export default function AdminDashboard() {
         {/* Overall Collections Tab — combined water + loan daily total */}
         {activeTab === "collections" && <CollectionTodayPanel module="all" />}
 
-        {/* Expenses Tab */}
-        {activeTab === "expenses" && <ExpensesPanel />}
-
-        {/* Employees Tab */}
-        {activeTab === "employees" && <EmployeesPanel />}
-
-        {/* Reports Tab */}
-        {activeTab === "reports" && <ReportsPanel />}
-
         {/* Audit Log Tab */}
         {activeTab === "audit" && <AuditLogPanel />}
 
         {/* Security / 2FA Tab */}
         {activeTab === "security" && <SecurityPanel />}
 
-        {/* Service Requests Tab */}
-        {activeTab === "requests" && <RequestsPanel />}
-
-        {/* Meetings Tab */}
-        {activeTab === "meetings" && <MeetingsPanel />}
-
         {/* Announcements Tab */}
         {activeTab === "announcements" && <AnnouncementsPanel />}
-
-        {/* Asset Inventory Tab */}
-        {activeTab === "assets" && <AssetsPanel />}
 
         {/* Payment Settings Tab */}
         {activeTab === "payments" && <PaymentSettingsPanel />}
@@ -453,7 +440,7 @@ export default function AdminDashboard() {
         {activeTab === "dev-feedback" && <DevFeedbackPanel />}
         {activeTab === "savings-settings" && <SavingsSettingsPanel />}
         {activeTab === "maintenance" && <MaintenancePanel />}
-        {activeTab === "danger" && <DangerZonePanel />}
+        {activeTab === "danger" && IS_STAGING_ENV && <DangerZonePanel />}
       </div>
 
       {/* User Add/Edit Modal */}

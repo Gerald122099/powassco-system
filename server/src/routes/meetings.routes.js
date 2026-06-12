@@ -3,7 +3,7 @@ import Meeting from "../models/Meeting.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
 const router = express.Router();
-const adminGuard = [requireAuth, requireRole(["admin"])];
+const adminGuard = [requireAuth, requireRole(["admin", "manager"])];
 
 // Upcoming meetings for the signed-in user's dashboard (any role).
 router.get("/upcoming", requireAuth, async (req, res) => {

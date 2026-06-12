@@ -18,6 +18,7 @@ const LoanDashboard = lazy(() => import("./pages/loan/LoanDashboard"));
 const MeterReadingDashboard = lazy(() => import("./pages/meter/MeterReadingDashboard"));
 const PlumberDashboard = lazy(() => import("./pages/plumber/PlumberDashboard"));
 const CashierDashboard = lazy(() => import("./pages/cashier/CashierDashboard"));
+const ManagerDashboard = lazy(() => import("./pages/manager/ManagerDashboard"));
 const BookkeeperDashboard = lazy(() => import("./pages/bookkeeper/BookkeeperDashboard"));
 const MemberInquiryPage = lazy(() => import("./pages/public/MemberInquiryPage"));
 const TariffCalculatorPage = lazy(() => import("./pages/public/TariffCalculatorPage"));
@@ -53,6 +54,7 @@ function RoleHome() {
 // to their own dashboard instead of the public homepage.
 const ROLE_HOME = {
   admin: "/admin",
+  manager: "/manager",
   water_bill_officer: "/water",
   loan_officer: "/loan",
   meter_reader: "/meter",
@@ -108,6 +110,15 @@ export default function App() {
           element={
             <Protected roles={["admin"]}>
               <AdminDashboard />
+            </Protected>
+          }
+        />
+
+        <Route
+          path="/manager"
+          element={
+            <Protected roles={["admin", "manager"]}>
+              <ManagerDashboard />
             </Protected>
           }
         />

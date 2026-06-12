@@ -5,8 +5,8 @@ import { requireAuth, requireRole } from "../../middleware/auth.js";
 const router = express.Router();
 // Bookkeeper runs payroll, which needs employee read access. Writes
 // (create/update/delete) remain admin-only via the writeGuard below.
-const guard = [requireAuth, requireRole(["admin", "bookkeeper"])];
-const writeGuard = [requireAuth, requireRole(["admin"])];
+const guard = [requireAuth, requireRole(["admin", "manager", "bookkeeper"])];
+const writeGuard = [requireAuth, requireRole(["admin", "manager"])];
 
 async function nextEmployeeCode() {
   const last = await Employee.findOne({ employeeCode: /^EMP-\d+$/ }).sort({ createdAt: -1 }).lean();

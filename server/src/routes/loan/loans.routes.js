@@ -13,7 +13,7 @@ import {
 } from "../../utils/loanAmortization.js";
 
 const router = express.Router();
-const guard = [requireAuth, requireRole(["admin", "loan_officer"])];
+const guard = [requireAuth, requireRole(["admin", "manager", "loan_officer"])];
 
 function round2(n) {
   return Math.round((Number(n) + Number.EPSILON) * 100) / 100;

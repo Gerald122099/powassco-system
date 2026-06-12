@@ -3,12 +3,12 @@ import Expense, { EXPENSE_CATEGORIES } from "../../models/Expense.js";
 import { requireAuth, requireRole } from "../../middleware/auth.js";
 
 const router = express.Router();
-const guard = [requireAuth, requireRole(["admin"])];
+const guard = [requireAuth, requireRole(["admin", "manager"])];
 // Read-side endpoints (categories, list, summary) are also useful for
 // the bookkeeper / cashier so the disbursement queue and reports can
 // look up the same data without a duplicate route. Cashier needs access
 // for the Disbursements tab; bookkeeper for cash-out reporting.
-const readGuard = [requireAuth, requireRole(["admin", "bookkeeper", "cashier"])];
+const readGuard = [requireAuth, requireRole(["admin", "manager", "bookkeeper", "cashier"])];
 
 function dateRange(from, to) {
   const range = {};
@@ -139,7 +139,7 @@ router.post("/:id/reject", guard, async (req, res) => {
 // disbursed. Only approved rows can be disbursed (no double-spend).
 // Lives on this route so cashier + admin both hit the same endpoint;
 // the route guard widens to include cashier.
-router.post("/:id/disburse", requireAuth, requireRole(["admin", "cashier"]), async (req, res) => {
+router.post("/:id/disburse", requireAuth, requireRole(["admin", "manager", "cashier"]), async (req, res) => {
   const { disbursementOr, paymentMethod, notes } = req.body || {};
   if (!disbursementOr || !String(disbursementOr).trim()) {
     return res.status(400).json({ message: "OR / DV number is required." });

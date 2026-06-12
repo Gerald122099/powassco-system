@@ -3,7 +3,7 @@ import Announcement from "../../models/Announcement.js";
 import { requireAuth, requireRole } from "../../middleware/auth.js";
 
 const router = express.Router();
-const guard = [requireAuth, requireRole(["admin"])];
+const guard = [requireAuth, requireRole(["admin", "manager"])];
 const MAX_IMAGE_CHARS = 900000; // ~650KB image after base64
 
 router.get("/", guard, async (req, res) => {

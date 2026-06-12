@@ -44,7 +44,7 @@ function assignAutoMeterNumbers(meters, sharedBase) {
   });
   return meters;
 }
-const guard = [requireAuth, requireRole(["admin", "water_bill_officer", "meter_reader"])];
+const guard = [requireAuth, requireRole(["admin", "manager", "water_bill_officer", "meter_reader"])];
 // Edits + deletes go through dual-control: admin role passes; everyone else
 // must present a fresh X-Admin-Authz token (an admin entered their own
 // password + 2FA code on the officer's screen).

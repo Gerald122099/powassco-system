@@ -36,6 +36,17 @@ const router = express.Router();
 const guard = [requireAuth, requireRole(["admin"])];
 const sha256 = (s) => crypto.createHash("sha256").update(String(s)).digest("hex");
 
+// STAGING-ONLY KILL SWITCH: every reset endpoint refuses unless
+// ALLOW_DATA_RESET=1 is set in the environment. Set it on the staging
+// Render service only — prod must never be able to wipe data even if
+// a stale client still shows the Danger Zone tab.
+router.use((req, res, next) => {
+  if (process.env.ALLOW_DATA_RESET !== "1") {
+    return res.status(403).json({ message: "Data reset is disabled on this environment (staging only)." });
+  }
+  next();
+});
+
 // The collections this endpoint will wipe. Anything not in this list is
 // preserved — users, employees, all *Settings, ProductLoanCatalog,
 // AuditLog, WebhookEvent, Meeting, Announcement, PublicRequest, Expense,

@@ -3,7 +3,7 @@ import Asset, { ASSET_CATEGORIES } from "../../models/Asset.js";
 import { requireAuth, requireRole } from "../../middleware/auth.js";
 
 const router = express.Router();
-const guard = [requireAuth, requireRole(["admin"])];
+const guard = [requireAuth, requireRole(["admin", "manager"])];
 
 function addMonths(date, n) {
   const d = new Date(date);

@@ -13,18 +13,22 @@ import { apiFetch } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { MessageCircle, X, Send, Pencil, Trash2, Check } from "lucide-react";
 
-const CHAT_ROLES = new Set(["admin", "cashier", "loan_officer", "water_bill_officer", "bookkeeper"]);
+const CHAT_ROLES = new Set(["admin", "manager", "cashier", "loan_officer", "water_bill_officer", "bookkeeper"]);
 const LAST_SEEN_KEY = "pow_chat_last_seen";
 
 const ROLE_LABEL = {
-  admin: "Admin",
+  admin: "★ ADMIN",
+  manager: "Manager",
   cashier: "Cashier",
   loan_officer: "Loan Officer",
   water_bill_officer: "Water Officer",
   bookkeeper: "Bookkeeper",
 };
+// Admin gets a distinct gold badge + their messages render with an
+// amber name so the boss's word stands out in the thread.
 const ROLE_TONE = {
-  admin: "bg-slate-200 text-slate-800",
+  admin: "bg-amber-400 text-amber-950 ring-1 ring-amber-500",
+  manager: "bg-indigo-100 text-indigo-800",
   cashier: "bg-emerald-100 text-emerald-800",
   loan_officer: "bg-blue-100 text-blue-800",
   water_bill_officer: "bg-cyan-100 text-cyan-800",
@@ -228,7 +232,7 @@ export default function StaffChat() {
                 <div key={m._id} className={`group flex ${mine ? "justify-end" : "justify-start"}`}>
                   <div className={`relative max-w-[80%] rounded-2xl px-3 py-2 shadow-sm ${mine ? "bg-emerald-600 text-white" : "bg-white border border-slate-200"}`}>
                     <div className="mb-0.5 flex items-center gap-1.5">
-                      <span className={`text-[11px] font-bold ${mine ? "text-emerald-100" : "text-slate-800"}`}>
+                      <span className={`text-[11px] font-bold ${mine ? "text-emerald-100" : m.fromRole === "admin" ? "text-amber-600" : "text-slate-800"}`}>
                         {mine ? "You" : m.fromName}
                       </span>
                       <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold ${mine ? "bg-emerald-700 text-emerald-100" : ROLE_TONE[m.fromRole] || "bg-slate-100 text-slate-600"}`}>
