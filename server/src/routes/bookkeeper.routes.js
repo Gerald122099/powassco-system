@@ -533,6 +533,7 @@ router.get("/product-analytics", ...guard, async (req, res) => {
           revenue: { $sum: "$totalPrice" },
           paid: { $sum: "$totalPaid" },
           unpaid: { $sum: "$balance" },
+          latePenalty: { $sum: "$latePenalty" },
           soldAsSale: { $sum: { $cond: [{ $eq: ["$transactionType", "sale"] }, "$totalPrice", 0] } },
           soldAsLoan: { $sum: { $cond: [{ $in: ["$transactionType", ["loan", "rental"]] }, "$totalPrice", 0] } },
           count: { $sum: 1 },
@@ -544,11 +545,12 @@ router.get("/product-analytics", ...guard, async (req, res) => {
       profit: o.profit + (r.profit || 0),
       revenue: o.revenue + (r.revenue || 0),
       paid: o.paid + (r.paid || 0),
+      latePenalty: o.latePenalty + (r.latePenalty || 0),
       unpaid: o.unpaid + (r.unpaid || 0),
       soldAsSale: o.soldAsSale + (r.soldAsSale || 0),
       soldAsLoan: o.soldAsLoan + (r.soldAsLoan || 0),
       count: o.count + (r.count || 0),
-    }), { capital: 0, profit: 0, revenue: 0, paid: 0, unpaid: 0, soldAsSale: 0, soldAsLoan: 0, count: 0 });
+    }), { capital: 0, profit: 0, revenue: 0, paid: 0, unpaid: 0, latePenalty: 0, soldAsSale: 0, soldAsLoan: 0, count: 0 });
     res.json({ products: rows.map((r) => ({ product: r._id, ...r, _id: undefined })), overall });
   } catch (e) {
     res.status(500).json({ message: e.message || "Analytics failed." });

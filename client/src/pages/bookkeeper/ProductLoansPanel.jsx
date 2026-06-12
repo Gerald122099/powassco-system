@@ -34,6 +34,7 @@ const EMPTY = {
 export default function ProductLoansPanel() {
   const { token } = useAuth();
   const [catalog, setCatalog] = useState([]);
+  const [totals, setTotals] = useState(null);
   const [apps, setApps] = useState([]);
   const [busy, setBusy] = useState(false);
 
@@ -55,6 +56,7 @@ export default function ProductLoansPanel() {
   const load = useCallback(async () => {
     setBusy(true);
     try {
+      apiFetch("/bookkeeper/product-analytics", { token }).then((r) => setTotals(r.overall)).catch(() => {});
       const [cat, ap] = await Promise.all([
         apiFetch("/bookkeeper/product-catalog", { token }),
         apiFetch("/bookkeeper/product-applications", { token }),
@@ -153,6 +155,18 @@ export default function ProductLoansPanel() {
           </button>
         </div>
       </div>
+
+      {/* Business totals */}
+      {totals && (
+        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          <div className="rounded-2xl border border-blue-200 bg-blue-50 p-3"><div className="text-[10px] uppercase tracking-wide text-blue-700">Total capital</div><div className="mt-1 font-mono text-lg font-extrabold text-blue-800">{peso(totals.capital)}</div></div>
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3"><div className="text-[10px] uppercase tracking-wide text-amber-700">Total sold</div><div className="mt-1 font-mono text-lg font-extrabold text-amber-800">{peso(totals.revenue)}</div></div>
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3"><div className="text-[10px] uppercase tracking-wide text-emerald-700">Total profit</div><div className="mt-1 font-mono text-lg font-extrabold text-emerald-800">{peso(totals.profit)}</div></div>
+          <div className="rounded-2xl border border-violet-200 bg-violet-50 p-3"><div className="text-[10px] uppercase tracking-wide text-violet-700">Interest / late penalties</div><div className="mt-1 font-mono text-lg font-extrabold text-violet-800">{peso(totals.latePenalty)}</div></div>
+          <div className="rounded-2xl border border-emerald-200 bg-white p-3"><div className="text-[10px] uppercase tracking-wide text-slate-500">Paid</div><div className="mt-1 font-mono text-lg font-extrabold text-emerald-700">{peso(totals.paid)}</div></div>
+          <div className="rounded-2xl border border-rose-200 bg-white p-3"><div className="text-[10px] uppercase tracking-wide text-slate-500">Unpaid</div><div className="mt-1 font-mono text-lg font-extrabold text-rose-700">{peso(totals.unpaid)}</div></div>
+        </div>
+      )}
 
       {/* Catalogue */}
       <div className="mt-5">
