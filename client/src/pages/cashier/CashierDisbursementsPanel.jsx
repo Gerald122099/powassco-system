@@ -24,6 +24,96 @@ const fmtDateTime = (d) => (d ? new Date(d).toLocaleString(undefined, { dateStyl
 
 const METHODS = ["cash", "check", "bank", "gcash", "other"];
 
+// Loan payout queue — loans the officer released; cashier hands the
+// net proceeds over (drawer-checked server-side) with a voucher OR.
+function LoanDisburseQueue({ token }) {
+  const [items, setItems] = useState([]);
+  const [drawer, setDrawer] = useState(0);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    setBusy(true);
+    try {
+      const res = await apiFetch("/cashier/loan-disbursements", { token });
+      setItems(res.items || []);
+      setDrawer(res.drawerNet || 0);
+    } catch {/* ignore */} finally { setBusy(false); }
+  }, [token]);
+  useEffect(() => { load(); }, [load]);
+
+  async function disburse(l) {
+    const net = Number(l.netProceeds) || (Number(l.principal) || 0) - (Number(l.totalCharges) || 0);
+    const orNo = prompt(`Pay out ₱${net.toLocaleString()} to ${l.borrowerName} (${l.loanId}).
+OR / voucher number:`, "");
+    if (orNo === null || !orNo.trim()) return;
+    try {
+      const res = await apiFetch("/cashier/disburse-loan", { method: "POST", token, body: { loanId: l.loanId, orNo: orNo.trim() } });
+      toast.success(`Disbursed ₱${res.netProceeds.toLocaleString()} — drawer now ₱${res.drawerAfter.toLocaleString()}.`);
+      load();
+    } catch (e) { toast.error(e.message); }
+  }
+
+  return (
+    <div className="mt-4 overflow-hidden rounded-2xl border border-blue-200">
+      <div className="flex items-center justify-between bg-blue-50 px-4 py-2 text-xs font-semibold text-blue-800">
+        <span>Loan payouts — approved + released, awaiting cash{items.length > 0 ? ` (${items.length})` : ""}</span>
+        <span className="font-mono">Drawer now: ₱{Number(drawer).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-white text-left text-xs text-slate-500">
+            <tr>
+              <th className="px-3 py-2">Loan / Borrower</th>
+              <th className="px-3 py-2 text-right">Principal</th>
+              <th className="px-3 py-2 text-right">Deductions</th>
+              <th className="px-3 py-2 text-right">Net proceeds</th>
+              <th className="px-3 py-2">Sign-offs</th>
+              <th className="px-3 py-2 text-right"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {busy && !items.length ? (
+              <tr><td colSpan={6} className="py-6 text-center text-xs text-slate-500">Loading…</td></tr>
+            ) : !items.length ? (
+              <tr><td colSpan={6} className="py-6 text-center text-xs text-slate-500">No loans waiting for payout.</td></tr>
+            ) : items.map((l) => {
+              const net = Number(l.netProceeds) || (Number(l.principal) || 0) - (Number(l.totalCharges) || 0);
+              const short = drawer < net;
+              return (
+                <tr key={l._id} className="border-t">
+                  <td className="px-3 py-2">
+                    <div className="font-mono text-xs font-bold">{l.loanId}</div>
+                    <div className="font-semibold">{l.borrowerName}</div>
+                    <div className="font-mono text-[10px] text-slate-500">{l.borrowerPnNo}</div>
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono">₱{Number(l.principal).toLocaleString()}</td>
+                  <td className="px-3 py-2 text-right font-mono text-amber-700">₱{Number(l.totalCharges).toLocaleString()}</td>
+                  <td className="px-3 py-2 text-right font-mono font-bold text-emerald-700">₱{net.toLocaleString()}</td>
+                  <td className="px-3 py-2 text-[10px] text-emerald-700">
+                    <div>✓ mgr: {l.managerApprovedBy || "—"}</div>
+                    <div>✓ bk: {l.approvedBy || "—"}</div>
+                    <div>✓ officer: {l.releasedBy || "—"}</div>
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <button
+                      onClick={() => disburse(l)}
+                      disabled={short}
+                      title={short ? "Insufficient drawer — request cash from the vault (Treasury tab)" : ""}
+                      className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-700 disabled:opacity-40"
+                    >
+                      {short ? "Drawer short" : "Disburse"}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export default function CashierDisbursementsPanel() {
   const { token } = useAuth();
   const [pending, setPending] = useState([]);
@@ -107,6 +197,9 @@ export default function CashierDisbursementsPanel() {
         <Tile label="Ready to disburse" count={approved.length} total={approvedTotal} tone="blue" icon={AlertCircle} />
         <Tile label="Disbursed (recent)" count={recentDisbursed.length} total={recentDisbursed.reduce((s, r) => s + Number(r.amount || 0), 0)} tone="emerald" icon={CheckCircle2} />
       </div>
+
+      {/* Loan payouts (Phase 7 chain) */}
+      <LoanDisburseQueue token={token} />
 
       {/* Approved — the actionable queue */}
       <Section

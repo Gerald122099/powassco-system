@@ -24,6 +24,8 @@ import CbuTransaction from "../models/CbuTransaction.js";
 import SavingsAccount from "../models/SavingsAccount.js";
 import SavingsTransaction from "../models/SavingsTransaction.js";
 import WaterSettings from "../models/WaterSettings.js";
+import Expense from "../models/Expense.js";
+import { TreasuryTransaction } from "../models/Treasury.js";
 import { freshenBill } from "../utils/penalty.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
@@ -851,6 +853,116 @@ router.post("/pay-loan", ...payGuard, async (req, res) => {
     if (e?.code === 11000) return res.status(409).json({ message: "OR number is already in use." });
     console.error("pay-loan error:", e);
     res.status(500).json({ message: e.message || "Payment failed." });
+  }
+});
+
+// ─── Loan disbursement (Phase 7) ────────────────────────────────────
+// Today's physical drawer position — same formula the collections
+// endpoint exposes as drawerNet. Recomputed here so the sufficiency
+// check can't be spoofed by a stale client.
+async function drawerNetToday() {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+  const inRange = { paidAt: { $gte: start, $lt: end } };
+  const [water, loans, savings, expenses, drawerMoves] = await Promise.all([
+    WaterPayment.find(inRange).select("method amountPaid cbuExcess").lean(),
+    LoanPayment.find(inRange).select("method amountPaid cbuExcess").lean(),
+    (await import("../models/SavingsTransaction.js")).default.aggregate([
+      { $match: { ...inRange, orNo: { $not: /^(INT|ADJ)-/ } } },
+      { $group: { _id: "$type", total: { $sum: "$amount" } } },
+    ]),
+    Expense.aggregate([
+      { $match: { status: "disbursed", disbursedAt: { $gte: start, $lt: end } } },
+      { $group: { _id: null, total: { $sum: "$amount" } } },
+    ]),
+    TreasuryTransaction.aggregate([
+      { $match: { target: "drawer", createdAt: { $gte: start, $lt: end } } },
+      { $group: { _id: "$type", total: { $sum: "$amount" } } },
+    ]),
+  ]);
+  const cashOf = (docs) => docs.filter((d) => d.method !== "online")
+    .reduce((s, d) => s + (Number(d.amountPaid) || 0) + (Number(d.cbuExcess) || 0), 0);
+  let savIn = 0, savOut = 0;
+  for (const r of savings) r._id === "deposit" ? (savIn = r.total) : (savOut = r.total);
+  let trIn = 0, trOut = 0;
+  for (const r of drawerMoves) r._id === "in" ? (trIn = r.total) : (trOut = r.total);
+  const disbursed = Number(expenses[0]?.total || 0);
+  return round2(cashOf(water) + cashOf(loans) + savIn - savOut - disbursed + trIn - trOut);
+}
+
+// Queue of loans the loan officer released for payout.
+router.get("/loan-disbursements", ...payGuard, async (req, res) => {
+  const [items, drawer] = await Promise.all([
+    LoanApplication.find({ status: "for_disbursement" })
+      .select("loanId borrowerName borrowerPnNo principal totalCharges netProceeds releasedBy approvedBy managerApprovedBy createdAt")
+      .sort({ createdAt: 1 })
+      .lean(),
+    drawerNetToday(),
+  ]);
+  res.json({ items, drawerNet: drawer });
+});
+
+// Pay out the net proceeds. Refuses when today's drawer can't cover it
+// (operator rule: request cash from the vault first). On success the
+// loan becomes "released": due dates are stamped from TODAY (money in
+// the borrower's hand is when the clock starts) and the drawer ledger
+// records the outflow.
+router.post("/disburse-loan", ...payGuard, async (req, res) => {
+  try {
+    const loanId = String(req.body?.loanId || "").trim();
+    const orNo = String(req.body?.orNo || "").trim().toUpperCase();
+    if (!loanId) return res.status(400).json({ message: "loanId is required." });
+    if (!orNo) return res.status(400).json({ message: "OR / voucher number is required." });
+
+    const loan = await LoanApplication.findOne({ loanId });
+    if (!loan) return res.status(404).json({ message: "Loan not found." });
+    if (loan.status !== "for_disbursement") {
+      return res.status(409).json({ message: `Loan is ${loan.status} — only for_disbursement loans can be paid out.` });
+    }
+    const net = round2(Number(loan.netProceeds) || (Number(loan.principal) || 0) - (Number(loan.totalCharges) || 0));
+    if (!(net > 0)) return res.status(400).json({ message: "Net proceeds compute to ₱0 — check the loan's charges." });
+
+    const drawer = await drawerNetToday();
+    if (drawer < net) {
+      return res.status(400).json({
+        message: `Insufficient cash drawer (₱${drawer.toLocaleString()} available, need ₱${net.toLocaleString()}). Request cash from the Cash Vault first (Treasury tab).`,
+      });
+    }
+
+    const who = req.user?.fullName || req.user?.employeeId || "";
+    // Atomic claim — two cashiers can't both pay the same loan.
+    const claimed = await LoanApplication.findOneAndUpdate(
+      { _id: loan._id, status: "for_disbursement" },
+      { $set: { status: "released", disbursedBy: who, disbursedAt: new Date(), disbursementOr: orNo, releasedAt: new Date() } },
+      { new: true }
+    );
+    if (!claimed) return res.status(409).json({ message: "Already disbursed by someone else." });
+
+    // Stamp first-payment/maturity/due dates from the actual payout date.
+    const start = new Date(claimed.releasedAt);
+    const first = new Date(start); first.setMonth(first.getMonth() + 1);
+    const maturity = new Date(start); maturity.setMonth(maturity.getMonth() + Number(claimed.termMonths || 1));
+    claimed.firstPaymentDate = first;
+    claimed.maturityDate = maturity;
+    claimed.amortizationSchedule = (claimed.amortizationSchedule || []).map((row, i) => {
+      const r = typeof row.toObject === "function" ? row.toObject() : { ...row };
+      const dd = new Date(start); dd.setMonth(dd.getMonth() + (i + 1));
+      r.dueDate = dd;
+      return r;
+    });
+    await claimed.save();
+
+    await TreasuryTransaction.create({
+      target: "drawer", type: "out", amount: net, balanceAfter: null,
+      refNo: orNo, by: who,
+      note: `Loan disbursement ${claimed.loanId} — net proceeds to ${claimed.borrowerName}`,
+    });
+
+    res.json({ ok: true, loan: claimed.toObject(), netProceeds: net, drawerAfter: round2(drawer - net) });
+  } catch (e) {
+    console.error("disburse-loan error:", e);
+    res.status(500).json({ message: e.message || "Disbursement failed." });
   }
 });
 

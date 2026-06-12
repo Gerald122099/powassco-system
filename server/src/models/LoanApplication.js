@@ -117,7 +117,11 @@ const LoanApplicationSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["pending", "approved", "rejected", "released", "closed"],
+      // Phase 7 chain: pending → manager_approved (manager signs) →
+      // approved (bookkeeper signs) → for_disbursement (loan officer
+      // releases) → released (cashier hands net proceeds over, drawer
+      // checked). Legacy rows keep their existing statuses untouched.
+      enum: ["pending", "manager_approved", "approved", "rejected", "for_disbursement", "released", "closed"],
       default: "pending",
       index: true,
     },
@@ -135,8 +139,13 @@ const LoanApplicationSchema = new mongoose.Schema(
     balance: { type: Number, default: 0 },
 
     createdBy: { type: String, default: "" },
-    approvedBy: { type: String, default: "" },
-    releasedBy: { type: String, default: "" },
+    managerApprovedBy: { type: String, default: "" },
+    managerApprovedAt: { type: Date },
+    approvedBy: { type: String, default: "" },      // bookkeeper sign-off
+    releasedBy: { type: String, default: "" },      // loan officer (sends to cashier)
+    disbursedBy: { type: String, default: "" },     // cashier who paid out
+    disbursedAt: { type: Date },
+    disbursementOr: { type: String, default: "" },
   },
   { timestamps: true }
 );

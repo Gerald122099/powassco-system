@@ -13,7 +13,7 @@ import {
 } from "../../utils/loanAmortization.js";
 
 const router = express.Router();
-const guard = [requireAuth, requireRole(["admin", "manager", "loan_officer"])];
+const guard = [requireAuth, requireRole(["admin", "manager", "loan_officer", "bookkeeper"])];
 
 function round2(n) {
   return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
@@ -415,44 +415,53 @@ router.post("/applications", guard, async (req, res) => {
   res.status(201).json(loan);
 });
 
-// ---- Update status (approve / reject / release / close) ----
-router.patch("/applications/:id/status", guard, async (req, res) => {
-  const { status, disbursedAt, remarks } = req.body || {};
-  const allowed = ["pending", "approved", "rejected", "released", "closed"];
+// ---- Update status (Phase 7 ordered approval chain) ----
+// pending → manager_approved (manager/admin) → approved (bookkeeper/
+// admin) → for_disbursement (loan officer "Release") → released
+// (CASHIER ONLY, via /cashier/disburse-loan — money + due dates are
+// stamped there, when cash actually leaves the drawer).
+router.patch("/applications/:id/status", requireAuth, requireRole(["admin", "manager", "loan_officer", "bookkeeper"]), async (req, res) => {
+  let { status, remarks } = req.body || {};
+  const allowed = ["pending", "manager_approved", "approved", "rejected", "for_disbursement", "released", "closed"];
   if (!allowed.includes(status)) return res.status(400).json({ message: "Invalid status" });
 
   const loan = await LoanApplication.findById(req.params.id);
   if (!loan) return res.status(404).json({ message: "Loan not found" });
 
   const who = req.user?.fullName || req.user?.employeeId || "";
-  loan.status = status;
-  if (remarks != null) loan.remarks = remarks;
+  const role = req.user?.role;
+  const isAdmin = role === "admin";
 
-  if (status === "approved") {
+  // Legacy clients send "released" from the officer's Release button.
+  // That now means "send to the cashier's disbursement queue".
+  if (status === "released") status = "for_disbursement";
+
+  if (status === "manager_approved") {
+    if (!isAdmin && role !== "manager") return res.status(403).json({ message: "Manager approval required first." });
+    if (loan.status !== "pending") return res.status(409).json({ message: `Loan is ${loan.status} — manager approval applies to pending loans.` });
+    loan.managerApprovedBy = who;
+    loan.managerApprovedAt = new Date();
+  } else if (status === "approved") {
+    if (!isAdmin && role !== "bookkeeper") return res.status(403).json({ message: "Bookkeeper approval comes after the manager's." });
+    if (loan.status !== "manager_approved") return res.status(409).json({ message: `Loan is ${loan.status} — needs manager approval first.` });
     loan.approvedAt = new Date();
     loan.approvedBy = who;
+  } else if (status === "for_disbursement") {
+    if (!isAdmin && role !== "loan_officer") return res.status(403).json({ message: "Only the loan officer releases to disbursement." });
+    if (loan.status !== "approved") return res.status(409).json({ message: `Loan is ${loan.status} — needs bookkeeper approval first.` });
+    loan.releasedBy = who; // officer of record; cashier stamps the money out
+  } else if (status === "rejected") {
+    if (!["pending", "manager_approved", "approved"].includes(loan.status)) {
+      return res.status(409).json({ message: `Cannot reject a ${loan.status} loan.` });
+    }
+  } else if (status === "closed") {
+    if (!isAdmin) return res.status(403).json({ message: "Only admin closes loans manually." });
+  } else if (status === "pending") {
+    if (!isAdmin) return res.status(403).json({ message: "Only admin can reset to pending." });
   }
 
-  if (status === "released") {
-    loan.releasedAt = disbursedAt ? new Date(disbursedAt) : new Date();
-    loan.releasedBy = who;
-    const start = new Date(loan.releasedAt);
-    const first = new Date(start);
-    first.setMonth(first.getMonth() + 1);
-    loan.firstPaymentDate = first;
-    const maturity = new Date(start);
-    maturity.setMonth(maturity.getMonth() + Number(loan.termMonths || 1));
-    loan.maturityDate = maturity;
-    // stamp due dates onto the schedule (first installment one month after release)
-    loan.amortizationSchedule = (loan.amortizationSchedule || []).map((row, i) => {
-      const r = typeof row.toObject === "function" ? row.toObject() : { ...row };
-      const dd = new Date(start);
-      dd.setMonth(dd.getMonth() + (i + 1));
-      r.dueDate = dd;
-      return r;
-    });
-  }
-
+  loan.status = status;
+  if (remarks != null) loan.remarks = remarks;
   await loan.save();
   res.json(loan);
 });
