@@ -4,6 +4,7 @@ import { apiFetch } from "../lib/api";
 import logo from "../assets/logo.png";
 import { LogOut, Eye, CalendarClock, X } from "lucide-react";
 import StaffChat from "./StaffChat";
+import IdleLock from "./IdleLock";
 
 function MeetingBanner() {
   const { token } = useAuth();
@@ -181,6 +182,9 @@ export default function DashboardLayout({
       {/* Floating team chat — renders nothing for excluded roles
           (plumber, meter_reader); StaffChat gates itself by role. */}
       <StaffChat />
+
+      {/* 30-min idle lock — PIN gate over every office dashboard */}
+      <IdleLock />
 
       {/* Eye-comfort screen tint overlay (warm / cool / dim) */}
       {TONE_STYLES[tone] && (

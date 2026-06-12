@@ -352,6 +352,27 @@ router.post("/pin-verify", requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
+// Self-set the lock-screen PIN. First-time set is open to any
+// authenticated user (the idle lock prompts for it); changing an
+// existing PIN requires the current one (or an admin reset below).
+router.post("/pin-set", requireAuth, async (req, res) => {
+  const pin = String(req.body?.pin || "").trim();
+  const currentPin = String(req.body?.currentPin || "").trim();
+  if (!/^\d{4}$/.test(pin)) return res.status(400).json({ message: "PIN must be exactly 4 digits." });
+  const u = await User.findById(req.user.id || req.user._id);
+  if (!u) return res.status(404).json({ message: "User not found." });
+  if (u.appPinHash) {
+    const ok = currentPin && (await bcrypt.compare(currentPin, u.appPinHash));
+    if (!ok) return res.status(401).json({ message: "Current PIN is wrong — ask an admin to reset it if forgotten." });
+  }
+  u.appPinHash = await bcrypt.hash(pin, 10);
+  u.appPinSetAt = new Date();
+  u.appPinSetBy = u.fullName || u.employeeId || "";
+  await u.save();
+  await auditSecurity(req, u, `${u.fullName || u.employeeId} set their own lock-screen PIN`);
+  res.json({ ok: true });
+});
+
 // Admin set / clear a PIN on any user.
 router.post("/admin/pin/:userId", requireAuth, requireRole(["admin"]), async (req, res) => {
   const pin = String(req.body?.pin || "").trim();
