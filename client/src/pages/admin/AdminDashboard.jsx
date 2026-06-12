@@ -9,6 +9,8 @@ import MaintenancePanel from "./MaintenancePanel";
 import SavingsSettingsPanel from "./SavingsSettingsPanel";
 import AdjustmentsPanel from "../../components/AdjustmentsPanel";
 import DevFeedbackPanel from "./DevFeedbackPanel";
+import BankSettingsPanel from "./BankSettingsPanel";
+import TreasuryPanel from "../../components/TreasuryPanel";
 import Card from "../../components/Card";
 import Modal from "../../components/Modal";
 import { apiFetch } from "../../lib/api";
@@ -111,6 +113,8 @@ const adminNavItems = [
   { key: "audit", label: "Audit Log", icon: ScrollText, desc: "System activity — who did what, and when" },
   { key: "announcements", label: "Announcements", icon: Megaphone, desc: "Post announcements to the public homepage" },
   { key: "payments", label: "Payments", icon: CreditCard, desc: "Online payment mode, QR PH, and transaction fee" },
+  { key: "bank-settings", label: "Bank Settings", icon: CreditCard, desc: "Register banks (name + logo) for the treasury module" },
+  { key: "treasury", label: "Treasury", icon: Wallet, desc: "Banks + Cash Vault overview; approve as manager" },
   { key: "security", label: "Security", icon: ShieldCheck, desc: "Two-factor authentication and access controls" },
   { key: "adjustments", label: "Adjustments", icon: Scale, desc: "File CBU / savings balance corrections — bookkeeper approves" },
   { key: "dev-feedback", label: "Dev Feedback", icon: Inbox, desc: "Messages from the public 'Message the Developer' form" },
@@ -434,6 +438,8 @@ export default function AdminDashboard() {
 
         {/* Payment Settings Tab */}
         {activeTab === "payments" && <PaymentSettingsPanel />}
+        {activeTab === "bank-settings" && <BankSettingsPanel />}
+        {activeTab === "treasury" && <TreasuryPanel />}
 
         {/* Danger Zone — irreversible data reset (admin + password + 2FA) */}
         {activeTab === "adjustments" && <AdjustmentsPanel />}

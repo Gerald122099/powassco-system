@@ -6,13 +6,15 @@ import ProductLoansPanel from "./ProductLoansPanel";
 import BookkeeperAnalyticsPanel from "./BookkeeperAnalyticsPanel";
 import ReportsPanel from "../../components/ReportsPanel";
 import AdjustmentsPanel from "../../components/AdjustmentsPanel";
+import TreasuryPanel from "../../components/TreasuryPanel";
 import PayrollPanel from "../admin/PayrollPanel";
-import { Receipt, Wallet, Package, BarChart3, Coins, FileDown, Scale } from "lucide-react";
+import { Receipt, Wallet, Package, BarChart3, Coins, FileDown, Scale, Landmark } from "lucide-react";
 
 const items = [
   { key: "transactions", label: "Transactions", icon: Receipt, desc: "Every cashier payment — OR, name, meter, due, received, CBU excess" },
   { key: "members", label: "Members & CBU", icon: Wallet, desc: "Per-account CBU + every receivable in one row" },
   { key: "adjustments", label: "Adjustments", icon: Scale, desc: "Approve / reject admin-filed CBU + savings balance corrections" },
+  { key: "treasury", label: "Treasury", icon: Landmark, desc: "Banks, Cash Vault, transfers — ordered approvals" },
   { key: "products", label: "Product Loans", icon: Package, desc: "Catalogue of available products + applications (meter, rice, …)" },
   { key: "reports", label: "Reports", icon: FileDown, desc: "Treasurer's Report — PDF/Excel by day, week, month, or custom range" },
   { key: "payroll", label: "Payroll", icon: Coins, desc: "Payslips with SSS, PhilHealth, Pag-IBIG, and withholding tax" },
@@ -26,6 +28,7 @@ export default function BookkeeperDashboard() {
       {tab === "transactions" && <TransactionsPanel />}
       {tab === "members" && <MembersCbuPanel />}
       {tab === "adjustments" && <AdjustmentsPanel />}
+      {tab === "treasury" && <TreasuryPanel />}
       {tab === "products" && <ProductLoansPanel />}
       {tab === "reports" && <ReportsPanel />}
       {tab === "payroll" && <PayrollPanel />}

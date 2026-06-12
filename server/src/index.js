@@ -42,6 +42,7 @@ import bookkeeperRoutes from "./routes/bookkeeper.routes.js";
 import savingsRoutes from "./routes/savings.routes.js";
 import adjustmentsRoutes from "./routes/adjustments.routes.js";
 import chatRoutes from "./routes/chat.routes.js";
+import treasuryRoutes from "./routes/treasury.routes.js";
 import dataResetRoutes from "./routes/admin/dataReset.routes.js";
 import maintenanceRoutes from "./routes/admin/maintenance.routes.js";
 
@@ -182,6 +183,7 @@ app.use("/api/bookkeeper", bookkeeperRoutes);
 app.use("/api/savings", savingsRoutes);
 app.use("/api/adjustments", adjustmentsRoutes);
 app.use("/api/chat", chatRoutes);
+app.use("/api/treasury", treasuryRoutes);
 app.use("/api/admin/data-reset", dataResetRoutes);
 app.use("/api/admin/maintenance", maintenanceRoutes);
 

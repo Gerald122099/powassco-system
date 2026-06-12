@@ -22,12 +22,14 @@ import MeterMapPanel from "../water/panels/MeterMapPanel";
 import AnalyticsPanel from "../water/panels/AnalyticsPanel";
 import LoanAnalyticsPanel from "../loan/panels/LoanAnalyticsPanel";
 import CollectionTodayPanel from "../../components/CollectionTodayPanel";
+import TreasuryPanel from "../../components/TreasuryPanel";
 import {
   Wallet, UserCog, FileBarChart, Inbox, CalendarClock, Boxes,
-  MapPin, BarChart3, Banknote, ReceiptText, Megaphone,
+  MapPin, BarChart3, Banknote, ReceiptText, Megaphone, Landmark,
 } from "lucide-react";
 
 const items = [
+  { key: "treasury", label: "Treasury", icon: Landmark, desc: "Approve bank + Cash Vault movements (you sign first)" },
   { key: "expenses", label: "Expenses", icon: Wallet, desc: "File disbursement requests — cashier pays them out" },
   { key: "employees", label: "Employees", icon: UserCog, desc: "Register staff, profiles, positions, and salary rates" },
   { key: "reports", label: "Reports", icon: FileBarChart, desc: "Financial reports across expenses and loans" },
@@ -43,9 +45,10 @@ const items = [
 ];
 
 export default function ManagerDashboard() {
-  const [tab, setTab] = useState("expenses");
+  const [tab, setTab] = useState("treasury");
   return (
     <DashboardLayout title="Manager" accent="indigo" items={items} active={tab} onSelect={setTab}>
+      {tab === "treasury" && <TreasuryPanel />}
       {tab === "expenses" && <ExpensesPanel />}
       {tab === "employees" && <EmployeesPanel />}
       {tab === "reports" && <ReportsPanel />}

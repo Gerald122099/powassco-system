@@ -17,6 +17,7 @@ import CbuTransaction from "../models/CbuTransaction.js";
 import LoanApplication from "../models/LoanApplication.js";
 import SavingsTransaction from "../models/SavingsTransaction.js";
 import Expense from "../models/Expense.js";
+import { TreasuryTransaction } from "../models/Treasury.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
 const router = express.Router();
@@ -148,7 +149,18 @@ router.get("/today", ...guard, async (req, res) => {
     // Net physical drawer position for the day: collections in (cash
     // only) + savings deposits − savings withdrawals − cash handed out
     // for disbursements.
-    const drawerNet = Number((cashTotal + savingsIn - savingsOut - disbursedTotal).toFixed(2));
+    // Approved treasury moves that touch the physical drawer today
+    // (vault_to_drawer adds cash, drawer_to_vault removes it).
+    const drawerMoves = await TreasuryTransaction.aggregate([
+      { $match: { target: "drawer", createdAt: { $gte: start, $lt: end } } },
+      { $group: { _id: "$type", total: { $sum: "$amount" } } },
+    ]);
+    let drawerTreasuryIn = 0, drawerTreasuryOut = 0;
+    for (const row of drawerMoves) {
+      if (row._id === "in") drawerTreasuryIn = Number(row.total || 0);
+      else if (row._id === "out") drawerTreasuryOut = Number(row.total || 0);
+    }
+    const drawerNet = Number((cashTotal + savingsIn - savingsOut - disbursedTotal + drawerTreasuryIn - drawerTreasuryOut).toFixed(2));
 
     // System-wide outstanding (unsettled receivables) + total CBU
     // held across every active member account. All three are cheap
@@ -232,7 +244,8 @@ router.get("/today", ...guard, async (req, res) => {
         grand,                      // cash + online (== bill + cbu)
         savings: { in: savingsIn, inCount: savingsInCount, out: savingsOut, outCount: savingsOutCount },
         disbursed: { total: disbursedTotal, count: disbursedCount },
-        drawerNet,                  // cash + savings in − savings out − disbursed
+        drawerNet,                  // cash + savings in − savings out − disbursed ± vault moves
+        drawerTreasury: { in: drawerTreasuryIn, out: drawerTreasuryOut },
         water: {
           // backward-compatible aliases
           cash: waterCashGross,     // total cash drawer water

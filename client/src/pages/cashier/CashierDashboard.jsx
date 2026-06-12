@@ -20,6 +20,7 @@ import CashierSalesPanel from "./CashierSalesPanel";
 import CashierDisbursementsPanel from "./CashierDisbursementsPanel";
 import CashierSavingsPanel from "./CashierSavingsPanel";
 import ReportsPanel from "../../components/ReportsPanel";
+import TreasuryPanel from "../../components/TreasuryPanel";
 import { apiFetch } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
 import { Droplets, Banknote, ReceiptText, Wallet, CheckCircle, TrendingUp, History, ShoppingBag, FileDown, Receipt, PiggyBank } from "lucide-react";
@@ -168,6 +169,7 @@ export default function CashierDashboard() {
             { key: "collections", label: "Today's Collection", icon: ReceiptText },
             { key: "history", label: "Transaction History", icon: History },
             { key: "reports", label: "Reports", icon: FileDown },
+            { key: "treasury", label: "Treasury", icon: Wallet },
           ].map(({ key, label, icon: Icon }) => (
             <button
               key={key}
@@ -196,6 +198,7 @@ export default function CashierDashboard() {
         {view === "collections" && <CollectionTodayPanel module="all" />}
         {view === "history" && <TransactionsPanel />}
         {view === "reports" && <ReportsPanel />}
+        {view === "treasury" && <TreasuryPanel />}
       </div>
     </DashboardLayout>
   );
