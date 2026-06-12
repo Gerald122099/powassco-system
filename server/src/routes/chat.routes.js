@@ -22,7 +22,10 @@ const ChatMessageSchema = new mongoose.Schema(
     fromId: { type: String, default: "" },
     fromName: { type: String, default: "" },
     fromRole: { type: String, default: "" },
-    text: { type: String, required: true, trim: true, maxlength: 1000 },
+    text: { type: String, default: "", trim: true, maxlength: 1000 },
+    // Screenshot / image attachment (data-URL JPEG, ≤ ~500KB). Sent by
+    // the widget's screenshot-and-crop tool for support reports.
+    imageData: { type: String, default: "" },
     fromAvatar: { type: String, default: "" }, // data-URL snapshot at send time
     // One reaction per user; admin reactions render specially client-side.
     reactions: { type: [{ emoji: String, by: String, byId: String, byRole: String }], default: [] },
@@ -96,8 +99,13 @@ router.post("/seen", ...guard, async (req, res) => {
 router.post("/", ...guard, async (req, res) => {
   try {
     const text = String(req.body?.text || "").trim();
-    if (!text) return res.status(400).json({ message: "Message is empty." });
+    const imageData = String(req.body?.imageData || "");
+    if (!text && !imageData) return res.status(400).json({ message: "Message is empty." });
     if (text.length > 1000) return res.status(400).json({ message: "Message too long (1000 max)." });
+    if (imageData && !/^data:image\/(jpeg|png|webp);base64,/.test(imageData)) {
+      return res.status(400).json({ message: "Invalid image." });
+    }
+    if (imageData.length > 700000) return res.status(400).json({ message: "Screenshot too large — crop a smaller area." });
     const sender = await User.findById(req.user?.id || req.user?._id).select("avatar").lean();
     const msg = await ChatMessage.create({
       fromId: String(req.user?.id || req.user?._id || ""),
@@ -105,6 +113,7 @@ router.post("/", ...guard, async (req, res) => {
       fromRole: req.user?.role || "",
       fromAvatar: sender?.avatar || "",
       text,
+      imageData,
     });
     res.status(201).json(msg.toObject());
   } catch (e) {

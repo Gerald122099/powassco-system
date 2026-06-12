@@ -11,7 +11,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { apiFetch } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
-import { MessageCircle, X, Send, Pencil, Trash2, Check, Camera, SmilePlus } from "lucide-react";
+import { MessageCircle, X, Send, Pencil, Trash2, Check, Camera, SmilePlus, Monitor } from "lucide-react";
 
 const CHAT_ROLES = new Set(["admin", "manager", "cashier", "loan_officer", "water_bill_officer", "bookkeeper"]);
 const LAST_SEEN_KEY = "pow_chat_last_seen";
@@ -139,6 +139,89 @@ export default function StaffChat() {
     } finally {
       setSending(false);
     }
+  }
+
+  // Screenshot tool (Phase 12): capture the screen, drag to crop,
+  // send straight into the chat for support reports.
+  const [shot, setShot] = useState(null);        // full-frame data URL
+  const [cropRect, setCropRect] = useState(null); // {x,y,w,h} in displayed px
+  const shotImgRef = useRef(null);
+  const dragRef = useRef(null);
+
+  async function captureScreen() {
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+      const track = stream.getVideoTracks()[0];
+      const video = document.createElement("video");
+      video.srcObject = stream;
+      await video.play();
+      await new Promise((r) => setTimeout(r, 350)); // let the frame settle
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext("2d").drawImage(video, 0, 0);
+      track.stop();
+      stream.getTracks().forEach((t) => t.stop());
+      setCropRect(null);
+      setShot(canvas.toDataURL("image/jpeg", 0.85));
+    } catch {
+      /* user cancelled the share picker */
+    }
+  }
+
+  function cropMouseDown(e) {
+    const box = e.currentTarget.getBoundingClientRect();
+    dragRef.current = { x: e.clientX - box.left, y: e.clientY - box.top };
+    setCropRect({ x: dragRef.current.x, y: dragRef.current.y, w: 0, h: 0 });
+  }
+  function cropMouseMove(e) {
+    if (!dragRef.current) return;
+    const box = e.currentTarget.getBoundingClientRect();
+    const cx = Math.min(Math.max(e.clientX - box.left, 0), box.width);
+    const cy = Math.min(Math.max(e.clientY - box.top, 0), box.height);
+    setCropRect({
+      x: Math.min(dragRef.current.x, cx),
+      y: Math.min(dragRef.current.y, cy),
+      w: Math.abs(cx - dragRef.current.x),
+      h: Math.abs(cy - dragRef.current.y),
+    });
+  }
+  function cropMouseUp() { dragRef.current = null; }
+
+  async function sendShot(useCrop) {
+    const img = shotImgRef.current;
+    if (!img) return;
+    const scaleX = img.naturalWidth / img.clientWidth;
+    const scaleY = img.naturalHeight / img.clientHeight;
+    const r = useCrop && cropRect && cropRect.w > 8 && cropRect.h > 8
+      ? { x: cropRect.x * scaleX, y: cropRect.y * scaleY, w: cropRect.w * scaleX, h: cropRect.h * scaleY }
+      : { x: 0, y: 0, w: img.naturalWidth, h: img.naturalHeight };
+    // Downscale so the payload stays small (max 1280px wide).
+    const outW = Math.min(1280, r.w);
+    const outH = Math.round((outW / r.w) * r.h);
+    const canvas = document.createElement("canvas");
+    canvas.width = outW;
+    canvas.height = outH;
+    const src = new Image();
+    src.src = shot;
+    await new Promise((res) => { src.onload = res; });
+    canvas.getContext("2d").drawImage(src, r.x, r.y, r.w, r.h, 0, 0, outW, outH);
+    let quality = 0.7;
+    let dataUrl = canvas.toDataURL("image/jpeg", quality);
+    while (dataUrl.length > 650000 && quality > 0.3) {
+      quality -= 0.1;
+      dataUrl = canvas.toDataURL("image/jpeg", quality);
+    }
+    try {
+      const msg = await apiFetch("/chat", { method: "POST", token, body: { text: text.trim(), imageData: dataUrl } });
+      setText("");
+      setShot(null);
+      setMessages((prev) => {
+        const next = [...prev, msg];
+        localStorage.setItem(LAST_SEEN_KEY, msg._id);
+        return next;
+      });
+    } catch (err) { alert(err.message); }
   }
 
   async function setPhoto(e) {
@@ -276,7 +359,12 @@ export default function StaffChat() {
                         {ROLE_LABEL[m.fromRole] || m.fromRole}
                       </span>
                     </div>
-                    <div className={`whitespace-pre-wrap text-sm ${mine ? "" : "text-slate-800"}`}>{m.text}</div>
+                    {m.imageData && (
+                      <a href={m.imageData} target="_blank" rel="noopener noreferrer" title="Open full size">
+                        <img src={m.imageData} alt="screenshot" className="mb-1 max-h-48 rounded-lg border border-black/10" />
+                      </a>
+                    )}
+                    {m.text && <div className={`whitespace-pre-wrap text-sm ${mine ? "" : "text-slate-800"}`}>{m.text}</div>}
                     <div className={`mt-0.5 flex items-center justify-end gap-1 text-[9px] ${mine ? "text-emerald-100" : "text-slate-400"}`}>
                       {m.editedAt && <span className="italic">edited</span>}
                       <span>{fmtTime(m.createdAt)}</span>
@@ -345,6 +433,14 @@ export default function StaffChat() {
             );
           })()}
           <form onSubmit={send} className="flex items-center gap-2 border-t border-slate-200 bg-white p-2">
+            <button
+              type="button"
+              onClick={captureScreen}
+              title="Send a screenshot (pick screen, then crop)"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 text-slate-500 hover:text-emerald-600 hover:border-emerald-300"
+            >
+              <Monitor size={15} />
+            </button>
             <input
               value={text}
               onChange={(e) => setText(e.target.value)}
@@ -359,6 +455,40 @@ export default function StaffChat() {
               <Send size={15} />
             </button>
           </form>
+        </div>
+      )}
+      {/* Screenshot crop overlay */}
+      {shot && (
+        <div className="fixed inset-0 z-[70] flex flex-col items-center justify-center bg-black/70 p-4">
+          <div className="mb-2 rounded-xl bg-white/90 px-4 py-1.5 text-xs font-semibold text-slate-700">
+            Drag to crop, then send — or send the full screen.
+          </div>
+          <div
+            className="relative max-h-[70vh] max-w-[90vw] cursor-crosshair select-none overflow-hidden rounded-xl border-2 border-white/40"
+            onMouseDown={cropMouseDown}
+            onMouseMove={cropMouseMove}
+            onMouseUp={cropMouseUp}
+            onMouseLeave={cropMouseUp}
+          >
+            <img ref={shotImgRef} src={shot} alt="capture" className="max-h-[70vh] max-w-[90vw]" draggable={false} />
+            {cropRect && cropRect.w > 2 && (
+              <div
+                className="pointer-events-none absolute border-2 border-emerald-400 bg-emerald-400/15"
+                style={{ left: cropRect.x, top: cropRect.y, width: cropRect.w, height: cropRect.h }}
+              />
+            )}
+          </div>
+          <div className="mt-3 flex gap-2">
+            <button onClick={() => setShot(null)} className="rounded-xl bg-white/90 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-white">Cancel</button>
+            <button onClick={() => sendShot(false)} className="rounded-xl bg-slate-700 px-4 py-2 text-sm font-bold text-white hover:bg-slate-800">Send full screen</button>
+            <button
+              onClick={() => sendShot(true)}
+              disabled={!cropRect || cropRect.w < 9}
+              className="rounded-xl bg-emerald-600 px-5 py-2 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
+            >
+              Send selection
+            </button>
+          </div>
         </div>
       )}
     </>
