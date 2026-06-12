@@ -25,6 +25,7 @@ import CollectionTodayPanel from "../../components/CollectionTodayPanel";
 import TreasuryPanel from "../../components/TreasuryPanel";
 import LoanCollectionsPanel from "../../components/LoanCollectionsPanel";
 import LoanApprovalsPanel from "../../components/LoanApprovalsPanel";
+import PayrollApprovalsPanel from "../../components/PayrollApprovalsPanel";
 import {
   Wallet, UserCog, FileBarChart, Inbox, CalendarClock, Boxes,
   MapPin, BarChart3, Banknote, ReceiptText, Megaphone, Landmark,
@@ -33,6 +34,7 @@ import {
 const items = [
   { key: "treasury", label: "Treasury", icon: Landmark, desc: "Approve bank + Cash Vault movements (you sign first)" },
   { key: "loan-approvals", label: "Loan Approvals", icon: Banknote, desc: "First signature on new loan applications" },
+  { key: "payroll-approvals", label: "Payroll Approvals", icon: Wallet, desc: "Sign payslips + cash advances before the cashier pays" },
   { key: "expenses", label: "Expenses", icon: Wallet, desc: "File disbursement requests — cashier pays them out" },
   { key: "employees", label: "Employees", icon: UserCog, desc: "Register staff, profiles, positions, and salary rates" },
   { key: "reports", label: "Reports", icon: FileBarChart, desc: "Financial reports across expenses and loans" },
@@ -54,6 +56,7 @@ export default function ManagerDashboard() {
     <DashboardLayout title="Manager" accent="indigo" items={items} active={tab} onSelect={setTab}>
       {tab === "treasury" && <TreasuryPanel />}
       {tab === "loan-approvals" && <LoanApprovalsPanel />}
+      {tab === "payroll-approvals" && <PayrollApprovalsPanel />}
       {tab === "expenses" && <ExpensesPanel />}
       {tab === "employees" && <EmployeesPanel />}
       {tab === "reports" && <ReportsPanel />}

@@ -1,5 +1,6 @@
 import express from "express";
 import Expense, { EXPENSE_CATEGORIES } from "../../models/Expense.js";
+import { BankAccount, TreasuryTransaction } from "../../models/Treasury.js";
 import { requireAuth, requireRole } from "../../middleware/auth.js";
 
 const router = express.Router();
@@ -149,11 +150,39 @@ router.post("/:id/disburse", requireAuth, requireRole(["admin", "manager", "cash
   if (exp.status !== "approved") {
     return res.status(409).json({ message: `Expense is ${exp.status}, can't disburse.` });
   }
+  const who = req.user?.fullName || req.user?.employeeId || "";
+  const method = paymentMethod || exp.paymentMethod || "cash";
+  const amount = Math.round((Number(exp.amount) + Number.EPSILON) * 100) / 100;
+
+  // Bank or cheque: money leaves a registered coop bank account, not
+  // the drawer. Conditional $inc refuses to overdraw; the treasury
+  // ledger records the outflow with the DV number as the reference.
+  if (method === "bank" || method === "check") {
+    const acct = await BankAccount.findOneAndUpdate(
+      { _id: req.body?.bankAccountId, status: "active", balance: { $gte: amount } },
+      { $inc: { balance: -amount } },
+      { new: true }
+    );
+    if (!acct) {
+      return res.status(400).json({ message: "Pick a bank account with sufficient balance for this disbursement." });
+    }
+    exp.bankAccountId = acct._id;
+    exp.disbursedBank = `${acct.bankName} ····${String(acct.accountNumber).slice(-4)}`;
+    await TreasuryTransaction.create({
+      target: "bank", bankAccountId: acct._id, type: "out", amount,
+      balanceAfter: Math.round((Number(acct.balance) + Number.EPSILON) * 100) / 100,
+      refNo: String(disbursementOr).trim(), by: who,
+      note: `Expense disbursement (${method}) — ${exp.category}: ${exp.payee || exp.description || ""}`,
+    });
+  }
+  // Cash leaves the drawer — that subtraction happens via the daily
+  // summary (disbursed cash expenses), checked by the cashier UI.
+
   exp.status = "disbursed";
-  exp.disbursedBy = req.user?.fullName || req.user?.employeeId || "";
+  exp.disbursedBy = who;
   exp.disbursedAt = new Date();
   exp.disbursementOr = String(disbursementOr).trim();
-  if (paymentMethod) exp.paymentMethod = paymentMethod;
+  exp.paymentMethod = method;
   if (notes) exp.notes = String(notes).trim();
   await exp.save();
   res.json(exp);

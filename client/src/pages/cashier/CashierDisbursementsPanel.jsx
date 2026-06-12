@@ -114,6 +114,67 @@ OR / voucher number:`, "");
   );
 }
 
+// Payroll + cash-advance payouts approved by the manager.
+function PayrollDisburseQueue({ token }) {
+  const [items, setItems] = useState([]);
+  const [drawer, setDrawer] = useState(0);
+  const load = useCallback(async () => {
+    try {
+      const res = await apiFetch("/cashier/payroll-disbursements", { token });
+      setItems(res.items || []);
+      setDrawer(res.drawerNet || 0);
+    } catch {/* ignore */}
+  }, [token]);
+  useEffect(() => { load(); }, [load]);
+
+  async function pay(p) {
+    const net = Number(p.netPay) || 0;
+    const orNo = prompt("Pay PHP " + net.toLocaleString() + " to " + p.employeeName + ". OR / voucher number:", "");
+    if (orNo === null || !orNo.trim()) return;
+    try {
+      const res = await apiFetch("/cashier/disburse-payroll", { method: "POST", token, body: { id: p._id, orNo: orNo.trim() } });
+      toast.success("Paid - drawer now PHP " + res.drawerAfter.toLocaleString() + ".");
+      load();
+    } catch (e) { toast.error(e.message); }
+  }
+
+  if (!items.length) return null;
+  return (
+    <div className="mt-4 overflow-hidden rounded-2xl border border-amber-200">
+      <div className="flex items-center justify-between bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-800">
+        <span>Payroll payouts - manager-approved ({items.length})</span>
+        <span className="font-mono">Drawer now: {peso(drawer)}</span>
+      </div>
+      <table className="w-full text-sm">
+        <tbody>
+          {items.map((p) => {
+            const net = Number(p.netPay) || 0;
+            const short = drawer < net;
+            return (
+              <tr key={p._id} className="border-t">
+                <td className="px-3 py-2">
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${p.type === "cash_advance" ? "bg-violet-100 text-violet-700" : "bg-amber-100 text-amber-800"}`}>
+                    {p.type === "cash_advance" ? "ADVANCE" : "PAYSLIP"}
+                  </span>
+                </td>
+                <td className="px-3 py-2"><div className="font-semibold">{p.employeeName}</div><div className="text-[10px] text-slate-500">{p.position} - approved by {p.approvedBy}</div></td>
+                <td className="px-3 py-2 text-right font-mono font-bold text-emerald-700">{peso(net)}</td>
+                <td className="px-3 py-2 text-right">
+                  <button onClick={() => pay(p)} disabled={short}
+                    title={short ? "Insufficient drawer - request cash from the vault" : ""}
+                    className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-700 disabled:opacity-40">
+                    {short ? "Drawer short" : "Pay out"}
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export default function CashierDisbursementsPanel() {
   const { token } = useAuth();
   const [pending, setPending] = useState([]);
@@ -124,6 +185,8 @@ export default function CashierDisbursementsPanel() {
   const [target, setTarget] = useState(null); // expense being disbursed
   const [orNo, setOrNo] = useState("");
   const [method, setMethod] = useState("cash");
+  const [bankAccounts, setBankAccounts] = useState([]);
+  const [bankAccountId, setBankAccountId] = useState("");
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -146,11 +209,16 @@ export default function CashierDisbursementsPanel() {
   }, [token]);
   useEffect(() => { load(); }, [load]);
 
-  function open(row) {
+  async function open(row) {
     setTarget(row);
     setOrNo("");
     setMethod(row.paymentMethod || "cash");
     setNote("");
+    setBankAccountId("");
+    try {
+      const ov = await apiFetch("/treasury/overview", { token });
+      setBankAccounts(ov.accounts || []);
+    } catch {/* ignore */}
   }
 
   async function disburse() {
@@ -160,7 +228,7 @@ export default function CashierDisbursementsPanel() {
       await apiFetch(`/expenses/${target._id}/disburse`, {
         method: "POST",
         token,
-        body: { disbursementOr: orNo.trim(), paymentMethod: method, notes: note.trim() },
+        body: { disbursementOr: orNo.trim(), paymentMethod: method, notes: note.trim(), bankAccountId },
       });
       toast.success(`Disbursed • OR ${orNo.trim()}`);
       setTarget(null);
@@ -200,6 +268,9 @@ export default function CashierDisbursementsPanel() {
 
       {/* Loan payouts (Phase 7 chain) */}
       <LoanDisburseQueue token={token} />
+
+      {/* Payroll + cash-advance payouts (Phase 5) */}
+      <PayrollDisburseQueue token={token} />
 
       {/* Approved — the actionable queue */}
       <Section
@@ -309,6 +380,18 @@ export default function CashierDisbursementsPanel() {
                 </select>
               </div>
             </div>
+            {(method === "bank" || method === "check") && (
+              <div>
+                <label className="text-xs font-semibold text-slate-600">{method === "check" ? "Cheque drawn on bank account *" : "Pay from bank account *"}</label>
+                <select value={bankAccountId} onChange={(e) => setBankAccountId(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm">
+                  <option value="">{"\u2014 pick account \u2014"}</option>
+                  {bankAccounts.map((a) => (
+                    <option key={a._id} value={a._id}>{a.bankName} - {a.accountNumber} ({peso(a.balance)})</option>
+                  ))}
+                </select>
+                <div className="mt-1 text-[10px] text-slate-500">Deducts the bank balance + writes a treasury OUTFLOW with this DV as reference.</div>
+              </div>
+            )}
             <div>
               <label className="text-xs font-semibold text-slate-600">Note (optional)</label>
               <input

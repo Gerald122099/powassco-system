@@ -39,6 +39,21 @@ const PayrollSchema = new mongoose.Schema(
 
     recordedBy: { type: String, default: "" },
     notes: { type: String, default: "" },
+
+    // Phase 5: payroll approval chain. New runs are filed "pending",
+    // the manager approves, the cashier disburses (drawer-checked).
+    // Schema default is "disbursed" so LEGACY rows (no status stored)
+    // read as already-paid history instead of flooding the queue;
+    // the create route explicitly sets "pending" on new rows.
+    type: { type: String, enum: ["regular", "cash_advance"], default: "regular", index: true },
+    status: { type: String, enum: ["pending", "approved", "disbursed", "rejected"], default: "disbursed", index: true },
+    approvedBy: { type: String, default: "" },
+    approvedAt: { type: Date },
+    disbursedBy: { type: String, default: "" },
+    disbursedAt: { type: Date },
+    disbursementOr: { type: String, default: "" },
+    rejectedBy: { type: String, default: "" },
+    rejectNote: { type: String, default: "" },
   },
   { timestamps: true }
 );

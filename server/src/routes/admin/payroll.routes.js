@@ -45,10 +45,11 @@ router.post("/compute", guard, async (req, res) => {
 });
 
 // ---- List ----
-router.get("/", guard, async (req, res) => {
-  const { employee = "", from = "", to = "", page = "1", limit = "15" } = req.query;
+router.get("/", requireAuth, requireRole(["admin", "manager", "bookkeeper", "cashier"]), async (req, res) => {
+  const { employee = "", status = "", from = "", to = "", page = "1", limit = "15" } = req.query;
   const filter = {};
   if (employee) filter.employee = employee;
+  if (status) filter.status = status;
   if (from || to) {
     filter.periodEnd = {};
     if (from) filter.periodEnd.$gte = new Date(from);
@@ -156,8 +157,59 @@ router.post("/", guard, async (req, res) => {
     netPay: c.netPay,
     recordedBy: req.user?.fullName || req.user?.employeeId || "",
     notes: b.notes || "",
+    type: "regular",
+    status: "pending", // manager approves, then cashier disburses
   });
   res.status(201).json(slip);
+});
+
+// Employee cash advance — same approval chain, netPay = the advance.
+// Recovered later via otherDeductions on a future payslip.
+router.post("/cash-advance", requireAuth, requireRole(["admin", "manager", "bookkeeper"]), async (req, res) => {
+  const b = req.body || {};
+  const emp = await Employee.findById(b.employee);
+  if (!emp) return res.status(400).json({ message: "Select a valid employee." });
+  const amount = Math.round((Number(b.amount) + Number.EPSILON) * 100) / 100;
+  if (!(amount > 0)) return res.status(400).json({ message: "Amount must be > 0." });
+  const now = new Date();
+  const slip = await Payroll.create({
+    employee: emp._id,
+    employeeName: emp.fullName,
+    employeeCode: emp.employeeCode || "",
+    position: emp.position || "",
+    periodStart: now,
+    periodEnd: now,
+    payDate: now,
+    rateType: emp.rateType,
+    rate: emp.rate,
+    grossPay: amount,
+    netPay: amount,
+    recordedBy: req.user?.fullName || req.user?.employeeId || "",
+    notes: b.notes || "Cash advance",
+    type: "cash_advance",
+    status: "pending",
+  });
+  res.status(201).json(slip);
+});
+
+// Manager approval (first signature) / rejection.
+router.post("/:id/approve", requireAuth, requireRole(["admin", "manager"]), async (req, res) => {
+  const p = await Payroll.findOneAndUpdate(
+    { _id: req.params.id, status: "pending" },
+    { $set: { status: "approved", approvedBy: req.user?.fullName || "", approvedAt: new Date() } },
+    { new: true }
+  );
+  if (!p) return res.status(409).json({ message: "Payslip is not pending." });
+  res.json(p);
+});
+router.post("/:id/reject", requireAuth, requireRole(["admin", "manager"]), async (req, res) => {
+  const p = await Payroll.findOneAndUpdate(
+    { _id: req.params.id, status: "pending" },
+    { $set: { status: "rejected", rejectedBy: req.user?.fullName || "", rejectNote: String(req.body?.note || "").trim() } },
+    { new: true }
+  );
+  if (!p) return res.status(409).json({ message: "Payslip is not pending." });
+  res.json(p);
 });
 
 router.delete("/:id", guard, async (req, res) => {

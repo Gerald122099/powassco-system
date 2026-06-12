@@ -45,6 +45,9 @@ const ExpenseSchema = new mongoose.Schema(
     disbursedBy: { type: String, default: "" }, // cashier name
     disbursedAt: { type: Date, default: null },
     disbursementOr: { type: String, default: "", trim: true }, // OR / DV no.
+    // Bank/cheque disbursements: which coop account the money left.
+    bankAccountId: { type: mongoose.Schema.Types.ObjectId, ref: "BankAccount", default: null },
+    disbursedBank: { type: String, default: "" }, // "BankName ····1234" snapshot
     rejectedBy: { type: String, default: "" },
     rejectedAt: { type: Date, default: null },
     rejectionReason: { type: String, default: "" },

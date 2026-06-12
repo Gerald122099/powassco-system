@@ -25,6 +25,8 @@ import SavingsAccount from "../models/SavingsAccount.js";
 import SavingsTransaction from "../models/SavingsTransaction.js";
 import WaterSettings from "../models/WaterSettings.js";
 import Expense from "../models/Expense.js";
+import Payroll from "../models/Payroll.js";
+import { BankAccount } from "../models/Treasury.js";
 import { TreasuryTransaction } from "../models/Treasury.js";
 import { freshenBill } from "../utils/penalty.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
@@ -873,7 +875,7 @@ async function drawerNetToday() {
       { $group: { _id: "$type", total: { $sum: "$amount" } } },
     ]),
     Expense.aggregate([
-      { $match: { status: "disbursed", disbursedAt: { $gte: start, $lt: end } } },
+      { $match: { status: "disbursed", paymentMethod: "cash", disbursedAt: { $gte: start, $lt: end } } },
       { $group: { _id: null, total: { $sum: "$amount" } } },
     ]),
     TreasuryTransaction.aggregate([
@@ -962,6 +964,47 @@ router.post("/disburse-loan", ...payGuard, async (req, res) => {
     res.json({ ok: true, loan: claimed.toObject(), netProceeds: net, drawerAfter: round2(drawer - net) });
   } catch (e) {
     console.error("disburse-loan error:", e);
+    res.status(500).json({ message: e.message || "Disbursement failed." });
+  }
+});
+
+// ─── Payroll disbursement (Phase 5) ─────────────────────────────────
+router.get("/payroll-disbursements", ...payGuard, async (req, res) => {
+  const [items, drawer] = await Promise.all([
+    Payroll.find({ status: "approved" })
+      .select("employeeName employeeCode position netPay type approvedBy periodStart periodEnd notes")
+      .sort({ createdAt: 1 }).lean(),
+    drawerNetToday(),
+  ]);
+  res.json({ items, drawerNet: drawer });
+});
+
+router.post("/disburse-payroll", ...payGuard, async (req, res) => {
+  try {
+    const orNo = String(req.body?.orNo || "").trim().toUpperCase();
+    if (!orNo) return res.status(400).json({ message: "OR / voucher number is required." });
+    const slip = await Payroll.findById(req.body?.id);
+    if (!slip) return res.status(404).json({ message: "Payslip not found." });
+    if (slip.status !== "approved") return res.status(409).json({ message: `Payslip is ${slip.status} — manager approval first.` });
+    const net = round2(Number(slip.netPay) || 0);
+    if (!(net > 0)) return res.status(400).json({ message: "Net pay is ₱0." });
+    const drawer = await drawerNetToday();
+    if (drawer < net) {
+      return res.status(400).json({ message: `Insufficient cash drawer (₱${drawer.toLocaleString()} available, need ₱${net.toLocaleString()}). Request cash from the Cash Vault first.` });
+    }
+    const who = req.user?.fullName || req.user?.employeeId || "";
+    const claimed = await Payroll.findOneAndUpdate(
+      { _id: slip._id, status: "approved" },
+      { $set: { status: "disbursed", disbursedBy: who, disbursedAt: new Date(), disbursementOr: orNo } },
+      { new: true }
+    );
+    if (!claimed) return res.status(409).json({ message: "Already disbursed." });
+    await TreasuryTransaction.create({
+      target: "drawer", type: "out", amount: net, balanceAfter: null, refNo: orNo, by: who,
+      note: `${claimed.type === "cash_advance" ? "Cash advance" : "Payroll"} — ${claimed.employeeName}`,
+    });
+    res.json({ ok: true, slip: claimed.toObject(), drawerAfter: round2(drawer - net) });
+  } catch (e) {
     res.status(500).json({ message: e.message || "Disbursement failed." });
   }
 });

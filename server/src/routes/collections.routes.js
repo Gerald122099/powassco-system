@@ -140,7 +140,7 @@ router.get("/today", ...guard, async (req, res) => {
     // Expense disbursements paid out by the cashier today (approved
     // requests they handed cash for). Deducts from the drawer.
     const disbursedAgg = await Expense.aggregate([
-      { $match: { status: "disbursed", disbursedAt: { $gte: start, $lt: end } } },
+      { $match: { status: "disbursed", paymentMethod: "cash", disbursedAt: { $gte: start, $lt: end } } },
       { $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 } } },
     ]);
     const disbursedTotal = Number(disbursedAgg[0]?.total || 0);
