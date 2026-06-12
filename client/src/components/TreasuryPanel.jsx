@@ -65,15 +65,18 @@ export default function TreasuryPanel() {
   const [banks, setBanks] = useState([]);
   const [acctForm, setAcctForm] = useState({ bankId: "", accountName: "", accountNumber: "", openingBalance: "" });
 
+  const [drawerNet, setDrawerNet] = useState(null);
   const load = useCallback(async () => {
     setBusy(true);
     try {
-      const [ov, reqs, led] = await Promise.all([
+      const [ov, reqs, led, drawer] = await Promise.all([
         apiFetch("/treasury/overview", { token }),
         apiFetch(`/treasury/requests${statusFilter ? `?status=${statusFilter}` : ""}`, { token }),
         apiFetch("/treasury/transactions", { token }),
+        apiFetch("/cashier/drawer-summary", { token }).catch(() => null),
       ]);
       setOverview(ov);
+      setDrawerNet(drawer?.totals?.net ?? null);
       setRequests(reqs.items || []);
       setLedger((led.items || []).slice(0, 40));
     } catch (e) { toast.error(e.message); } finally { setBusy(false); }
@@ -177,6 +180,10 @@ export default function TreasuryPanel() {
         <div className="rounded-2xl border-2 border-teal-300 bg-teal-50 p-3">
           <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-teal-800"><Vault size={12} /> Cash Vault</div>
           <div className="mt-1 font-mono text-xl font-extrabold text-teal-900">{peso(overview?.vault?.balance || 0)}</div>
+        </div>
+        <div className="rounded-2xl border-2 border-emerald-300 bg-emerald-50 p-3">
+          <div className="text-[10px] uppercase tracking-wide text-emerald-800">Cashier Drawer (today net)</div>
+          <div className="mt-1 font-mono text-xl font-extrabold text-emerald-900">{drawerNet === null ? String.fromCharCode(8212) : peso(drawerNet)}</div>
         </div>
         {accounts.map((a) => (
           <div key={a._id} className="rounded-2xl border border-slate-200 bg-white p-3">
