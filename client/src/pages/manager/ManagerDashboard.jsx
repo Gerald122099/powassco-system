@@ -30,6 +30,7 @@ import LoanApprovalsPanel from "../../components/LoanApprovalsPanel";
 import PayrollApprovalsPanel from "../../components/PayrollApprovalsPanel";
 import ProductLoansPanel from "../bookkeeper/ProductLoansPanel";
 import ProductAnalyticsPanel from "../../components/ProductAnalyticsPanel";
+import CashDrawerPanel from "../../components/CashDrawerPanel";
 import {
   Wallet, UserCog, FileBarChart, Inbox, CalendarClock, Boxes,
   MapPin, BarChart3, Banknote, ReceiptText, Megaphone, Landmark,
@@ -53,6 +54,7 @@ const items = [
   { key: "loans", label: "Loan Analytics", icon: Banknote, desc: "Capital, interest profit, collections, outstanding" },
   { key: "loanperiod", label: "Loan Collections", icon: Banknote, desc: "Capital, interest, paid/unpaid by period" },
   { key: "collections", label: "Overall Collections", icon: ReceiptText, desc: "Combined water + loan daily collection" },
+  { key: "drawer", label: "Cash Drawer", icon: Wallet, desc: "Cashier's drawer inflow / outflow reconciliation" },
   { key: "announcements", label: "Announcements", icon: Megaphone, desc: "Post announcements to the public homepage" },
 ];
 
@@ -86,6 +88,7 @@ export default function ManagerDashboard() {
       {tab === "loans" && <LoanAnalyticsPanel />}
       {tab === "loanperiod" && <LoanCollectionsPanel />}
       {tab === "collections" && <CollectionTodayPanel module="all" />}
+      {tab === "drawer" && <CashDrawerPanel />}
       {tab === "announcements" && <AnnouncementsPanel />}
     </DashboardLayout>
   );

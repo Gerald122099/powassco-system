@@ -18,6 +18,7 @@ import LoanApplication from "../models/LoanApplication.js";
 import SavingsTransaction from "../models/SavingsTransaction.js";
 import Expense from "../models/Expense.js";
 import { TreasuryTransaction } from "../models/Treasury.js";
+import { ProductLoanApplication } from "../models/ProductLoan.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
 const router = express.Router();
@@ -160,7 +161,15 @@ router.get("/today", ...guard, async (req, res) => {
       if (row._id === "in") drawerTreasuryIn = Number(row.total || 0);
       else if (row._id === "out") drawerTreasuryOut = Number(row.total || 0);
     }
-    const drawerNet = Number((cashTotal + savingsIn - savingsOut - disbursedTotal + drawerTreasuryIn - drawerTreasuryOut).toFixed(2));
+    // Product cash (sales + product-loan payments incl. bundled
+    // portions) lives only in ProductLoanApplication.payments[].
+    const productAgg = await ProductLoanApplication.aggregate([
+      { $unwind: "$payments" },
+      { $match: { "payments.paidAt": { $gte: start, $lt: end }, "payments.method": { $ne: "online" } } },
+      { $group: { _id: null, total: { $sum: "$payments.amount" } } },
+    ]);
+    const productCash = Number(productAgg[0]?.total || 0);
+    const drawerNet = Number((cashTotal + productCash + savingsIn - savingsOut - disbursedTotal + drawerTreasuryIn - drawerTreasuryOut).toFixed(2));
 
     // System-wide outstanding (unsettled receivables) + total CBU
     // held across every active member account. All three are cheap
@@ -246,6 +255,7 @@ router.get("/today", ...guard, async (req, res) => {
         disbursed: { total: disbursedTotal, count: disbursedCount },
         drawerNet,                  // cash + savings in − savings out − disbursed ± vault moves
         drawerTreasury: { in: drawerTreasuryIn, out: drawerTreasuryOut },
+        productCash,
         water: {
           // backward-compatible aliases
           cash: waterCashGross,     // total cash drawer water

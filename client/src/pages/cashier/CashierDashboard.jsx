@@ -21,6 +21,7 @@ import CashierDisbursementsPanel from "./CashierDisbursementsPanel";
 import CashierSavingsPanel from "./CashierSavingsPanel";
 import ReportsPanel from "../../components/ReportsPanel";
 import TreasuryPanel from "../../components/TreasuryPanel";
+import CashDrawerPanel from "../../components/CashDrawerPanel";
 import { apiFetch } from "../../lib/api";
 import { cashierBadges } from "../../lib/requestBadges";
 import { useAuth } from "../../context/AuthContext";
@@ -174,6 +175,7 @@ export default function CashierDashboard() {
             { key: "sales", label: "Sales", icon: ShoppingBag },
             { key: "savings", label: "Savings", icon: PiggyBank },
             { key: "disbursements", label: "Disbursements", icon: Receipt },
+            { key: "drawer", label: "Cash Drawer", icon: Wallet },
             { key: "collections", label: "Today's Collection", icon: ReceiptText },
             { key: "history", label: "Transaction History", icon: History },
             { key: "reports", label: "Reports", icon: FileDown },
@@ -208,6 +210,7 @@ export default function CashierDashboard() {
         {view === "sales" && <CashierSalesPanel />}
         {view === "savings" && <CashierSavingsPanel />}
         {view === "disbursements" && <CashierDisbursementsPanel />}
+        {view === "drawer" && <CashDrawerPanel />}
         {view === "collections" && <CollectionTodayPanel module="all" />}
         {view === "history" && <TransactionsPanel />}
         {view === "reports" && <ReportsPanel />}

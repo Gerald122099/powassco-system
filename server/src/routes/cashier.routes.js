@@ -863,6 +863,19 @@ router.post("/pay-loan", ...payGuard, async (req, res) => {
 // Today's physical drawer position — same formula the collections
 // endpoint exposes as drawerNet. Recomputed here so the sufficiency
 // check can't be spoofed by a stale client.
+// Cash received on PRODUCT transactions today (sales, product-loan /
+// rental payments, and the bundled portions riding water/loan ORs —
+// those land in payments[] only, never in WaterPayment/LoanPayment
+// amounts, so this is their single source of truth for drawer math).
+async function productCashToday(start, end) {
+  const agg = await ProductLoanApplication.aggregate([
+    { $unwind: "$payments" },
+    { $match: { "payments.paidAt": { $gte: start, $lt: end }, "payments.method": { $ne: "online" } } },
+    { $group: { _id: null, total: { $sum: "$payments.amount" }, count: { $sum: 1 } } },
+  ]);
+  return { total: Number(agg[0]?.total || 0), count: Number(agg[0]?.count || 0) };
+}
+
 async function drawerNetToday() {
   const now = new Date();
   const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -891,8 +904,92 @@ async function drawerNetToday() {
   let trIn = 0, trOut = 0;
   for (const r of drawerMoves) r._id === "in" ? (trIn = r.total) : (trOut = r.total);
   const disbursed = Number(expenses[0]?.total || 0);
-  return round2(cashOf(water) + cashOf(loans) + savIn - savOut - disbursed + trIn - trOut);
+  const product = await productCashToday(start, end);
+  return round2(cashOf(water) + cashOf(loans) + product.total + savIn - savOut - disbursed + trIn - trOut);
 }
+
+// Full drawer reconciliation for the cashier Cash Drawer tab:
+// every inflow and outflow component separated + totals.
+router.get("/drawer-summary", requireAuth, requireRole(["admin", "manager", "cashier", "bookkeeper"]), async (req, res) => {
+  try {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+    const inRange = { paidAt: { $gte: start, $lt: end } };
+    const SavingsTx = (await import("../models/SavingsTransaction.js")).default;
+    const MemberFee = (await import("../models/MemberFeeRequest.js")).default;
+
+    const [water, loans, savingsAgg, feeAgg, expenseAgg, drawerRows, product] = await Promise.all([
+      WaterPayment.find(inRange).select("method amountPaid cbuExcess").lean(),
+      LoanPayment.find(inRange).select("method amountPaid cbuExcess").lean(),
+      SavingsTx.aggregate([
+        { $match: { ...inRange, orNo: { $not: /^(INT|ADJ)-/ } } },
+        { $group: { _id: "$type", total: { $sum: "$amount" }, count: { $sum: 1 } } },
+      ]),
+      MemberFee.aggregate([
+        { $match: { status: "paid", paidAt: { $gte: start, $lt: end } } },
+        { $group: { _id: null, total: { $sum: "$total" }, count: { $sum: 1 } } },
+      ]),
+      Expense.aggregate([
+        { $match: { status: "disbursed", paymentMethod: "cash", disbursedAt: { $gte: start, $lt: end } } },
+        { $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 } } },
+      ]),
+      TreasuryTransaction.find({ target: "drawer", createdAt: { $gte: start, $lt: end } })
+        .sort({ createdAt: -1 }).select("type amount note refNo by createdAt").lean(),
+      productCashToday(start, end),
+    ]);
+
+    const split = (docs) => {
+      const cash = docs.filter((d) => d.method !== "online");
+      return {
+        bill: round2(cash.reduce((t, d) => t + (Number(d.amountPaid) || 0), 0)),
+        cbu: round2(cash.reduce((t, d) => t + (Number(d.cbuExcess) || 0), 0)),
+        count: cash.length,
+        online: round2(docs.filter((d) => d.method === "online").reduce((t, d) => t + (Number(d.amountPaid) || 0) + (Number(d.cbuExcess) || 0), 0)),
+      };
+    };
+    const w = split(water);
+    const l = split(loans);
+    let savIn = 0, savInCount = 0, savOut = 0, savOutCount = 0;
+    for (const r of savingsAgg) {
+      if (r._id === "deposit") { savIn = round2(r.total); savInCount = r.count; }
+      else { savOut = round2(r.total); savOutCount = r.count; }
+    }
+    // Member fees already arrive as drawer treasury IN rows — surfaced
+    // separately for display, NOT re-added in the totals.
+    const fees = { total: round2(feeAgg[0]?.total || 0), count: Number(feeAgg[0]?.count || 0) };
+    const expenseCash = { total: round2(expenseAgg[0]?.total || 0), count: Number(expenseAgg[0]?.count || 0) };
+    let trIn = 0, trOut = 0;
+    for (const r of drawerRows) {
+      if (r.type === "in") trIn += Number(r.amount) || 0;
+      else trOut += Number(r.amount) || 0;
+    }
+    trIn = round2(trIn); trOut = round2(trOut);
+
+    const totalIn = round2(w.bill + w.cbu + l.bill + l.cbu + product.total + savIn + trIn);
+    const totalOut = round2(savOut + expenseCash.total + trOut);
+    res.json({
+      date: start.toISOString().slice(0, 10),
+      inflows: {
+        waterBill: w.bill, waterCbu: w.cbu, waterCount: w.count,
+        loanBill: l.bill, loanCbu: l.cbu, loanCount: l.count,
+        product: round2(product.total), productCount: product.count,
+        savingsIn: savIn, savingsInCount: savInCount,
+        treasuryIn: trIn,
+        memberFees: fees.total, memberFeeCount: fees.count,
+      },
+      outflows: {
+        savingsOut: savOut, savingsOutCount: savOutCount,
+        expenseCash: expenseCash.total, expenseCashCount: expenseCash.count,
+        treasuryOut: trOut,
+      },
+      totals: { in: totalIn, out: totalOut, net: round2(totalIn - totalOut), online: round2(w.online + l.online) },
+      drawerLedger: drawerRows,
+    });
+  } catch (e) {
+    res.status(500).json({ message: e.message || "Failed to load drawer summary." });
+  }
+});
 
 // Queue of loans the loan officer released for payout.
 router.get("/loan-disbursements", ...payGuard, async (req, res) => {
