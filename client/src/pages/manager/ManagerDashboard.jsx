@@ -8,8 +8,10 @@
 // Admin retains: user management, settings, audit, security,
 // payments, adjustments, maintenance — pure system administration.
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import DashboardLayout from "../../components/DashboardLayout";
+import { useAuth } from "../../context/AuthContext";
+import { managerBadges } from "../../lib/requestBadges";
 import ExpensesPanel from "../admin/ExpensesPanel";
 import EmployeesPanel from "../admin/EmployeesPanel";
 import ReportsPanel from "../admin/ReportsPanel";
@@ -56,8 +58,17 @@ const items = [
 
 export default function ManagerDashboard() {
   const [tab, setTab] = useState("treasury");
+  const { token } = useAuth();
+  const [badges, setBadges] = useState({});
+  useEffect(() => {
+    const tick = () => managerBadges(token).then(setBadges).catch(() => {});
+    tick();
+    const t = setInterval(tick, 60000);
+    return () => clearInterval(t);
+  }, [token]);
+  const badged = items.map((it) => ({ ...it, badge: badges[it.key] || 0 }));
   return (
-    <DashboardLayout title="Manager" accent="indigo" items={items} active={tab} onSelect={setTab}>
+    <DashboardLayout title="Manager" accent="indigo" items={badged} active={tab} onSelect={setTab}>
       {tab === "treasury" && <TreasuryPanel />}
       {tab === "loan-approvals" && <LoanApprovalsPanel />}
       {tab === "payroll-approvals" && <PayrollApprovalsPanel />}

@@ -22,6 +22,7 @@ import CashierSavingsPanel from "./CashierSavingsPanel";
 import ReportsPanel from "../../components/ReportsPanel";
 import TreasuryPanel from "../../components/TreasuryPanel";
 import { apiFetch } from "../../lib/api";
+import { cashierBadges } from "../../lib/requestBadges";
 import { useAuth } from "../../context/AuthContext";
 import { Droplets, Banknote, ReceiptText, Wallet, CheckCircle, TrendingUp, History, ShoppingBag, FileDown, Receipt, PiggyBank } from "lucide-react";
 
@@ -59,6 +60,13 @@ export default function CashierDashboard() {
   const { token } = useAuth();
   const [view, setView] = useState("water"); // "water" | "loan" | "collections"
   const [todayStats, setTodayStats] = useState(null);
+  const [pillBadges, setPillBadges] = useState({});
+  useEffect(() => {
+    const tick = () => cashierBadges(token).then(setPillBadges).catch(() => {});
+    tick();
+    const t = setInterval(tick, 60000);
+    return () => clearInterval(t);
+  }, [token]);
 
   // Shared "today" snapshot. Re-fetches on view switch is unnecessary
   // because the page tabs are sibling components — but we DO refresh
@@ -182,6 +190,11 @@ export default function CashierDashboard() {
               }`}
             >
               <Icon size={14} /> {label}
+              {Number(pillBadges[key]) > 0 && (
+                <span className="ml-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
+                  {pillBadges[key] > 99 ? "99+" : pillBadges[key]}
+                </span>
+              )}
             </button>
           ))}
         </div>

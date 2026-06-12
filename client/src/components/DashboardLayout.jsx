@@ -114,6 +114,12 @@ export default function DashboardLayout({
               >
                 {Icon && <Icon size={18} strokeWidth={2.2} className="shrink-0" />}
                 <span className={reveal}>{it.label}</span>
+                {/* Un-actioned request count — dashboards pass it.badge */}
+                {Number(it.badge) > 0 && (
+                  <span className={`${reveal} ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white`}>
+                    {it.badge > 99 ? "99+" : it.badge}
+                  </span>
+                )}
               </button>
             );
           })}

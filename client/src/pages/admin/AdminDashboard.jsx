@@ -15,6 +15,7 @@ import TreasuryPanel from "../../components/TreasuryPanel";
 import Card from "../../components/Card";
 import Modal from "../../components/Modal";
 import { apiFetch } from "../../lib/api";
+import { adminBadges } from "../../lib/requestBadges";
 import { useAuth } from "../../context/AuthContext";
 import WaterSettingsPanel from "./WaterSettingsPanel";
 import AnalyticsPanel from "../water/panels/AnalyticsPanel";
@@ -131,6 +132,14 @@ export default function AdminDashboard() {
   const { token, user } = useAuth();
 
   const [activeTab, setActiveTab] = useState("users"); // Default to users tab
+  const [navBadges, setNavBadges] = useState({});
+  useEffect(() => {
+    const tick = () => adminBadges(token).then(setNavBadges).catch(() => {});
+    tick();
+    const t = setInterval(tick, 60000);
+    return () => clearInterval(t);
+  }, [token]);
+  const adminNavItemsBadged = adminNavItems.map((it) => ({ ...it, badge: navBadges[it.key] || 0 }));
   
   const [users, setUsers] = useState([]);
   const [q, setQ] = useState("");
@@ -288,7 +297,7 @@ export default function AdminDashboard() {
     <DashboardLayout
       title="Admin"
       accent="slate"
-      items={adminNavItems}
+      items={adminNavItemsBadged}
       active={activeTab}
       onSelect={setActiveTab}
     >

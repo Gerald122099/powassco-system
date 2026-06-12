@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import DashboardLayout from "../../components/DashboardLayout";
+import { useAuth } from "../../context/AuthContext";
+import { bookkeeperBadges } from "../../lib/requestBadges";
 import TransactionsPanel from "./TransactionsPanel";
 import MembersCbuPanel from "./MembersCbuPanel";
 import ProductLoansPanel from "./ProductLoansPanel";
@@ -29,8 +31,17 @@ const items = [
 
 export default function BookkeeperDashboard() {
   const [tab, setTab] = useState("transactions");
+  const { token } = useAuth();
+  const [badges, setBadges] = useState({});
+  useEffect(() => {
+    const tick = () => bookkeeperBadges(token).then(setBadges).catch(() => {});
+    tick();
+    const t = setInterval(tick, 60000);
+    return () => clearInterval(t);
+  }, [token]);
+  const badged = items.map((it) => ({ ...it, badge: badges[it.key] || 0 }));
   return (
-    <DashboardLayout title="Bookkeeper" accent="blue" items={items} active={tab} onSelect={setTab}>
+    <DashboardLayout title="Bookkeeper" accent="blue" items={badged} active={tab} onSelect={setTab}>
       {tab === "transactions" && <TransactionsPanel />}
       {tab === "members" && <MembersCbuPanel />}
       {tab === "adjustments" && <AdjustmentsPanel />}
