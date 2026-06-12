@@ -26,6 +26,8 @@ import TreasuryPanel from "../../components/TreasuryPanel";
 import LoanCollectionsPanel from "../../components/LoanCollectionsPanel";
 import LoanApprovalsPanel from "../../components/LoanApprovalsPanel";
 import PayrollApprovalsPanel from "../../components/PayrollApprovalsPanel";
+import ProductLoansPanel from "../bookkeeper/ProductLoansPanel";
+import ProductAnalyticsPanel from "../../components/ProductAnalyticsPanel";
 import {
   Wallet, UserCog, FileBarChart, Inbox, CalendarClock, Boxes,
   MapPin, BarChart3, Banknote, ReceiptText, Megaphone, Landmark,
@@ -35,6 +37,8 @@ const items = [
   { key: "treasury", label: "Treasury", icon: Landmark, desc: "Approve bank + Cash Vault movements (you sign first)" },
   { key: "loan-approvals", label: "Loan Approvals", icon: Banknote, desc: "First signature on new loan applications" },
   { key: "payroll-approvals", label: "Payroll Approvals", icon: Wallet, desc: "Sign payslips + cash advances before the cashier pays" },
+  { key: "products", label: "Product Loans", icon: Boxes, desc: "Add products, adjust stocks directly (no approval needed)" },
+  { key: "product-analytics", label: "Product Analytics", icon: Boxes, desc: "Capital + profit per product, sale vs loan, paid/unpaid" },
   { key: "expenses", label: "Expenses", icon: Wallet, desc: "File disbursement requests — cashier pays them out" },
   { key: "employees", label: "Employees", icon: UserCog, desc: "Register staff, profiles, positions, and salary rates" },
   { key: "reports", label: "Reports", icon: FileBarChart, desc: "Financial reports across expenses and loans" },
@@ -57,6 +61,8 @@ export default function ManagerDashboard() {
       {tab === "treasury" && <TreasuryPanel />}
       {tab === "loan-approvals" && <LoanApprovalsPanel />}
       {tab === "payroll-approvals" && <PayrollApprovalsPanel />}
+      {tab === "products" && <ProductLoansPanel />}
+      {tab === "product-analytics" && <ProductAnalyticsPanel />}
       {tab === "expenses" && <ExpensesPanel />}
       {tab === "employees" && <EmployeesPanel />}
       {tab === "reports" && <ReportsPanel />}

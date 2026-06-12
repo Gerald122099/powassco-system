@@ -11,6 +11,7 @@ export const EXPENSE_CATEGORIES = [
   "Professional Fees",
   "Permits / Licenses",
   "Salaries / Payroll",
+  "Product Supply Capital",
   "Miscellaneous",
 ];
 

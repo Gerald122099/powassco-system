@@ -29,11 +29,11 @@ import { freshenBill } from "../utils/penalty.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
 const router = express.Router();
-const guard = [requireAuth, requireRole(["admin", "bookkeeper"])];
+const guard = [requireAuth, requireRole(["admin", "manager", "bookkeeper"])];
 // Cashier shares product transaction posting (sales, loan payments,
 // rental returns) — they're at the counter when those happen. The
 // read-only audit endpoints + catalog mutations stay bookkeeper-only.
-const cashierGuard = [requireAuth, requireRole(["admin", "bookkeeper", "cashier"])];
+const cashierGuard = [requireAuth, requireRole(["admin", "manager", "bookkeeper", "cashier"])];
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
 function dateRange(fromStr, toStr) {
@@ -520,6 +520,41 @@ router.get("/product-applications", ...guard, async (req, res) => {
 //                               returnDate required; charges rentFee
 //                               upfront; status stays "active" until
 //                               POST /:id/return.
+// Product analytics (Phase 6): per-product + overall capital, profit,
+// sale-vs-loan split, paid/unpaid balances.
+router.get("/product-analytics", ...guard, async (req, res) => {
+  try {
+    const rows = await ProductLoanApplication.aggregate([
+      { $match: { status: { $nin: ["cancelled", "rejected"] } } },
+      { $group: {
+          _id: "$productName",
+          capital: { $sum: "$totalCapital" },
+          profit: { $sum: "$profitRecorded" },
+          revenue: { $sum: "$totalPrice" },
+          paid: { $sum: "$totalPaid" },
+          unpaid: { $sum: "$balance" },
+          soldAsSale: { $sum: { $cond: [{ $eq: ["$transactionType", "sale"] }, "$totalPrice", 0] } },
+          soldAsLoan: { $sum: { $cond: [{ $in: ["$transactionType", ["loan", "rental"]] }, "$totalPrice", 0] } },
+          count: { $sum: 1 },
+        } },
+      { $sort: { revenue: -1 } },
+    ]);
+    const overall = rows.reduce((o, r) => ({
+      capital: o.capital + (r.capital || 0),
+      profit: o.profit + (r.profit || 0),
+      revenue: o.revenue + (r.revenue || 0),
+      paid: o.paid + (r.paid || 0),
+      unpaid: o.unpaid + (r.unpaid || 0),
+      soldAsSale: o.soldAsSale + (r.soldAsSale || 0),
+      soldAsLoan: o.soldAsLoan + (r.soldAsLoan || 0),
+      count: o.count + (r.count || 0),
+    }), { capital: 0, profit: 0, revenue: 0, paid: 0, unpaid: 0, soldAsSale: 0, soldAsLoan: 0, count: 0 });
+    res.json({ products: rows.map((r) => ({ product: r._id, ...r, _id: undefined })), overall });
+  } catch (e) {
+    res.status(500).json({ message: e.message || "Analytics failed." });
+  }
+});
+
 router.post("/product-applications", ...cashierGuard, async (req, res) => {
   try {
     const b = req.body || {};
