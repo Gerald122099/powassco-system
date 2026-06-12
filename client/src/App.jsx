@@ -38,15 +38,11 @@ function RoleHome() {
   const { user } = useAuth();
   if (!user) return <Navigate to="/employee-login" replace />;
 
-  if (user.role === "admin") return <Navigate to="/admin" replace />;
-  if (user.role === "water_bill_officer") return <Navigate to="/water" replace />;
-  if (user.role === "loan_officer") return <Navigate to="/loan" replace />;
-  if (user.role === "meter_reader") return <Navigate to="/meter" replace />;
-  if (user.role === "plumber") return <Navigate to="/plumber" replace />;
-  if (user.role === "cashier") return <Navigate to="/cashier" replace />;
-  if (user.role === "bookkeeper") return <Navigate to="/bookkeeper" replace />;
-
-  return <Navigate to="/employee-login" replace />;
+  // Single source of truth — the same map Protected uses, so a new
+  // role only needs one entry (the old per-role if-chain silently
+  // dropped "manager" logins back to the login page).
+  const home = ROLE_HOME[user.role];
+  return <Navigate to={home || "/employee-login"} replace />;
 }
 
 // Maps a role to its canonical dashboard path. Used by Protected when a

@@ -14,13 +14,10 @@ export default function LoginPage() {
   // /employee-login during an active session).
   useEffect(() => {
     if (!token || !user) return;
-    const role = user.role;
-    if (role === "admin") nav("/admin", { replace: true });
-    else if (role === "water_bill_officer") nav("/water", { replace: true });
-    else if (role === "loan_officer") nav("/loan", { replace: true });
-    else if (role === "meter_reader") nav("/meter", { replace: true });
-    else if (role === "plumber") nav("/plumber", { replace: true });
-    else if (role === "cashier") nav("/cashier", { replace: true });
+    // /dashboard (RoleHome) owns the role-to-path map — one source of
+    // truth instead of three hand-copied if-chains that kept missing
+    // newly added roles (manager, bookkeeper).
+    nav("/dashboard", { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, user]);
 
@@ -78,14 +75,8 @@ export default function LoginPage() {
 
   function routeAfter(data) {
     if (data.mustSetup2FA) return nav("/setup-2fa");
-    const role = data.user?.role;
-    if (role === "admin") nav("/admin");
-    else if (role === "water_bill_officer") nav("/water");
-    else if (role === "loan_officer") nav("/loan");
-    else if (role === "meter_reader") nav("/meter");
-    else if (role === "plumber") nav("/plumber");
-    else if (role === "cashier") nav("/cashier");
-    else nav("/dashboard");
+    // RoleHome (/dashboard) resolves the right dashboard per role.
+    nav("/dashboard");
   }
 
   async function onSubmit(e) {
