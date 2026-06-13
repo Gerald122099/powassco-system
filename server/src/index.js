@@ -46,6 +46,7 @@ import treasuryRoutes from "./routes/treasury.routes.js";
 import dataResetRoutes from "./routes/admin/dataReset.routes.js";
 import maintenanceRoutes from "./routes/admin/maintenance.routes.js";
 import errorsRoutes from "./routes/admin/errors.routes.js";
+import auditReportRoutes from "./routes/auditReport.routes.js";
 
 import { auditLogger } from "./middleware/auditLogger.js";
 import { ensureBootstrapAdmin } from "./utils/ensureAdmin.js";
@@ -188,6 +189,7 @@ app.use("/api/treasury", treasuryRoutes);
 app.use("/api/admin/data-reset", dataResetRoutes);
 app.use("/api/admin/maintenance", maintenanceRoutes);
 app.use("/api/admin/errors", errorsRoutes);
+app.use("/api/audit-report", auditReportRoutes);
 
 // JSON 404 for unknown routes
 app.use((req, res) => {
