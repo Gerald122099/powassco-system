@@ -5,6 +5,7 @@ import { useEffect, useState, useCallback } from "react";
 import Card from "./Card";
 import Modal from "./Modal";
 import { apiFetch } from "../lib/api";
+import { buildAuditRemarks } from "../lib/auditRemarks";
 import { useAuth } from "../context/AuthContext";
 import { Archive, RefreshCw, Printer, CheckCircle2 } from "lucide-react";
 
@@ -78,7 +79,11 @@ export default function AuditedReportsPanel() {
         ${(dis.expenses?.byCategory || []).map((e) => row("Expense — " + e.category, peso(e.total))).join("")}
         ${row("<b>TOTAL DISBURSED</b>", "<b>" + peso(dis.grandTotal) + "</b>")}
         ${row("Member fees collected (inflow)", peso(dis.memberFees?.total))}</table>
-      ${r.findings ? `<div class="findings"><b>Findings / remarks:</b><br/>${r.findings}</div>` : ""}
+      <h3>System Remarks & Recommendations</h3>
+      <div style="font-size:11px">
+        ${buildAuditRemarks(s).map((rm) => `<div style="margin:3px 0;padding:4px 8px;border-left:3px solid ${rm.level === "alert" ? "#e11d48" : rm.level === "watch" ? "#f59e0b" : "#10b981"};background:#f8fafc"><b>${rm.title}.</b> ${rm.text}</div>`).join("")}
+      </div>
+      ${r.findings ? `<div class="findings"><b>Committee findings / remarks:</b><br/>${r.findings}</div>` : ""}
       <div class="sign">
         <div class="sig"><div class="line"><b>${r.signedBy}</b></div>Audited & signed by (Audit Committee)<br/>${fmtDT(r.signedAt)}</div>
         <div class="sig"><div class="line">&nbsp;</div>Noted by</div>

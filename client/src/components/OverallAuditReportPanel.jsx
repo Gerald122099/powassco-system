@@ -8,6 +8,7 @@ import { useEffect, useState, useCallback } from "react";
 import Card from "./Card";
 import Modal from "./Modal";
 import { apiFetch } from "../lib/api";
+import { buildAuditRemarks } from "../lib/auditRemarks";
 import { useAuth } from "../context/AuthContext";
 import { toast } from "./Toast";
 import {
@@ -363,6 +364,34 @@ export default function OverallAuditReportPanel() {
           <span className="ml-1 text-[10px] text-slate-400">(vault ending; drawer counted separately)</span>
         </div>
       </div>
+
+      {/* System remarks — automated findings from the figures above */}
+      {data && (() => {
+        const remarks = buildAuditRemarks(data);
+        const tone = { ok: "border-emerald-200 bg-emerald-50 text-emerald-800", watch: "border-amber-200 bg-amber-50 text-amber-900", alert: "border-rose-200 bg-rose-50 text-rose-900" };
+        const dot = { ok: "bg-emerald-500", watch: "bg-amber-500", alert: "bg-rose-500" };
+        return (
+          <div className="mt-4 rounded-2xl border border-slate-200">
+            <div className="border-b border-slate-100 bg-slate-50 px-4 py-2 text-xs font-bold uppercase tracking-wide text-slate-700">
+              System Remarks & Recommendations <span className="font-normal normal-case text-slate-400">— auto-generated for {data.range?.from || "all"} → {data.range?.to || "all"}</span>
+            </div>
+            <div className="space-y-2 p-3">
+              {remarks.map((r, i) => (
+                <div key={i} className={`flex items-start gap-2 rounded-xl border px-3 py-2 ${tone[r.level]}`}>
+                  <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${dot[r.level]}`} />
+                  <div>
+                    <div className="text-sm font-bold">{r.title}</div>
+                    <div className="text-xs opacity-90">{r.text}</div>
+                  </div>
+                </div>
+              ))}
+              <div className="pt-1 text-[10px] text-slate-400">
+                These are automated indicators based on the selected period's figures — guidance for the committee, not a substitute for review.
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       <Modal open={signOpen} title="Sign Audit Report" onClose={() => setSignOpen(false)}>
         <div className="space-y-3">
