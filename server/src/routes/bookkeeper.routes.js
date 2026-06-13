@@ -551,7 +551,31 @@ router.get("/product-analytics", requireAuth, requireRole(["admin", "manager", "
       soldAsLoan: o.soldAsLoan + (r.soldAsLoan || 0),
       count: o.count + (r.count || 0),
     }), { capital: 0, profit: 0, revenue: 0, paid: 0, unpaid: 0, latePenalty: 0, soldAsSale: 0, soldAsLoan: 0, count: 0 });
-    res.json({ products: rows.map((r) => ({ product: r._id, ...r, _id: undefined })), overall });
+
+    // Live inventory from the catalogue: what's still on the shelf and
+    // the capital tied up in it (vs. the `capital` above = cost of
+    // goods already sold/loaned out).
+    const catalog = await ProductLoanCatalog.find({})
+      .select("name category unitPrice capital profit stock isActive").lean();
+    const inventory = { items: [], stockUnits: 0, capitalUnsold: 0, retailUnsold: 0, profitPotential: 0 };
+    for (const c of catalog) {
+      const st = Number(c.stock) || 0;
+      const capU = round2(st * (Number(c.capital) || 0));
+      const retU = round2(st * (Number(c.unitPrice) || 0));
+      const proU = round2(st * (Number(c.profit) || 0));
+      inventory.stockUnits += st;
+      inventory.capitalUnsold = round2(inventory.capitalUnsold + capU);
+      inventory.retailUnsold = round2(inventory.retailUnsold + retU);
+      inventory.profitPotential = round2(inventory.profitPotential + proU);
+      inventory.items.push({
+        name: c.name, category: c.category, stock: st,
+        unitCapital: round2(c.capital || 0), unitPrice: round2(c.unitPrice || 0),
+        capitalUnsold: capU, retailUnsold: retU, profitPotential: proU, isActive: c.isActive !== false,
+      });
+    }
+    inventory.items.sort((a, b) => b.capitalUnsold - a.capitalUnsold);
+
+    res.json({ products: rows.map((r) => ({ product: r._id, ...r, _id: undefined })), overall, inventory });
   } catch (e) {
     res.status(500).json({ message: e.message || "Analytics failed." });
   }

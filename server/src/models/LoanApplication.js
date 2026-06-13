@@ -146,6 +146,10 @@ const LoanApplicationSchema = new mongoose.Schema(
     disbursedBy: { type: String, default: "" },     // cashier who paid out
     disbursedAt: { type: Date },
     disbursementOr: { type: String, default: "" },
+    // How the net proceeds were released: cash (drawer) | bank | check.
+    disbursementMethod: { type: String, enum: ["cash", "bank", "check"], default: "cash" },
+    disbursementBank: { type: String, default: "" },  // "BankName ····1234" snapshot
+    disbursementCheque: { type: String, default: "" }, // cheque number when method=check
   },
   { timestamps: true }
 );

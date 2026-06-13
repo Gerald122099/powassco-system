@@ -993,14 +993,15 @@ router.get("/drawer-summary", requireAuth, requireRole(["admin", "manager", "aud
 
 // Queue of loans the loan officer released for payout.
 router.get("/loan-disbursements", ...payGuard, async (req, res) => {
-  const [items, drawer] = await Promise.all([
+  const [items, drawer, bankAccounts] = await Promise.all([
     LoanApplication.find({ status: "for_disbursement" })
       .select("loanId borrowerName borrowerPnNo principal totalCharges netProceeds releasedBy approvedBy managerApprovedBy createdAt")
       .sort({ createdAt: 1 })
       .lean(),
     drawerNetToday(),
+    BankAccount.find({ status: "active" }).select("bankName accountNumber balance").lean(),
   ]);
-  res.json({ items, drawerNet: drawer });
+  res.json({ items, drawerNet: drawer, bankAccounts });
 });
 
 // Pay out the net proceeds. Refuses when today's drawer can't cover it
@@ -1015,6 +1016,13 @@ router.post("/disburse-loan", ...payGuard, async (req, res) => {
     if (!loanId) return res.status(400).json({ message: "loanId is required." });
     if (!orNo) return res.status(400).json({ message: "OR / voucher number is required." });
 
+    // Release method: cash (drawer) | bank | check. Bank/cheque send
+    // the proceeds to the borrower from a coop bank account instead of
+    // the drawer; cheque also records a cheque number.
+    const method = ["cash", "bank", "check"].includes(req.body?.method) ? req.body.method : "cash";
+    const bankAccountId = String(req.body?.bankAccountId || "");
+    const chequeNumber = String(req.body?.chequeNumber || "").trim();
+
     const loan = await LoanApplication.findOne({ loanId });
     if (!loan) return res.status(404).json({ message: "Loan not found." });
     if (loan.status !== "for_disbursement") {
@@ -1023,18 +1031,38 @@ router.post("/disburse-loan", ...payGuard, async (req, res) => {
     const net = round2(Number(loan.netProceeds) || (Number(loan.principal) || 0) - (Number(loan.totalCharges) || 0));
     if (!(net > 0)) return res.status(400).json({ message: "Net proceeds compute to ₱0 — check the loan's charges." });
 
-    const drawer = await drawerNetToday();
-    if (drawer < net) {
-      return res.status(400).json({
-        message: `Insufficient cash drawer (₱${drawer.toLocaleString()} available, need ₱${net.toLocaleString()}). Request cash from the Cash Vault first (Treasury tab).`,
-      });
+    // Funds-source check up front. Cash → drawer; bank/cheque → the
+    // selected coop bank account (must hold enough).
+    let drawer = 0;
+    let bankAcct = null;
+    if (method === "cash") {
+      drawer = await drawerNetToday();
+      if (drawer < net) {
+        return res.status(400).json({
+          message: `Insufficient cash drawer (₱${drawer.toLocaleString()} available, need ₱${net.toLocaleString()}). Request cash from the Cash Vault first (Treasury tab).`,
+        });
+      }
+    } else {
+      if (!bankAccountId) return res.status(400).json({ message: "Pick the bank account to release from." });
+      if (method === "check" && !chequeNumber) return res.status(400).json({ message: "Cheque number is required." });
+      bankAcct = await BankAccount.findOne({ _id: bankAccountId, status: "active" }).lean();
+      if (!bankAcct) return res.status(400).json({ message: "Bank account not found." });
+      if (Number(bankAcct.balance) < net) {
+        return res.status(400).json({ message: `Insufficient balance in ${bankAcct.bankName} (₱${Number(bankAcct.balance).toLocaleString()} available, need ₱${net.toLocaleString()}).` });
+      }
     }
 
     const who = req.user?.fullName || req.user?.employeeId || "";
     // Atomic claim — two cashiers can't both pay the same loan.
+    const setFields = {
+      status: "released", disbursedBy: who, disbursedAt: new Date(), disbursementOr: orNo,
+      releasedAt: new Date(), disbursementMethod: method,
+    };
+    if (bankAcct) setFields.disbursementBank = `${bankAcct.bankName} ····${String(bankAcct.accountNumber).slice(-4)}`;
+    if (method === "check") setFields.disbursementCheque = chequeNumber;
     const claimed = await LoanApplication.findOneAndUpdate(
       { _id: loan._id, status: "for_disbursement" },
-      { $set: { status: "released", disbursedBy: who, disbursedAt: new Date(), disbursementOr: orNo, releasedAt: new Date() } },
+      { $set: setFields },
       { new: true }
     );
     if (!claimed) return res.status(409).json({ message: "Already disbursed by someone else." });
@@ -1053,13 +1081,36 @@ router.post("/disburse-loan", ...payGuard, async (req, res) => {
     });
     await claimed.save();
 
-    await TreasuryTransaction.create({
-      target: "drawer", type: "out", amount: net, balanceAfter: null,
-      refNo: orNo, by: who,
-      note: `Loan disbursement ${claimed.loanId} — net proceeds to ${claimed.borrowerName}`,
-    });
+    if (method === "cash") {
+      await TreasuryTransaction.create({
+        target: "drawer", type: "out", amount: net, balanceAfter: null, refNo: orNo, by: who,
+        note: `Loan disbursement ${claimed.loanId} — net proceeds to ${claimed.borrowerName} (cash)`,
+      });
+    } else {
+      // Debit the bank account atomically (conditional — can't overdraw)
+      // and record a bank OUT ledger row referencing the cheque/OR.
+      const updatedAcct = await BankAccount.findOneAndUpdate(
+        { _id: bankAcct._id, balance: { $gte: net } },
+        { $inc: { balance: -net } },
+        { new: true }
+      );
+      if (!updatedAcct) {
+        // Balance moved under us — roll the loan back to the queue.
+        await LoanApplication.updateOne({ _id: claimed._id }, { $set: { status: "for_disbursement", disbursedBy: "", disbursedAt: null, disbursementOr: "" } });
+        return res.status(409).json({ message: "Bank balance changed — try again." });
+      }
+      await TreasuryTransaction.create({
+        target: "bank", bankAccountId: updatedAcct._id, type: "out", amount: net,
+        balanceAfter: round2(updatedAcct.balance),
+        refNo: method === "check" ? chequeNumber : orNo, by: who,
+        note: `Loan disbursement ${claimed.loanId} — ${claimed.borrowerName} via ${method === "check" ? "cheque " + chequeNumber : "bank transfer"}`,
+      });
+    }
 
-    res.json({ ok: true, loan: claimed.toObject(), netProceeds: net, drawerAfter: round2(drawer - net) });
+    res.json({
+      ok: true, loan: claimed.toObject(), netProceeds: net, method,
+      drawerAfter: method === "cash" ? round2(drawer - net) : undefined,
+    });
   } catch (e) {
     console.error("disburse-loan error:", e);
     res.status(500).json({ message: e.message || "Disbursement failed." });

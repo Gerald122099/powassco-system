@@ -43,8 +43,9 @@ export default function AuditedReportsPanel() {
       .sign{margin-top:36px;display:grid;grid-template-columns:1fr 1fr;gap:30px}
       .sig{text-align:center}.line{border-top:1px solid #0f172a;margin-top:30px;padding-top:3px}
       .findings{margin-top:12px;padding:8px;border:1px solid #ddd;border-radius:6px;background:#faf5ff}</style></head><body>
-      <div class="head"><div class="coop">POWASSCO MULTIPURPOSE COOPERATIVE</div>
-      <div class="sub">Owak, Asturias, Cebu &bull; C.D.A Reg. No. 9520-07014753</div></div>
+      <div class="head"><img src="${window.location.origin}/logo.png" alt="" style="height:54px;width:54px;object-fit:contain;display:block;margin:0 auto 4px"/><div class="coop">POWASSCO MULTIPURPOSE COOPERATIVE</div>
+      <div class="sub">Owak, Asturias, Cebu &bull; C.D.A Reg. No. 9520-07014753</div>
+      <div class="sub">Audit Committee — Official Report</div></div>
       <div class="title">AUDIT COMMITTEE REPORT${r.label ? " — " + r.label : ""}</div>
       <div style="text-align:center;font-size:11px;color:#475569">Period: ${fmt(r.periodFrom)} to ${fmt(r.periodTo)}</div>
       <h3>Collections</h3><table>

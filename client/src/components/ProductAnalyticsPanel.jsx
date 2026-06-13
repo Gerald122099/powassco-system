@@ -39,6 +39,7 @@ export default function ProductAnalyticsPanel() {
   useEffect(() => { load(); }, [load]);
 
   const o = data?.overall || {};
+  const inv = data?.inventory || {};
   return (
     <Card>
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -55,14 +56,57 @@ export default function ProductAnalyticsPanel() {
         </button>
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
+      <div className="mt-3 text-xs font-bold uppercase tracking-wide text-slate-500">Sold / loaned out (capital of goods released)</div>
+      <div className="mt-1 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
         <Tile label="Transactions" value={o.count ?? "—"} />
-        <Tile label="Total capital" value={peso(o.capital)} tone="blue" />
+        <Tile label="Capital of sold" value={peso(o.capital)} tone="blue" />
         <Tile label="Total profit" value={peso(o.profit)} tone="emerald" />
         <Tile label="Sold as SALE" value={peso(o.soldAsSale)} tone="amber" />
         <Tile label="Sold as LOAN" value={peso(o.soldAsLoan)} tone="violet" />
         <Tile label="Paid" value={peso(o.paid)} tone="emerald" />
         <Tile label="Unpaid" value={peso(o.unpaid)} tone="rose" />
+      </div>
+
+      {/* Inventory still on the shelf */}
+      <div className="mt-4 text-xs font-bold uppercase tracking-wide text-slate-500">Inventory on hand (not yet sold)</div>
+      <div className="mt-1 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Tile label="Stock units remaining" value={inv.stockUnits ?? 0} />
+        <Tile label="Capital tied in stock" value={peso(inv.capitalUnsold)} tone="blue" />
+        <Tile label="Retail value unsold" value={peso(inv.retailUnsold)} tone="amber" />
+        <Tile label="Potential profit if sold" value={peso(inv.profitPotential)} tone="emerald" />
+      </div>
+
+      {/* Per-item inventory */}
+      <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200">
+        <div className="bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-700">Stock inventory (per item)</div>
+        <table className="w-full text-sm">
+          <thead className="bg-white text-left text-xs text-slate-500">
+            <tr>
+              <th className="px-3 py-2">Product</th>
+              <th className="px-3 py-2">Category</th>
+              <th className="px-3 py-2 text-right">Stock</th>
+              <th className="px-3 py-2 text-right">Unit capital</th>
+              <th className="px-3 py-2 text-right">Unit price</th>
+              <th className="px-3 py-2 text-right">Capital in stock</th>
+              <th className="px-3 py-2 text-right">Potential profit</th>
+            </tr>
+          </thead>
+          <tbody>
+            {!(inv.items || []).length ? (
+              <tr><td colSpan={7} className="py-8 text-center text-xs text-slate-500">No catalogue items.</td></tr>
+            ) : inv.items.map((it) => (
+              <tr key={it.name} className={`border-t ${it.stock === 0 ? "text-slate-400" : ""}`}>
+                <td className="px-3 py-2 font-semibold">{it.name}{!it.isActive && <span className="ml-1 text-[10px] text-slate-400">(inactive)</span>}</td>
+                <td className="px-3 py-2 text-slate-500">{it.category}</td>
+                <td className={`px-3 py-2 text-right font-mono font-bold ${it.stock === 0 ? "text-rose-500" : "text-slate-800"}`}>{it.stock}</td>
+                <td className="px-3 py-2 text-right font-mono">{peso(it.unitCapital)}</td>
+                <td className="px-3 py-2 text-right font-mono">{peso(it.unitPrice)}</td>
+                <td className="px-3 py-2 text-right font-mono text-blue-700">{peso(it.capitalUnsold)}</td>
+                <td className="px-3 py-2 text-right font-mono text-emerald-700">{peso(it.profitPotential)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
 
       <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200">

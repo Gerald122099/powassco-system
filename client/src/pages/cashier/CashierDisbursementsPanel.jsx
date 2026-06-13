@@ -29,7 +29,14 @@ const METHODS = ["cash", "check", "bank", "gcash", "other"];
 function LoanDisburseQueue({ token }) {
   const [items, setItems] = useState([]);
   const [drawer, setDrawer] = useState(0);
+  const [banks, setBanks] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [target, setTarget] = useState(null);
+  const [orNo, setOrNo] = useState("");
+  const [method, setMethod] = useState("cash");
+  const [bankAccountId, setBankAccountId] = useState("");
+  const [chequeNumber, setChequeNumber] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   const load = useCallback(async () => {
     setBusy(true);
@@ -37,27 +44,43 @@ function LoanDisburseQueue({ token }) {
       const res = await apiFetch("/cashier/loan-disbursements", { token });
       setItems(res.items || []);
       setDrawer(res.drawerNet || 0);
+      setBanks(res.bankAccounts || []);
     } catch {/* ignore */} finally { setBusy(false); }
   }, [token]);
   useEffect(() => { load(); }, [load]);
 
-  async function disburse(l) {
-    const net = Number(l.netProceeds) || (Number(l.principal) || 0) - (Number(l.totalCharges) || 0);
-    const orNo = prompt(`Pay out ₱${net.toLocaleString()} to ${l.borrowerName} (${l.loanId}).
-OR / voucher number:`, "");
-    if (orNo === null || !orNo.trim()) return;
-    try {
-      const res = await apiFetch("/cashier/disburse-loan", { method: "POST", token, body: { loanId: l.loanId, orNo: orNo.trim() } });
-      toast.success(`Disbursed ₱${res.netProceeds.toLocaleString()} — drawer now ₱${res.drawerAfter.toLocaleString()}.`);
-      load();
-    } catch (e) { toast.error(e.message); }
+  function openPay(l) {
+    setTarget(l); setOrNo(""); setMethod("cash"); setBankAccountId(""); setChequeNumber("");
   }
+  async function submit() {
+    if (!target) return;
+    if (!orNo.trim()) { toast.error("OR / voucher number is required."); return; }
+    if ((method === "bank" || method === "check") && !bankAccountId) { toast.error("Pick the bank account to release from."); return; }
+    if (method === "check" && !chequeNumber.trim()) { toast.error("Cheque number is required."); return; }
+    setSubmitting(true);
+    try {
+      const res = await apiFetch("/cashier/disburse-loan", {
+        method: "POST", token,
+        body: { loanId: target.loanId, orNo: orNo.trim(), method, bankAccountId, chequeNumber: chequeNumber.trim() },
+      });
+      toast.success(
+        method === "cash"
+          ? `Disbursed ₱${res.netProceeds.toLocaleString()} cash — drawer now ₱${res.drawerAfter.toLocaleString()}.`
+          : `Disbursed ₱${res.netProceeds.toLocaleString()} via ${method === "check" ? "cheque" : "bank transfer"}.`
+      );
+      setTarget(null);
+      load();
+    } catch (e) { toast.error(e.message); } finally { setSubmitting(false); }
+  }
+
+  const net = target ? (Number(target.netProceeds) || (Number(target.principal) || 0) - (Number(target.totalCharges) || 0)) : 0;
+  const cashShort = method === "cash" && drawer < net;
 
   return (
     <div className="mt-4 overflow-hidden rounded-2xl border border-blue-200">
       <div className="flex items-center justify-between bg-blue-50 px-4 py-2 text-xs font-semibold text-blue-800">
-        <span>Loan payouts — approved + released, awaiting cash{items.length > 0 ? ` (${items.length})` : ""}</span>
-        <span className="font-mono">Drawer now: ₱{Number(drawer).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+        <span>Loan payouts — approved + released, awaiting release{items.length > 0 ? ` (${items.length})` : ""}</span>
+        <span className="font-mono">Drawer now: {peso(drawer)}</span>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
@@ -77,8 +100,7 @@ OR / voucher number:`, "");
             ) : !items.length ? (
               <tr><td colSpan={6} className="py-6 text-center text-xs text-slate-500">No loans waiting for payout.</td></tr>
             ) : items.map((l) => {
-              const net = Number(l.netProceeds) || (Number(l.principal) || 0) - (Number(l.totalCharges) || 0);
-              const short = drawer < net;
+              const n = Number(l.netProceeds) || (Number(l.principal) || 0) - (Number(l.totalCharges) || 0);
               return (
                 <tr key={l._id} className="border-t">
                   <td className="px-3 py-2">
@@ -86,22 +108,17 @@ OR / voucher number:`, "");
                     <div className="font-semibold">{l.borrowerName}</div>
                     <div className="font-mono text-[10px] text-slate-500">{l.borrowerPnNo}</div>
                   </td>
-                  <td className="px-3 py-2 text-right font-mono">₱{Number(l.principal).toLocaleString()}</td>
-                  <td className="px-3 py-2 text-right font-mono text-amber-700">₱{Number(l.totalCharges).toLocaleString()}</td>
-                  <td className="px-3 py-2 text-right font-mono font-bold text-emerald-700">₱{net.toLocaleString()}</td>
+                  <td className="px-3 py-2 text-right font-mono">{peso(l.principal)}</td>
+                  <td className="px-3 py-2 text-right font-mono text-amber-700">{peso(l.totalCharges)}</td>
+                  <td className="px-3 py-2 text-right font-mono font-bold text-emerald-700">{peso(n)}</td>
                   <td className="px-3 py-2 text-[10px] text-emerald-700">
                     <div>✓ mgr: {l.managerApprovedBy || "—"}</div>
                     <div>✓ bk: {l.approvedBy || "—"}</div>
                     <div>✓ officer: {l.releasedBy || "—"}</div>
                   </td>
                   <td className="px-3 py-2 text-right">
-                    <button
-                      onClick={() => disburse(l)}
-                      disabled={short}
-                      title={short ? "Insufficient drawer — request cash from the vault (Treasury tab)" : ""}
-                      className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-700 disabled:opacity-40"
-                    >
-                      {short ? "Drawer short" : "Disburse"}
+                    <button onClick={() => openPay(l)} className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-700">
+                      Disburse
                     </button>
                   </td>
                 </tr>
@@ -110,6 +127,63 @@ OR / voucher number:`, "");
           </tbody>
         </table>
       </div>
+
+      <Modal open={!!target} title="Disburse loan proceeds" onClose={() => setTarget(null)}>
+        {target && (
+          <div className="space-y-3">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm">
+              <div className="font-mono text-xs font-bold">{target.loanId}</div>
+              <div className="font-semibold">{target.borrowerName}</div>
+              <div className="mt-2 rounded-xl border-2 border-blue-300 bg-blue-50 px-3 py-2 flex items-center justify-between">
+                <span className="text-xs uppercase tracking-wide text-blue-800 font-bold">Net proceeds</span>
+                <span className="font-mono text-2xl font-bold text-blue-700">{peso(net)}</span>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <label className="text-xs font-semibold text-slate-600">Release via</label>
+                <select value={method} onChange={(e) => setMethod(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm">
+                  <option value="cash">Cash (from drawer)</option>
+                  <option value="bank">Bank transfer (to borrower account)</option>
+                  <option value="check">Cheque</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-600">OR / voucher number *</label>
+                <input value={orNo} onChange={(e) => setOrNo(e.target.value)} autoFocus placeholder="from booklet" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-mono uppercase" />
+              </div>
+            </div>
+            {(method === "bank" || method === "check") && (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="text-xs font-semibold text-slate-600">{method === "check" ? "Cheque drawn on *" : "Transfer from account *"}</label>
+                  <select value={bankAccountId} onChange={(e) => setBankAccountId(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm">
+                    <option value="">— pick account —</option>
+                    {banks.map((a) => <option key={a._id} value={a._id}>{a.bankName} • {a.accountNumber} ({peso(a.balance)})</option>)}
+                  </select>
+                </div>
+                {method === "check" && (
+                  <div>
+                    <label className="text-xs font-semibold text-slate-600">Cheque number *</label>
+                    <input value={chequeNumber} onChange={(e) => setChequeNumber(e.target.value)} placeholder="e.g. 0012345" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-mono" />
+                  </div>
+                )}
+              </div>
+            )}
+            {cashShort && (
+              <div className="rounded-xl bg-red-50 border border-red-200 px-3 py-2 text-xs font-semibold text-red-800">
+                Drawer has only {peso(drawer)} — request cash from the Cash Vault (Treasury tab) or release via bank/cheque.
+              </div>
+            )}
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setTarget(null)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold hover:bg-slate-50">Cancel</button>
+              <button onClick={submit} disabled={submitting || cashShort || !orNo.trim()} className="rounded-xl bg-blue-600 px-5 py-2 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50">
+                {submitting ? "Releasing…" : `Release ${peso(net)}`}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
