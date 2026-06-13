@@ -1,10 +1,10 @@
 # POWASSCO Management System
-## Board Presentation & System Overview
+## System Manuscript & Board Presentation
 
 **Poblacion Owak Water & Sanitation Service Cooperative (POWASSCO)**
 Owak, Asturias, Cebu · C.D.A Reg. No. 9520-07014753
 
-*Prepared for the Board / Audit Committee — written in plain language for non-technical readers.*
+*A complete description of the cooperative's management system, written in plain language for the Board and Audit Committee. No technical background is required to read it.*
 
 ---
 
@@ -19,21 +19,144 @@ Contact: facebook.com/gerald.durano.16
 
 ---
 
-## How to read this document
+### Document Control
 
-This paper describes the cooperative's complete computer system in everyday terms. You do **not** need a technical background. Each section answers a simple question:
-
-- **What is it?** — what the system does
-- **Who uses it?** — the staff roles and what each one can do
-- **How does work flow?** — the step-by-step journey of money and records
-- **Is it safe?** — how member money and data are protected
-- **What's next?** — the roadmap
-
-You can print this whole document. Each major section starts on its own heading so it divides cleanly into handouts.
+| | |
+|---|---|
+| Document | POWASSCO Management System — Manuscript & Board Presentation |
+| Audience | Board of Directors, Audit Committee, Management |
+| Prepared by | Gerald Durano (System Developer) |
+| Status | For presentation |
+| Reading note | Plain-language; each major section begins on its own heading for clean printing. |
 
 ---
 
-# 1. Executive Summary
+## Table of Contents
+
+**Part I — Introduction**
+1. Background and Rationale
+2. Objectives
+3. Scope and Limitations
+4. Significance of the System
+5. Definition of Terms (Glossary)
+
+**Part II — The System in Plain Terms**
+6. Executive Summary
+7. The Problem the System Solves
+8. Roles and Responsibilities
+9. How Work Flows Through the System
+10. Full Features by Area
+
+**Part III — How It Is Built and Protected**
+11. System Architecture (in plain terms)
+12. Development Methodology
+13. System Requirements
+14. Security and Data Safeguarding
+15. Data Privacy
+16. Testing and Quality Assurance
+17. Deployment, Backup, and Maintenance
+18. Standards and Good-Practice Compliance
+
+**Part IV — Field Operations and Trust**
+19. The Plumber Mobile App
+20. System Integrity — Why the Numbers Can Be Trusted
+
+**Part V — Direction and Guidance**
+21. Roadmap
+22. Quick User Guide (per role)
+23. Conclusion
+- Appendix A — System Modules at a Glance
+
+---
+---
+
+# PART I — INTRODUCTION
+
+# 1. Background and Rationale
+
+POWASSCO is a multipurpose cooperative serving the community of Owak with water utility services, loans, savings, share capital, payroll, and member services. As membership and transactions grew, the cooperative's reliance on **paper ledgers and separate spreadsheets** became a limitation rather than a tool.
+
+Manual records are slow to total, easy to mis-add, hard to cross-check, and impossible to audit quickly. A member's complete standing — water bills, loans, savings, and capital — was spread across different books. Cash handling depended heavily on personal trust, with little independent verification. Penalties, interest, and loan amortization were computed by hand and could differ from one staff member to another. Preparing reports for the Board took days of manual consolidation.
+
+The **POWASSCO Management System** was developed to address these realities directly: to put every operation into **one connected, accountable, always-available system** that any staff member can use from a phone or computer, and that the Board and Audit Committee can trust without having to recheck by hand.
+
+---
+
+# 2. Objectives
+
+**General Objective**
+To provide POWASSCO with a single, secure, and accountable computer system that manages all of the cooperative's operations and produces trustworthy records and reports.
+
+**Specific Objectives**
+1. To maintain water billing — readings, tiered tariffs, bills, penalties, and disconnection/reconnection — accurately and automatically.
+2. To manage the full loan lifecycle, from application and eligibility through a multi-approval release to collection.
+3. To handle savings and Share Capital (CBU) with member self-service balance checking.
+4. To control all cash and bank movements through a treasury with multi-party approvals and a complete inflow/outflow ledger.
+5. To process payroll and expenses with proper approval before any money leaves the cooperative.
+6. To give the Audit Committee independent, read-only oversight with sign-off reports.
+7. To enable field staff to work offline and print bills on the spot.
+8. To protect member money and data through layered security and a permanent audit trail.
+9. To generate Board-ready reports and an audit summary instantly for any date range.
+
+---
+
+# 3. Scope and Limitations
+
+**Scope — what the system covers**
+- Water billing and field meter reading (online and offline)
+- Loans (application → approval → disbursement → collection)
+- Savings, Share Capital (CBU), and product sales/product loans
+- Treasury (bank accounts + cash vault), payroll, and expenses
+- Cashiering, bookkeeping, management operations, and independent audit
+- Online payment acceptance, internal staff chat, and member self-service balance checking
+- Full security, audit logging, and reporting
+
+**Limitations — what is intentionally outside the system, by current design**
+- It is an **operational and financial management system**, not a tax-filing or government-remittance engine; statutory remittances are computed/recorded but filed through the relevant agencies separately.
+- It relies on **internet connectivity for office use** (the field app is the exception and works offline).
+- It does not replace the Board's judgment — it provides accurate information and controls; decisions remain with the cooperative's officers.
+- Historical paper records are brought in through a **verified import process** rather than assumed; figures are checked line by line before they become live.
+
+---
+
+# 4. Significance of the System (Beneficiaries)
+
+- **Members** — accurate bills, faster service, on-the-spot printed bills, and the ability to check their own savings and capital from home.
+- **Cashiers and Bookkeepers** — less manual computation, automatic receipts, and reconciliation that balances by itself.
+- **Management** — real-time visibility and controlled approvals over every peso.
+- **The Board and Audit Committee** — instant, trustworthy reports and an independent, tamper-evident audit trail.
+- **The Cooperative as a whole** — stronger financial controls, reduced risk of error or loss, and a professional foundation for growth.
+
+---
+
+# 5. Definition of Terms (Glossary)
+
+For non-technical readers, the recurring terms used in this manuscript:
+
+- **CBU / Share Capital** — Capital Build-Up: a member's mandatory capital contribution held by the cooperative.
+- **Savings** — a member's *voluntary* deposit account, separate from CBU, which can be withdrawn.
+- **AR (Accounts Receivable)** — money owed to the cooperative (e.g., AR Water = unpaid water bills).
+- **OR (Official Receipt)** — the numbered receipt issued when the cashier collects a payment.
+- **Tariff** — the price schedule for water; "tiered" means different rates apply at different consumption levels.
+- **Amortization** — the repayment schedule of a loan, period by period (principal + interest).
+- **Diminishing balance** — an interest method where interest is charged on the remaining balance, so it falls as the loan is paid.
+- **Net proceeds** — the cash a borrower actually receives: loan principal minus deductions/charges.
+- **Cash Vault** — the cooperative's secured cash reserve, separate from the cashier's daily drawer.
+- **Cash Drawer** — the cash the cashier physically holds during the day.
+- **Disbursement** — paying money out (a loan payout, payroll, or an expense).
+- **Dual control / multi-approval** — a rule requiring two or more people to approve an action before it takes effect.
+- **Audit log** — the permanent record of every action taken in the system and who took it.
+- **Role** — the job-based permission set that decides what a user can see and do.
+- **PWA (mobile app)** — a Progressive Web App: an app installed from a web browser, with no app store, that can work offline.
+- **2FA (Two-Factor Authentication)** — a second login step using a one-time code, on top of the password.
+- **Staging vs. Production** — "staging" is the practice copy where changes are tested first; "production" is the live system the cooperative uses.
+
+---
+---
+
+# PART II — THE SYSTEM IN PLAIN TERMS
+
+# 6. Executive Summary
 
 POWASSCO now runs on **one connected computer system** that replaces stacks of paper ledgers and disconnected spreadsheets. It handles everything the cooperative does day to day:
 
@@ -46,22 +169,15 @@ POWASSCO now runs on **one connected computer system** that replaces stacks of p
 - **Expenses** — purchase and disbursement of cooperative funds
 - **Oversight** — a full audit trail and an independent Audit Committee view
 
-The system is available on **any phone, tablet, or computer with a web browser**, and the field staff (plumbers/meter readers) have a **mobile app that works even without internet signal**.
+It works on **any phone, tablet, or computer with a web browser**, and field staff have a **mobile app that works even without internet signal**.
 
-Every peso that moves through the cooperative is recorded, attributed to a named staff member, and — for anything sensitive — requires **more than one person to approve it**. Nothing important can be done by a single person acting alone, and nothing can be quietly deleted.
+Every peso that moves is recorded, attributed to a named staff member, and — for anything sensitive — requires **more than one person to approve it**. Nothing important can be done by a single person alone, and nothing can be quietly deleted.
 
 ---
 
-# 2. The Problem This System Solves
+# 7. The Problem the System Solves
 
-**Before:** records lived on paper ledgers and personal spreadsheets. That meant:
-
-- Totals had to be added by hand and often disagreed between offices
-- A member's full standing (water bills + loans + savings + capital) was never in one place
-- Cash handling relied on trust with little independent checking
-- Penalties, interest, and amortization were computed manually and inconsistently
-- Finding "who did what, and when" was nearly impossible
-- Reports for the board took days to assemble
+**Before:** records lived on paper ledgers and personal spreadsheets, which meant hand-added totals that disagreed between offices, no single view of a member, cash handled largely on trust, manual and inconsistent computations, no easy way to find "who did what," and slow Board reporting.
 
 **After — what the system delivers:**
 
@@ -78,179 +194,194 @@ Every peso that moves through the cooperative is recorded, attributed to a named
 
 ---
 
-# 3. Who Uses the System — Roles & Responsibilities
+# 8. Roles and Responsibilities
 
-The system gives each staff member a **role**. The role decides which screens they see and what they are allowed to do. This is the foundation of accountability: a cashier cannot change tariffs, a water officer cannot release loans, and the audit committee can see everything but change nothing.
+The system gives each staff member a **role** that decides which screens they see and what they may do. This is the foundation of accountability — a cashier cannot change tariffs, a water officer cannot release loans, and the Audit Committee can see everything but change nothing.
 
-There are **nine roles**:
+**Admin (System Administrator)** — manages user accounts and roles, settings (tariffs, loan rates, payment options), bank registration, security (2FA), the audit log, the system error monitor, and one-time data maintenance. Sets *how* the system behaves; kept out of daily operations.
 
-### 3.1 Admin (System Administrator)
-The system's caretaker. Manages **user accounts and roles**, **settings** (tariffs, loan rates, payment options), **bank registration**, **security (two-factor authentication)**, the **audit log**, the **system error monitor**, and one-time data maintenance. The Admin sets up *how* the system behaves but is intentionally kept out of day-to-day operations (those moved to the Manager).
+**Manager (Operations)** — files expenses for disbursement, manages employees and payroll, approves loans (first signature) and payroll, manages product inventory, and approves treasury movements. Also sees shared monitoring views.
 
-### 3.2 Manager (Operations)
-Runs daily operations: **files expenses for disbursement**, manages **employees and payroll**, approves **loans (first signature)** and **payroll**, manages **product inventory**, and approves **treasury movements (bank & cash vault)**. Also sees the shared monitoring views (meter map, analytics, collections).
+**Audit Committee (Independent Oversight)** — *read-only.* Sees every transaction, all analytics, payroll, treasury balances and flows, inventory, and the audit log, but changes nothing. Produces the Overall Audit Report for any date range and signs/archives audited periods.
 
-### 3.3 Audit Committee (Independent Oversight)
-**Read-only.** Sees every transaction, all analytics, payroll, treasury balances and flows, product inventory, and the audit log — but **cannot change, approve, or delete anything**. Produces an **Overall Audit Report** for any date range, with automatic financial-health remarks, and can **sign and archive** a period as audited. This independence is what makes the audit meaningful.
+**Water Bill Officer** — manages members and meters, generates bills, views the meter map, and handles disconnection/reconnection from the office.
 
-### 3.4 Water Bill Officer
-Manages **water members and meters**, generates **bills**, views the **meter map**, and handles the **disconnection/reconnection** queue from the office.
+**Loan Officer** — takes applications, checks eligibility, prepares amortization, and releases approved loans to the cashier. Opens member savings accounts.
 
-### 3.5 Loan Officer
-Takes **loan applications**, checks **eligibility**, prepares the **amortization schedule**, and **releases approved loans** to the cashier for payout. Also opens member **savings accounts**.
+**Cashier (Collections & Payouts)** — the single point where cash enters and leaves. Collects water bills, loan payments, product sales, savings deposits, member fees, and Share Capital; pays out approved loans, payroll, and expenses; maintains the cash drawer; issues one OR that can bundle several payables.
 
-### 3.6 Cashier (Collections & Payouts)
-The single point where cash enters and leaves. **Collects** water bills, loan payments, product sales, savings deposits, member fees, and Share Capital. **Pays out** approved loans, payroll, and expenses. Maintains the **cash drawer** and can request cash to/from the vault. Issues one **Official Receipt (OR)** that can bundle several payables together.
+**Bookkeeper (Records & Reconciliation)** — reviews every transaction, maintains members' receivables and Share Capital, manages product loans and bank accounts/cash vault, approves loans (second signature), and produces the Treasurer's Report.
 
-### 3.7 Bookkeeper (Records & Reconciliation)
-Keeps the books: reviews **every transaction**, maintains **members' receivables and Share Capital**, manages **product loans and bank accounts/cash vault**, approves **loans (second signature)**, and produces the **Treasurer's Report**.
+**Meter Reader (Office)** — enters and reviews meter readings from the office.
 
-### 3.8 Meter Reader (Office)
-Enters and reviews **meter readings** from the office.
-
-### 3.9 Plumber (Field) — with the Mobile App
-Works in the field, **reads meters**, **prints bills on the spot** via a portable Bluetooth printer, and marks meters **disconnected/reconnected** — all **offline**, syncing automatically when signal returns. (Details in Section 8.)
+**Plumber (Field)** — reads meters, prints bills on the spot, and marks meters disconnected/reconnected — all offline, via the mobile app (Section 19).
 
 ---
 
-# 4. How Work Flows Through the System
+# 9. How Work Flows Through the System
 
-This section traces the real journeys, end to end.
+**Water billing & payment** — the reader records consumption (offline if needed) → the system computes the bill from the tiered tariff with senior/PWD discounts → if unpaid past grace, penalties add automatically (₱10/day) plus a ₱200 reconnection charge after grace, flagging disconnection → the member pays at the cashier on one OR, with any overpayment routed to CBU or savings → paying arrears + penalty + reconnection fee moves a disconnected meter into the reconnection queue.
 
-### 4.1 Water billing & payment
-1. The plumber/meter reader records the meter reading (in the field, even offline).
-2. The system computes the bill from the cooperative's **tiered tariff** (different rates for different consumption levels, with senior/PWD discounts).
-3. The bill becomes due. If unpaid past the grace period, the system **automatically adds penalties** (₱10 per day) and, after grace runs out, a **₱200 reconnection charge** — flagging the meter for disconnection.
-4. The member pays at the cashier. The cashier issues one OR. Any overpayment can be routed to **Share Capital (CBU)** or **savings**.
-5. If the meter was disconnected, paying the arrears + penalty + reconnection fee puts it in the **reconnection queue** for the plumber to restore.
+**Loan — application to collection (four roles)** — Loan Officer records the application and the system checks eligibility and builds the amortization → **Manager approves** → **Bookkeeper approves** → **Loan Officer releases** to the cashier → **Cashier disburses** the net proceeds as cash, bank transfer, or cheque (with the cash drawer checked first). *No single person can create and release a loan alone.*
 
-### 4.2 Loan — from application to collection (multi-approval)
-1. **Loan Officer** records the application; the system checks eligibility (enough Share Capital, no unpaid water bills) and builds the **amortization schedule** (fixed diminishing balance, whole-peso to match the paper ledger).
-2. **Manager approves** (first signature).
-3. **Bookkeeper approves** (second signature).
-4. **Loan Officer releases** it to the cashier's payout queue.
-5. **Cashier disburses** the net proceeds — as **cash** (from the drawer), **bank transfer**, or **cheque** (with cheque number recorded). The system checks there is enough cash before allowing a cash payout.
-6. The loan's clock starts on the actual payout date; repayments are collected by the cashier and tracked against the schedule.
+**Treasury — banks & cash vault** — Admin registers banks; Bookkeeper adds the cooperative's accounts. Every movement (adding balance, bank-to-vault, bank-to-bank, vault-to-bank, drawer-to-vault, vault-to-drawer) **requires approval in order** by the right mix of Manager, Bookkeeper, and Cashier, then a reference number is recorded. All movements appear in an inflow/outflow ledger.
 
-*No single person can create and release a loan alone — it takes four roles.*
+**Expenses & payroll** — the Manager files an expense; the Cashier pays it as cash (drawer) or bank/cheque (bank account), recording the voucher. Payroll is prepared by the Bookkeeper, **approved by the Manager**, then the Cashier prints the payslip (employee signs) and pays out. The cashier **cannot pay more than the drawer holds** — they request from the vault first.
 
-### 4.3 Treasury — banks & cash vault (controlled transfers)
-- The **Admin registers banks** (name + logo). The **Bookkeeper** adds the cooperative's actual bank accounts.
-- Moving money — adding bank balance, withdrawing to the vault, bank-to-bank transfer, depositing the vault into a bank, or moving cash between the drawer and the vault — **always requires approval, in order**, by the right combination of Manager, Bookkeeper, and/or Cashier.
-- After approval, the responsible person records the **bank slip / reference number**.
-- Every movement appears in an **inflow/outflow ledger** with the running balance.
+**New member onboarding** — registering a new member automatically raises a membership fee + tapping fee for the cashier to collect.
 
-### 4.4 Expenses & payroll (money leaving the cooperative)
-- The **Manager files an expense** for disbursement; the **Cashier pays it** as cash (deducts the drawer) or by bank/cheque (deducts the chosen bank account) — recording the voucher number.
-- **Payroll**: the Bookkeeper prepares it, the **Manager approves**, then the **Cashier prints the payslip** (the employee signs it) and **pays out**, recording who received the money.
-- Employees can be given a **cash advance** through the same controlled flow.
-- The cashier **cannot pay out more than the drawer holds** — they must first request cash from the vault.
-
-### 4.5 New member onboarding
-When a new water member registers, the system automatically raises a **membership fee + tapping fee** for the cashier to collect on one OR.
-
-### 4.6 Savings & Share Capital (CBU)
-- Members may open a **voluntary savings account** secured by a **4-digit PIN**.
-- They can **check their savings and Share Capital balance themselves** on the public homepage using their account number + PIN.
-- The cashier accepts deposits and pays withdrawals; the system can apply **interest** on a schedule set by the Admin.
+**Savings & Share Capital** — members open savings secured by a 4-digit PIN and can check their savings and capital balance themselves on the public homepage; interest applies on a schedule the Admin sets.
 
 ---
 
-# 5. Full Feature List (by area)
+# 10. Full Features by Area
 
-**Water Billing**
-- Member & multi-meter records, auto-generated account and meter numbers
-- Tiered tariffs (flat or per-cubic), senior/PWD discounts
-- One bill per meter per period; automatic overdue penalties
-- Disconnection & reconnection workflow with a live meter map (color-coded by status)
-- Water analytics and period collection views
+**Water Billing** — member & multi-meter records, auto-generated account/meter numbers, tiered tariffs (flat or per-cubic) with senior/PWD discounts, one bill per meter per period, automatic overdue penalties, disconnection/reconnection workflow with a color-coded meter map, analytics and period collection views.
 
-**Loans**
-- Eligibility checks, whole-peso diminishing-balance amortization
-- Four-role approval chain → cashier disbursement (cash/bank/cheque)
-- Collection tracking, period views (capital, interest, paid/unpaid, deductions)
-- Printable disclosure, promissory note, and receipts
+**Loans** — eligibility checks, whole-peso diminishing-balance amortization, four-role approval chain → cashier disbursement (cash/bank/cheque), collection tracking, period views (capital, interest, paid/unpaid, deductions), printable disclosure, promissory note, and receipts.
 
-**Cashier**
-- Single-screen counter: water dues, loan dues, sales, savings, disbursements, collection, history, reports, treasury, cash drawer
-- One OR can bundle water + product loans + Share Capital + savings
-- Overpayment routing to CBU, savings, or a 50/50 split
-- Cash drawer reconciliation (all inflows and outflows, separated and totaled)
+**Cashier** — single-screen counter (water dues, loan dues, sales, savings, disbursements, collection, history, reports, treasury, cash drawer); one OR can bundle water + product loans + CBU + savings; overpayment routing to CBU/savings/split; full cash-drawer reconciliation.
 
-**Bookkeeper**
-- Every transaction feed; members & receivables in one row (CBU, AR water, fines, reconnection, AR loan, product, savings)
-- Product loans + product analytics (capital, profit, inventory, sold vs unsold)
-- Treasurer's report (PDF/Excel), loan collections, payroll, adjustments
+**Bookkeeper** — every-transaction feed; members & receivables in one row (CBU, AR water, fines, reconnection, AR loan, product, savings); product loans + analytics (capital, profit, inventory, sold vs unsold); Treasurer's report (PDF/Excel); loan collections; payroll; adjustments.
 
-**Manager**
-- Expenses, employees, payroll approvals, loan approvals, inventory, treasury
-- Reports, requests, calendar/events, announcements, shared analytics
+**Manager** — expenses, employees, payroll approvals, loan approvals, inventory, treasury, reports, requests, calendar/events, announcements, shared analytics.
 
-**Admin**
-- User & role management, all settings, bank registration, payment (online) settings
-- Security (2FA), audit log, system error monitor, data maintenance tools
+**Admin** — user & role management, all settings, bank registration, online-payment settings, security (2FA), audit log, system error monitor, data maintenance tools.
 
-**Audit Committee**
-- Overall Audit Report (collections, disbursements, loans, inventory, treasury flows, ratios, cash on hand) for any date range
-- Automatic system remarks/recommendations; sign-and-archive audited reports (printable)
-- Read-only access to transactions, analytics, payroll, treasury, and audit logs
+**Audit Committee** — Overall Audit Report (collections, disbursements, loans, inventory, treasury flows, financial ratios, cash on hand) for any date range; automatic system remarks; sign-and-archive printable audited reports; read-only access across transactions, analytics, payroll, treasury, and audit logs.
 
-**Treasury**
-- Bank registry + accounts, cash vault, ordered multi-party approvals, full inflow/outflow ledger
+**Treasury** — bank registry + accounts, cash vault, ordered multi-party approvals, full inflow/outflow ledger.
 
-**Savings & CBU**
-- Voluntary savings with PIN, public balance check, interest accrual, Share Capital ledger
+**Savings & CBU** — voluntary savings with PIN, public balance check, interest accrual, Share Capital ledger.
 
-**Online payments**
-- Accepts verified online payments (QR PH / e-wallet) with secure provider confirmation
+**Online payments** — accepts verified online payments (QR PH / e-wallet) with secure provider confirmation.
 
-**Team Chat**
-- Internal staff chat (office roles) with reactions, read receipts, screenshots, and profile photos
+**Team Chat** — internal staff chat (office roles) with reactions, read receipts, screenshots, and profile photos.
 
-**Everywhere**
-- Two-factor login, 30-minute idle lock with PIN, full audit logging, role-based access
+**Everywhere** — two-factor login, 30-minute idle lock with PIN, full audit logging, role-based access.
+
+---
+---
+
+# PART III — HOW IT IS BUILT AND PROTECTED
+
+# 11. System Architecture (in plain terms)
+
+The system has three connected parts, like a well-run office:
+
+1. **The front desk (what you see)** — a web application that runs in any browser on a phone, tablet, or computer. There is nothing to install for office staff; field staff can install it as an app.
+2. **The back office (where decisions are enforced)** — a secure server that holds the rules. It is the part that actually checks "is this person allowed to do this?" and "does this payment balance?" — so the rules cannot be bypassed by tampering with a screen.
+3. **The records room (where data lives)** — a managed database that stores every member, bill, loan, payment, and ledger entry in one place, continuously backed up.
+
+These run on **professional cloud platforms** (the front desk and back office are hosted separately), which provide reliability, automatic backups, and large-scale protection against attacks. In everyday terms: the cooperative does not have to maintain its own server room, and the data is kept safe and available by specialists.
+
+A **practice copy (staging)** mirrors the live system. Every change is tried there first; only after it works is it promoted to the **live system (production)**.
 
 ---
 
-# 6. Security & Data Safeguarding
+# 12. Development Methodology
+
+The system was developed **iteratively** — built in small, working pieces rather than one big delivery — so that each capability could be put to use and verified early. The working approach:
+
+- **Build a feature → test it on the practice copy → promote it to live.**
+- Keep an **automated test suite** that re-checks core money calculations on every change.
+- Make every financial action **idempotent where possible** (safe to repeat without double-counting) and **atomic** (it fully completes or not at all).
+- Favor **clear audit trails and approvals** over convenience whenever money is involved.
+
+This is why new requests from management could be delivered continuously and safely, without disrupting live operations.
+
+---
+
+# 13. System Requirements
+
+**To use the system (staff and members)**
+- Any reasonably modern device — smartphone, tablet, laptop, or desktop
+- A web browser (e.g., Chrome, Edge, Safari)
+- Internet connection for office work
+- For field staff: a smartphone, and a portable Bluetooth thermal printer for on-site bills
+
+**To operate the field app offline**
+- The route is downloaded while online, then the phone works without signal and syncs later
+
+**No special hardware, server room, or per-seat software licenses are required** — the system is reached through the browser.
+
+---
+
+# 14. Security and Data Safeguarding
 
 Member money and information are protected by **multiple independent layers** — if one were bypassed, others still stand.
 
 **Getting in (authentication)**
-- Each staff member has a private account; passwords are stored **scrambled (hashed)**, never in plain text.
-- **Two-factor authentication**: sensitive roles confirm a one-time code from an authenticator app, with single-use backup codes.
-- **Trusted devices** and a **30-minute idle lock** — step away and the screen locks behind a personal PIN.
+- Private staff accounts; passwords stored **scrambled (hashed)**, never in plain text.
+- **Two-factor authentication** for sensitive roles, with single-use backup codes.
+- **Trusted devices** and a **30-minute idle lock** behind a personal PIN.
 
 **Doing things (authorization)**
-- **Role-based access**: the system enforces what each role may see and do on the server, not just by hiding buttons.
-- **Dual control**: money movements, balance adjustments, loans, payroll, and treasury transfers require **two or more approvals in a set order**.
-- **Independent audit**: the Audit Committee can review everything but change nothing.
+- **Role-based access**, enforced on the server — not just by hiding buttons.
+- **Dual control** — money movements, balance adjustments, loans, payroll, and treasury transfers require **two or more approvals in a set order**.
+- **Independent audit** — the Audit Committee reviews everything, changes nothing.
 
 **Protecting the data itself**
-- Defenses against common internet attacks: request **rate-limiting** (slows brute-force and denial-of-service attempts), input **sanitization** (blocks database-tampering), secure headers, and an approved-website list.
+- Defenses against common internet attacks: request **rate-limiting** (slows brute-force and denial-of-service attempts), input **sanitization** (blocks database tampering), secure headers, and an approved-website list.
 - **Append-only ledgers** for Share Capital, savings, and treasury — entries are added, never quietly edited away.
-- **Atomic money writes** — a payment either completes fully or not at all; it can't half-post.
-- Hosted on professional cloud platforms with their own large-scale attack protection and automatic backups.
+- **Atomic money writes** — a payment either completes fully or not at all.
+- Professional cloud hosting with built-in attack protection and automatic backups.
 
 **Watching the system**
-- A **permanent audit log** records every action, who did it, and when (kept for months, colour-coded by type).
-- A **System Monitor** captures any technical error for the Admin to review and resolve.
+- A **permanent audit log** of every action, who did it, and when (kept for months, colour-coded by type).
+- A **System Monitor** that captures any technical error for the Admin to review and resolve.
 
 ---
 
-# 7. Data Privacy
+# 15. Data Privacy
 
-- Member and staff personal information is collected only for cooperative operations (billing, loans, savings, membership).
+- Personal information is collected only for cooperative operations (billing, loans, savings, membership).
 - Access is limited by role — staff see only what their job requires.
 - The public **Check Balance** page reveals a balance **only** after the member enters their own account number and 4-digit PIN, and locks after repeated wrong attempts.
-- Sensitive fields (passwords, PINs, security codes) are never displayed or logged in readable form.
+- Sensitive fields (passwords, PINs, security codes) are never displayed or stored in readable form.
 - The audit trail provides accountability for every access to financial records.
 
 ---
 
-# 8. The Plumber Mobile App (Field Operations)
+# 16. Testing and Quality Assurance
 
-The plumbers and meter readers carry the system into the field as an **installable mobile app** (a Progressive Web App — it installs from the browser, no app-store needed).
+- **Automated tests** re-verify the core money logic (water billing tiers, loan amortization, payroll computation) on every change, so a future edit cannot silently break a calculation.
+- **Practice-copy verification** — every feature is exercised on staging before it reaches members.
+- **Dry-run tools** — sensitive data operations (like importing historical loan ledgers, or balance corrections) preview their effect first and require confirmation before any change is written.
+- **Idempotent, atomic money handling** — repeats don't double-count, and partial failures don't leave half-finished records.
+- **Reconciliation checks** — Share Capital and treasury balances are continuously checked against their ledgers; any discrepancy is surfaced for the bookkeeper.
+
+---
+
+# 17. Deployment, Backup, and Maintenance
+
+- The system is **live on the internet** and reached by a web address; there is nothing for the cooperative to install or maintain on a local server.
+- It is hosted on **managed cloud platforms** that handle uptime, scaling, and **automatic database backups**.
+- Changes follow a **staging → production** path so the live system is only updated with verified work.
+- The **Audit Log** (retained for months) and **System Monitor** give ongoing visibility into activity and any errors.
+- Routine maintenance (settings, new staff accounts, tariff changes) is done by the Admin through the system itself — no programmer needed for day-to-day administration.
+
+---
+
+# 18. Standards and Good-Practice Compliance
+
+The system follows widely accepted practices for handling money and personal data:
+
+- **Separation of duties** and **dual control** for financial actions (a core internal-control principle).
+- **Complete, tamper-evident audit trail** for accountability.
+- **Least-privilege access** — each role can do only what its job requires.
+- **Encryption in transit** — all communication with the system is encrypted (the secure padlock in the browser).
+- **Hashed credentials and PINs** — never stored in readable form.
+- **Data-minimization and purpose-limitation** — only necessary data is collected, used only for cooperative operations, consistent with the spirit of the Data Privacy Act.
+
+---
+---
+
+# PART IV — FIELD OPERATIONS AND TRUST
+
+# 19. The Plumber Mobile App (Field Operations)
+
+Plumbers and meter readers carry the system into the field as an **installable mobile app** (a Progressive Web App — it installs from the browser, with no app store needed).
 
 **What makes it special: it works without internet.**
 
@@ -261,24 +392,27 @@ The plumbers and meter readers carry the system into the field as an **installab
    - **Print the bill on the spot** via a portable Bluetooth thermal printer
    - Mark a meter **disconnected** or **reconnected**
 3. When signal returns, the phone **syncs automatically**. The sync is safe against duplicates — re-syncing the same reading never double-bills.
-4. The field app has its own **re-entry PIN** so a misplaced phone can't expose member data.
+4. The field app has its own **re-entry PIN**, so a misplaced phone cannot expose member data.
 
-This means billing continues in remote sitios where there is no cell coverage, and members get an accurate printed bill immediately.
-
----
-
-# 9. System Integrity — Why the Numbers Can Be Trusted
-
-- **Single source of truth**: every screen reads the same database, so totals always agree.
-- **Separation of duties**: the people who request money are not the ones who approve it, and the auditors approve nothing.
-- **The computer does the math**: tariffs, penalties, interest, and amortization are calculated automatically and identically every time.
-- **Reconciliation built in**: Share Capital and treasury ledgers are checked against their running balances; any drift is surfaced for the bookkeeper.
-- **Everything is traceable**: from a board report you can drill down to the exact receipt and the staff member who issued it.
-- **Independent audit sign-off**: the Audit Committee freezes and signs a period's figures, with automatic findings, creating a permanent record of what was reviewed.
+This means billing continues in remote sitios with no cell coverage, and members receive an accurate printed bill immediately.
 
 ---
 
-# 10. Roadmap — Where We Are and What's Next
+# 20. System Integrity — Why the Numbers Can Be Trusted
+
+- **Single source of truth** — every screen reads the same database, so totals always agree.
+- **Separation of duties** — those who request money are not those who approve it, and the auditors approve nothing.
+- **The computer does the math** — tariffs, penalties, interest, and amortization are calculated identically every time.
+- **Reconciliation built in** — Share Capital and treasury ledgers are checked against running balances; any drift is surfaced.
+- **Everything is traceable** — a Board report can be drilled down to the exact receipt and the staff member who issued it.
+- **Independent audit sign-off** — the Audit Committee freezes and signs a period's figures, with automatic findings, creating a permanent reviewed record.
+
+---
+---
+
+# PART V — DIRECTION AND GUIDANCE
+
+# 21. Roadmap
 
 **Delivered and in use**
 - Water billing, loans, savings & CBU, product sales/loans
@@ -293,43 +427,55 @@ This means billing continues in remote sitios where there is no cell coverage, a
 - Refinements to dashboards and reports as the committee uses them
 - Ongoing tuning of automatic financial-health thresholds to the cooperative's norms
 
-The system is built so new capabilities are added in small, tested steps — each change is verified on a staging (practice) copy before it reaches the live system.
+New capabilities are added in **small, tested steps**, each verified on the practice copy before reaching the live system.
 
 ---
 
-# 11. Quick User Guide (per role)
+# 22. Quick User Guide (per role)
 
-**All staff**
-- Open the website, log in with your Employee ID + password (and your authenticator code if prompted).
-- If the screen locks after 30 minutes, enter your 4-digit PIN to resume.
+**All staff** — open the website, log in with Employee ID + password (and authenticator code if prompted). If the screen locks after 30 minutes, enter your 4-digit PIN to resume.
 
-**Cashier** — *Counter*
-- Search a member → see all their dues → collect → enter the OR number → print. Use the pills to switch between Water, Loan, Sales, Savings, Disbursements, Cash Drawer, and Reports.
+**Cashier (Counter)** — search a member → see all their dues → collect → enter the OR number → print. Use the pills to switch between Water, Loan, Sales, Savings, Disbursements, Cash Drawer, and Reports.
 
-**Loan Officer** — *Apply → Release*
-- Apply for a member (eligibility shows automatically) → wait for Manager + Bookkeeper approval → click **Release** to send it to the cashier for payout.
+**Loan Officer (Apply → Release)** — apply for a member (eligibility shows automatically) → wait for Manager + Bookkeeper approval → click **Release** to send it to the cashier for payout.
 
-**Manager** — *Approve & operate*
-- Check the red badges on **Loan Approvals**, **Payroll Approvals**, **Treasury**, and **Expenses** — those are items waiting for you.
+**Manager (Approve & operate)** — check the red badges on **Loan Approvals**, **Payroll Approvals**, **Treasury**, and **Expenses** — those are items waiting for you.
 
-**Bookkeeper** — *Records*
-- **Members & CBU** for a member's full standing; **Treasury** for banks/vault; **Reports** for the Treasurer's Report; approve loans on **Loan Approvals**.
+**Bookkeeper (Records)** — **Members & CBU** for a member's full standing; **Treasury** for banks/vault; **Reports** for the Treasurer's Report; approve loans on **Loan Approvals**.
 
-**Audit Committee** — *Review & sign*
-- Open **Overall Audit Report**, choose the month/range, read the figures and **System Remarks**, then **Sign as Audited**. Find signed reports under **Audited Reports** (printable).
+**Audit Committee (Review & sign)** — open **Overall Audit Report**, choose the range, read the figures and **System Remarks**, then **Sign as Audited**. Signed reports live under **Audited Reports** (printable).
 
-**Admin** — *Setup & safety*
-- Manage people in **User Management**; configure rates/tariffs in **Settings**; watch **System Monitor** and **Audit Log**.
+**Admin (Setup & safety)** — manage people in **User Management**; configure rates/tariffs in **Settings**; watch **System Monitor** and **Audit Log**.
 
-**Plumber** — *Field*
-- Download the route while online → read meters and print bills offline → the app syncs when signal returns.
+**Plumber (Field)** — download the route while online → read meters and print bills offline → the app syncs when signal returns.
 
 ---
 
-# 12. Closing
+# 23. Conclusion
 
-This system gives POWASSCO **accurate records, controlled cash handling, instant reporting, and a complete audit trail** — while remaining simple enough that any staff member can do their part from a phone or computer, and a member can check their own balance from home.
+The POWASSCO Management System gives the cooperative **accurate records, controlled cash handling, instant reporting, and a complete audit trail**, while remaining simple enough that any staff member can do their part from a phone or computer, and a member can check their own balance from home.
 
-Most importantly, it is built around a principle the board can rely on: **no important action happens by one person alone, and nothing of value can be changed without leaving a permanent, reviewable record.**
+It is built around a principle the Board can rely on: **no important action happens by one person alone, and nothing of value can be changed without leaving a permanent, reviewable record.** This is the foundation of a transparent, well-controlled, and growth-ready cooperative.
+
+---
+
+## Appendix A — System Modules at a Glance
+
+| Module | Purpose | Primary users |
+|---|---|---|
+| Water Billing | Readings, tariffs, bills, penalties, disconnection | Water Officer, Meter Reader, Plumber |
+| Loans | Application → approval → disbursement → collection | Loan Officer, Manager, Bookkeeper, Cashier |
+| Savings & CBU | Voluntary savings + Share Capital, member balance check | Cashier, Loan Officer, Bookkeeper |
+| Product Sales / Loans | Goods sold for cash or on terms, inventory | Bookkeeper, Manager, Cashier |
+| Treasury | Bank accounts + cash vault, approved transfers | Bookkeeper, Manager, Cashier, Admin |
+| Payroll | Salaries + cash advances, with approval | Bookkeeper, Manager, Cashier |
+| Expenses | Purchase/disbursement of funds, with approval | Manager, Cashier |
+| Cashiering | Single point of collection and payout | Cashier |
+| Bookkeeping | Records, receivables, reconciliation, reports | Bookkeeper |
+| Audit | Independent oversight + signed audit reports | Audit Committee |
+| Administration | Users, settings, security, monitoring | Admin |
+| Field App | Offline readings + on-site bill printing | Plumber, Meter Reader |
+| Online Payments | Accept verified e-wallet/QR payments | Members, Officers |
+| Security & Audit | 2FA, idle lock, audit log, error monitor | All |
 
 *— End of document —*
