@@ -264,21 +264,69 @@ export default function OverallAuditReportPanel() {
           </table>
         </Section>
 
-        <Section title="Treasury, CBU & Savings (balances now)">
+        <Section title="CBU & Savings (on file now)">
           <table className="w-full text-sm">
             <tbody>
-              <tr className="border-b"><td className="py-1.5">Cash Vault</td><td className="py-1.5 text-right font-mono">{peso(tr.vaultBalance)}</td></tr>
-              {(tr.bankAccounts || []).map((b) => (
-                <tr key={b._id || b.accountNumber} className="border-b"><td className="py-1.5">{b.bankName} ····{String(b.accountNumber).slice(-4)}</td><td className="py-1.5 text-right font-mono">{peso(b.balance)}</td></tr>
-              ))}
-              <tr className="border-b"><td className="py-1.5 font-bold">Bank total</td><td className="py-1.5 text-right font-mono font-bold">{peso(tr.bankTotal)}</td></tr>
-              <tr className="border-b"><td className="py-1.5">Expenses — cash</td><td className="py-1.5 text-right font-mono text-rose-700">−{peso(ex.cash)}</td></tr>
-              <tr className="border-b"><td className="py-1.5">Expenses — bank/cheque</td><td className="py-1.5 text-right font-mono text-rose-700">−{peso(ex.bank)}</td></tr>
               <tr className="border-b"><td className="py-1.5">Total CBU on file</td><td className="py-1.5 text-right font-mono">{peso(data?.cbu?.total)} ({data?.cbu?.members ?? 0})</td></tr>
-              <tr><td className="py-1.5">Total savings on file</td><td className="py-1.5 text-right font-mono">{peso(data?.savings?.total)} ({data?.savings?.accounts ?? 0})</td></tr>
+              <tr className="border-b"><td className="py-1.5">Total savings on file</td><td className="py-1.5 text-right font-mono">{peso(data?.savings?.total)} ({data?.savings?.accounts ?? 0})</td></tr>
+              <tr className="border-b"><td className="py-1.5">Expenses — cash (period)</td><td className="py-1.5 text-right font-mono text-rose-700">−{peso(ex.cash)}</td></tr>
+              <tr><td className="py-1.5">Expenses — bank/cheque (period)</td><td className="py-1.5 text-right font-mono text-rose-700">−{peso(ex.bank)}</td></tr>
             </tbody>
           </table>
         </Section>
+      </div>
+
+      {/* Bank & Cash Vault flows + ending balances */}
+      <div className="mt-4 rounded-2xl border-2 border-teal-200">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-teal-100 bg-teal-50 px-4 py-2">
+          <span className="text-xs font-bold uppercase tracking-wide text-teal-800">Bank & Cash Vault — flows + ending balance {to ? `as of ${to}` : "(all time)"}</span>
+          <span className="text-[11px] text-teal-700">
+            Overall inflow <b className="font-mono">{peso(tr.overallInflow)}</b> · outflow <b className="font-mono">{peso(tr.overallOutflow)}</b>
+          </span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-white text-left text-xs text-slate-500">
+              <tr>
+                <th className="px-3 py-2">Account</th>
+                <th className="px-3 py-2 text-right">Inflow (deposits)</th>
+                <th className="px-3 py-2 text-right">Outflow (withdrawals)</th>
+                <th className="px-3 py-2 text-right">Net</th>
+                <th className="px-3 py-2 text-right">Ending balance</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-t bg-teal-50/40">
+                <td className="px-3 py-2 font-semibold">Cash Vault</td>
+                <td className="px-3 py-2 text-right font-mono text-emerald-700">+{peso(tr.vaultIn)}</td>
+                <td className="px-3 py-2 text-right font-mono text-rose-700">−{peso(tr.vaultOut)}</td>
+                <td className="px-3 py-2 text-right font-mono">{peso((tr.vaultIn || 0) - (tr.vaultOut || 0))}</td>
+                <td className="px-3 py-2 text-right font-mono font-bold">{peso(tr.vaultEnding)}</td>
+              </tr>
+              {(tr.banks || []).map((b) => (
+                <tr key={b._id} className="border-t">
+                  <td className="px-3 py-2">{b.bankName} <span className="font-mono text-[10px] text-slate-500">····{String(b.accountNumber).slice(-4)}</span></td>
+                  <td className="px-3 py-2 text-right font-mono text-emerald-700">+{peso(b.inflow)} <span className="text-[10px] text-slate-400">({b.inCount})</span></td>
+                  <td className="px-3 py-2 text-right font-mono text-rose-700">−{peso(b.outflow)} <span className="text-[10px] text-slate-400">({b.outCount})</span></td>
+                  <td className="px-3 py-2 text-right font-mono">{peso(b.net)}</td>
+                  <td className="px-3 py-2 text-right font-mono font-bold">{peso(b.endingBalance)}</td>
+                </tr>
+              ))}
+              <tr className="border-t-2 border-slate-300 bg-slate-50 font-bold">
+                <td className="px-3 py-2">TOTAL (banks + vault)</td>
+                <td className="px-3 py-2 text-right font-mono text-emerald-700">+{peso(tr.overallInflow)}</td>
+                <td className="px-3 py-2 text-right font-mono text-rose-700">−{peso(tr.overallOutflow)}</td>
+                <td className="px-3 py-2 text-right font-mono">{peso((tr.overallInflow || 0) - (tr.overallOutflow || 0))}</td>
+                <td className="px-3 py-2 text-right font-mono">{peso((tr.bankEndingTotal || 0) + (tr.vaultEnding || 0))}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div className="border-t border-slate-100 bg-slate-50 px-4 py-2 text-right text-xs">
+          <span className="text-slate-500">Cash on hand as of {to || "now"}:</span>{" "}
+          <b className="font-mono text-sm text-slate-900">{peso(tr.cashOnHandAsOf)}</b>
+          <span className="ml-1 text-[10px] text-slate-400">(vault ending; drawer counted separately)</span>
+        </div>
       </div>
 
       <Modal open={signOpen} title="Sign Audit Report" onClose={() => setSignOpen(false)}>

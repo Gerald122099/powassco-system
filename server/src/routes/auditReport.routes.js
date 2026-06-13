@@ -157,6 +157,63 @@ async function buildSummary(q) {
     treasury[k] = round2((treasury[k] || 0) + r.total);
   }
 
+  // Per-bank inflow / outflow for the period + "ending balance as of"
+  // the range's end. Ending balance is reconstructed from the ledger:
+  // current balance minus everything that moved AFTER the to-date
+  // (so a past-period report shows the balance as it stood then).
+  const { to: toDate } = parseRange(q);
+  const perBankFlowAgg = await TreasuryTransaction.aggregate([
+    { $match: { target: "bank", bankAccountId: { $ne: null }, ...(hasRange ? { createdAt: range } : {}) } },
+    { $group: { _id: { acct: "$bankAccountId", type: "$type" }, total: { $sum: "$amount" }, count: { $sum: 1 } } },
+  ]);
+  const bankFlowMap = {}; // id -> { in, out, inCount, outCount }
+  for (const r of perBankFlowAgg) {
+    const id = String(r._id.acct);
+    bankFlowMap[id] = bankFlowMap[id] || { in: 0, out: 0, inCount: 0, outCount: 0 };
+    if (r._id.type === "in") { bankFlowMap[id].in = round2(r.total); bankFlowMap[id].inCount = r.count; }
+    else { bankFlowMap[id].out = round2(r.total); bankFlowMap[id].outCount = r.count; }
+  }
+  // Movement AFTER the to-date per bank (to back out for ending balance).
+  let afterMap = {};
+  if (toDate) {
+    const afterAgg = await TreasuryTransaction.aggregate([
+      { $match: { target: "bank", bankAccountId: { $ne: null }, createdAt: { $gt: toDate } } },
+      { $group: { _id: { acct: "$bankAccountId", type: "$type" }, total: { $sum: "$amount" } } },
+    ]);
+    for (const r of afterAgg) {
+      const id = String(r._id.acct);
+      afterMap[id] = afterMap[id] || { in: 0, out: 0 };
+      if (r._id.type === "in") afterMap[id].in = r.total; else afterMap[id].out = r.total;
+    }
+  }
+  const banksDetailed = bankAccounts.map((b) => {
+    const id = String(b._id);
+    const flow = bankFlowMap[id] || { in: 0, out: 0, inCount: 0, outCount: 0 };
+    const after = afterMap[id] || { in: 0, out: 0 };
+    // ending = current − (in after − out after); if no to-date, ending = current.
+    const ending = toDate ? round2(Number(b.balance) - (after.in - after.out)) : round2(b.balance);
+    return {
+      _id: id, bankName: b.bankName, accountNumber: b.accountNumber,
+      balanceNow: round2(b.balance), endingBalance: ending,
+      inflow: flow.in, outflow: flow.out, inCount: flow.inCount, outCount: flow.outCount,
+      net: round2(flow.in - flow.out),
+    };
+  });
+  // Vault ending balance the same way.
+  let vaultEnding = round2(vault?.balance || 0);
+  let vaultIn = round2(treasury.vault_in || 0), vaultOut = round2(treasury.vault_out || 0);
+  if (toDate) {
+    const vAfter = await TreasuryTransaction.aggregate([
+      { $match: { target: "vault", createdAt: { $gt: toDate } } },
+      { $group: { _id: "$type", total: { $sum: "$amount" } } },
+    ]);
+    let vaIn = 0, vaOut = 0;
+    for (const r of vAfter) r._id === "in" ? (vaIn = r.total) : (vaOut = r.total);
+    vaultEnding = round2(Number(vault?.balance || 0) - (vaIn - vaOut));
+  }
+  const overallBankIn = round2(banksDetailed.reduce((s, b) => s + b.inflow, 0));
+  const overallBankOut = round2(banksDetailed.reduce((s, b) => s + b.outflow, 0));
+
   const L = loanAgg[0] || {};
   const O = outstandingAgg[0] || {};
   return {
@@ -195,8 +252,18 @@ async function buildSummary(q) {
     },
     treasury: {
       vaultBalance: round2(vault?.balance || 0),
+      vaultEnding, vaultIn, vaultOut,
       bankAccounts: bankAccounts.map((b) => ({ ...b, balance: round2(b.balance) })),
       bankTotal: round2(bankAccounts.reduce((s, b) => s + (Number(b.balance) || 0), 0)),
+      bankEndingTotal: round2(banksDetailed.reduce((s, b) => s + b.endingBalance, 0)),
+      banks: banksDetailed,
+      bankDeposits: round2(treasury.bank_in || 0),       // total into banks (period)
+      bankWithdrawals: round2(treasury.bank_out || 0),   // total out of banks (period)
+      overallInflow: round2(overallBankIn + vaultIn + (treasury.drawer_in || 0)),
+      overallOutflow: round2(overallBankOut + vaultOut + (treasury.drawer_out || 0)),
+      // Cash on hand as of the period end = vault ending + drawer.
+      // (Drawer has no running balance; reported separately as "now".)
+      cashOnHandAsOf: vaultEnding,
       movements: treasury,
     },
     cbu: { total: round2(cbuAgg[0]?.total || 0), members: cbuAgg[0]?.members || 0 },

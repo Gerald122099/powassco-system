@@ -62,10 +62,16 @@ export default function AuditedReportsPanel() {
         ${row("Stock units remaining", inv.stockUnits || 0)}${row("Capital in unsold stock", peso(inv.capitalUnsold))}
         ${row("Retail value unsold", peso(inv.retailUnsold))}${row("Potential profit unsold", peso(inv.profitPotential))}
         ${row("Product paid", peso(inv.paid))}${row("Product unpaid", peso(inv.unpaid))}</table>
-      <h3>Treasury / Reserves</h3><table>
-        ${row("Cash Vault", peso(tr.vaultBalance))}${row("Bank total", peso(tr.bankTotal))}
-        ${row("Expenses — cash", "−" + peso(ex.cash))}${row("Expenses — bank/cheque", "−" + peso(ex.bank))}
-        ${row("Total CBU on file", peso(s.cbu?.total))}${row("Total savings on file", peso(s.savings?.total))}</table>
+      <h3>Bank & Cash Vault — flows + ending balance</h3><table>
+        ${row("Cash Vault — in / out", "+" + peso(tr.vaultIn) + " / −" + peso(tr.vaultOut))}
+        ${row("Cash Vault — ending", "<b>" + peso(tr.vaultEnding) + "</b>")}
+        ${(tr.banks || []).map((b) => row(`${b.bankName} ····${String(b.accountNumber).slice(-4)} — in/out`, "+" + peso(b.inflow) + " / −" + peso(b.outflow) + " → " + peso(b.endingBalance))).join("")}
+        ${row("Bank deposits (period)", peso(tr.bankDeposits))}${row("Bank withdrawals (period)", peso(tr.bankWithdrawals))}
+        ${row("<b>Overall inflow / outflow</b>", "<b>+" + peso(tr.overallInflow) + " / −" + peso(tr.overallOutflow) + "</b>")}
+        ${row("<b>CASH ON HAND as of " + (r.periodTo ? fmt(r.periodTo) : "") + "</b>", "<b>" + peso(tr.cashOnHandAsOf) + "</b>")}</table>
+      <h3>Reserves</h3><table>
+        ${row("Total CBU on file", peso(s.cbu?.total))}${row("Total savings on file", peso(s.savings?.total))}
+        ${row("Expenses — cash", "−" + peso(ex.cash))}${row("Expenses — bank/cheque", "−" + peso(ex.bank))}</table>
       <h3>General Disbursements</h3><table>
         ${row("Payroll — payslips", peso(dis.payroll?.payslips?.total))}${row("Payroll — cash advances", peso(dis.payroll?.advances?.total))}
         ${row("Loan proceeds paid", peso(dis.loanProceeds?.total))}
