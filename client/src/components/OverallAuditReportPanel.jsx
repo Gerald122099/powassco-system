@@ -17,6 +17,7 @@ import { ClipboardCheck, RefreshCw, Calendar, PenLine } from "lucide-react";
 
 const peso = (n) =>
   "₱" + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const round1 = (n) => Math.round((Number(n) || 0) * 10) / 10;
 
 const PRESETS = [
   { key: "thisMonth", label: "This month" },
@@ -174,6 +175,37 @@ export default function OverallAuditReportPanel() {
         </ResponsiveContainer>
       </div>
 
+      {/* Financial ratios — derived audit indicators */}
+      {data && (() => {
+        const pct = (num, den) => (den > 0 ? `${round1((num / den) * 100)}%` : "—");
+        const reserves = (tr.bankTotal || 0) + (tr.vaultBalance || 0);
+        const liabilities = (data?.cbu?.total || 0) + (data?.savings?.total || 0);
+        const ratios = [
+          { label: "Loan repayment rate", value: pct(ln.paid, ln.payable), hint: "paid ÷ payable on period's loans" },
+          { label: "Loan default exposure", value: pct(ln.outstandingNow, (ln.outstandingNow || 0) + (ln.paid || 0)), hint: "outstanding ÷ (outstanding + paid)" },
+          { label: "Expense-to-collection", value: pct(ex.total, totalCollections), hint: "expenses ÷ collections (period)" },
+          { label: "Product margin", value: pct(inv.sold?.sale?.profit + (inv.sold?.loan?.profit || 0), (inv.sold?.sale?.revenue || 0) + (inv.sold?.loan?.revenue || 0)), hint: "profit ÷ revenue on goods sold" },
+          { label: "Reserves vs member funds", value: pct(reserves, liabilities), hint: "(bank+vault) ÷ (CBU+savings)" },
+          { label: "Product unpaid ratio", value: pct(inv.unpaid, (inv.paid || 0) + (inv.unpaid || 0)), hint: "unpaid ÷ (paid+unpaid)" },
+        ];
+        return (
+          <div className="mt-4 rounded-2xl border border-indigo-200">
+            <div className="border-b border-indigo-100 bg-indigo-50 px-4 py-2 text-xs font-bold uppercase tracking-wide text-indigo-800">
+              Financial Ratios (audit indicators)
+            </div>
+            <div className="grid grid-cols-2 gap-3 p-3 sm:grid-cols-3 lg:grid-cols-6">
+              {ratios.map((r) => (
+                <div key={r.label} className="rounded-xl border border-slate-200 p-2.5" title={r.hint}>
+                  <div className="text-[10px] uppercase tracking-wide text-slate-500">{r.label}</div>
+                  <div className="mt-1 font-mono text-lg font-extrabold text-indigo-700">{r.value}</div>
+                  <div className="mt-0.5 text-[9px] text-slate-400">{r.hint}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* General disbursements — total OUT, per-stream breakdown */}
       <div className="mt-4 rounded-2xl border-2 border-rose-200">
         <div className="flex items-center justify-between border-b border-rose-100 bg-rose-50 px-4 py-2">
@@ -279,7 +311,10 @@ export default function OverallAuditReportPanel() {
       {/* Bank & Cash Vault flows + ending balances */}
       <div className="mt-4 rounded-2xl border-2 border-teal-200">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-teal-100 bg-teal-50 px-4 py-2">
-          <span className="text-xs font-bold uppercase tracking-wide text-teal-800">Bank & Cash Vault — flows + ending balance {to ? `as of ${to}` : "(all time)"}</span>
+          <span className="text-xs font-bold uppercase tracking-wide text-teal-800">
+            Bank & Cash Vault — flows + ending balance {to ? `as of ${to}` : "(all time)"}
+            <span className="ml-1 font-normal normal-case text-teal-600">· {(tr.banks || []).length} registered bank account(s)</span>
+          </span>
           <span className="text-[11px] text-teal-700">
             Overall inflow <b className="font-mono">{peso(tr.overallInflow)}</b> · outflow <b className="font-mono">{peso(tr.overallOutflow)}</b>
           </span>

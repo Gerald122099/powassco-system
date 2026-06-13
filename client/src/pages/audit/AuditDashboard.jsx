@@ -19,8 +19,9 @@ import TreasuryPanel from "../../components/TreasuryPanel";
 import AuditLogPanel from "../admin/AuditLogPanel";
 import OverallAuditReportPanel from "../../components/OverallAuditReportPanel";
 import AuditedReportsPanel from "../../components/AuditedReportsPanel";
+import PayrollAuditPanel from "../../components/PayrollAuditPanel";
 import {
-  Receipt, ReceiptText, BarChart3, Banknote, Boxes, Wallet, Landmark, ScrollText, ShieldCheck, ClipboardCheck, Archive,
+  Receipt, ReceiptText, BarChart3, Banknote, Boxes, Wallet, Landmark, ScrollText, ShieldCheck, ClipboardCheck, Archive, Coins,
 } from "lucide-react";
 
 const items = [
@@ -33,7 +34,8 @@ const items = [
   { key: "wateranalytics", label: "Water Analytics", icon: BarChart3, desc: "Water billing analytics and summaries" },
   { key: "loananalytics", label: "Loan Analytics", icon: Banknote, desc: "Capital, interest profit, collections, outstanding" },
   { key: "loancollections", label: "Loan Collections", icon: Banknote, desc: "Capital, interest, paid/unpaid by period" },
-  { key: "products", label: "Product Analytics", icon: Boxes, desc: "Capital + profit per product, sale vs loan, paid/unpaid" },
+  { key: "products", label: "Product Analytics", icon: Boxes, desc: "Capital + profit per product, inventory, sale vs loan, paid/unpaid" },
+  { key: "payroll", label: "Payroll", icon: Coins, desc: "Payslips + cash advances with status (read-only)" },
   { key: "auditlog", label: "Audit Log", icon: ScrollText, desc: "Who did what, and when — across the whole system" },
 ];
 
@@ -54,6 +56,7 @@ export default function AuditDashboard() {
       {tab === "loananalytics" && <LoanAnalyticsPanel />}
       {tab === "loancollections" && <LoanCollectionsPanel />}
       {tab === "products" && <ProductAnalyticsPanel />}
+      {tab === "payroll" && <PayrollAuditPanel />}
       {tab === "auditlog" && <AuditLogPanel readOnly />}
     </DashboardLayout>
   );

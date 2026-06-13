@@ -45,7 +45,7 @@ router.post("/compute", guard, async (req, res) => {
 });
 
 // ---- List ----
-router.get("/", requireAuth, requireRole(["admin", "manager", "bookkeeper", "cashier"]), async (req, res) => {
+router.get("/", requireAuth, requireRole(["admin", "manager", "audit_committee", "bookkeeper", "cashier"]), async (req, res) => {
   const { employee = "", status = "", from = "", to = "", page = "1", limit = "15" } = req.query;
   const filter = {};
   if (employee) filter.employee = employee;
@@ -69,7 +69,7 @@ router.get("/", requireAuth, requireRole(["admin", "manager", "bookkeeper", "cas
 });
 
 // ---- Summary ----
-router.get("/summary", guard, async (req, res) => {
+router.get("/summary", requireAuth, requireRole(["admin", "manager", "audit_committee", "bookkeeper"]), async (req, res) => {
   const { from = "", to = "" } = req.query;
   const match = {};
   if (from || to) {
