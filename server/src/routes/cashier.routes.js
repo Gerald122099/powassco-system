@@ -910,7 +910,7 @@ async function drawerNetToday() {
 
 // Full drawer reconciliation for the cashier Cash Drawer tab:
 // every inflow and outflow component separated + totals.
-router.get("/drawer-summary", requireAuth, requireRole(["admin", "manager", "cashier", "bookkeeper"]), async (req, res) => {
+router.get("/drawer-summary", requireAuth, requireRole(["admin", "manager", "audit_committee", "cashier", "bookkeeper"]), async (req, res) => {
   try {
     const now = new Date();
     const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());

@@ -171,7 +171,7 @@ router.post("/amortization", guard, async (req, res) => {
 });
 
 // ---- Summary / analytics (capital out, interest/profit, collections) ----
-router.get("/summary", guard, async (req, res) => {
+router.get("/summary", requireAuth, requireRole(["admin", "manager", "audit_committee", "loan_officer", "bookkeeper"]), async (req, res) => {
   const { from, to } = req.query;
   const match = {};
   if (from || to) {
@@ -232,7 +232,7 @@ router.put("/settings", guard, async (req, res) => {
 // releasedAt and payments by paidAt; omit both for all-time.
 // Bookkeeper + manager read this too (their dashboards show the same
 // summary), hence the wider read guard.
-router.get("/collections-summary", requireAuth, requireRole(["admin", "manager", "loan_officer", "bookkeeper"]), async (req, res) => {
+router.get("/collections-summary", requireAuth, requireRole(["admin", "manager", "audit_committee", "loan_officer", "bookkeeper"]), async (req, res) => {
   try {
     const from = req.query.from ? new Date(String(req.query.from) + "T00:00:00") : null;
     const to = req.query.to ? new Date(String(req.query.to) + "T23:59:59.999") : null;

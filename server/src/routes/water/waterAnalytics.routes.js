@@ -7,7 +7,7 @@ import WaterPayment from "../../models/WaterPayment.js";
 import { requireAuth, requireRole } from "../../middleware/auth.js";
 
 const router = express.Router();
-const guard = [requireAuth, requireRole(["admin", "manager", "water_bill_officer", "meter_reader"])];
+const guard = [requireAuth, requireRole(["admin", "manager", "audit_committee", "water_bill_officer", "meter_reader"])];
 
 function toPeriodKey(d) {
   const y = d.getFullYear();

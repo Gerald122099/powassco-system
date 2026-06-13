@@ -9,7 +9,7 @@ const guard = [requireAuth, requireRole(["admin", "manager"])];
 // the bookkeeper / cashier so the disbursement queue and reports can
 // look up the same data without a duplicate route. Cashier needs access
 // for the Disbursements tab; bookkeeper for cash-out reporting.
-const readGuard = [requireAuth, requireRole(["admin", "manager", "bookkeeper", "cashier"])];
+const readGuard = [requireAuth, requireRole(["admin", "manager", "audit_committee", "bookkeeper", "cashier"])];
 
 function dateRange(from, to) {
   const range = {};
@@ -54,7 +54,7 @@ router.get("/", readGuard, async (req, res) => {
 });
 
 // Summary: total + breakdown by category (optionally within a date range)
-router.get("/summary", guard, async (req, res) => {
+router.get("/summary", readGuard, async (req, res) => {
   const { from = "", to = "" } = req.query;
   const match = {};
   const dr = dateRange(from, to);

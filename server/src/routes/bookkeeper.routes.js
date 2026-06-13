@@ -47,7 +47,7 @@ function dateRange(fromStr, toStr) {
 // Cashier also reads this — they need to look up past ORs at the
 // counter ("did we already post this?", "show me yesterday's loan
 // payments by member X"). Read-only access.
-router.get("/transactions", requireAuth, requireRole(["admin", "bookkeeper", "cashier"]), async (req, res) => {
+router.get("/transactions", requireAuth, requireRole(["admin", "manager", "audit_committee", "bookkeeper", "cashier"]), async (req, res) => {
   try {
     const moduleParam = String(req.query.module || "all").toLowerCase();
     const q = String(req.query.q || "").trim();
@@ -522,7 +522,7 @@ router.get("/product-applications", ...guard, async (req, res) => {
 //                               POST /:id/return.
 // Product analytics (Phase 6): per-product + overall capital, profit,
 // sale-vs-loan split, paid/unpaid balances.
-router.get("/product-analytics", ...guard, async (req, res) => {
+router.get("/product-analytics", requireAuth, requireRole(["admin", "manager", "audit_committee", "bookkeeper"]), async (req, res) => {
   try {
     const rows = await ProductLoanApplication.aggregate([
       { $match: { status: { $nin: ["cancelled", "rejected"] } } },

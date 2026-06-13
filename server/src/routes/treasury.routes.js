@@ -9,7 +9,7 @@ import {
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
 const router = express.Router();
-const viewGuard = [requireAuth, requireRole(["admin", "manager", "bookkeeper", "cashier"])];
+const viewGuard = [requireAuth, requireRole(["admin", "manager", "audit_committee", "bookkeeper", "cashier"])];
 const adminGuard = [requireAuth, requireRole(["admin"])];
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 const who = (req) => req.user?.fullName || req.user?.employeeId || "";

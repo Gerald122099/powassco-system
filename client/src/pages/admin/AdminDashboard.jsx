@@ -34,6 +34,7 @@ import PaymentSettingsPanel from "./PaymentSettingsPanel";
 const ROLE_OPTIONS = [
   { value: "admin", label: "Admin" },
   { value: "manager", label: "Manager (operations — expenses, employees, approvals)" },
+  { value: "audit_committee", label: "Audit Committee (read-only oversight)" },
   { value: "water_bill_officer", label: "Water Bill Officer" },
   { value: "loan_officer", label: "Loan Officer" },
   { value: "meter_reader", label: "Meter Reader (office)" },

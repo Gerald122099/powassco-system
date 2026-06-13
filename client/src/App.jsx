@@ -19,6 +19,7 @@ const MeterReadingDashboard = lazy(() => import("./pages/meter/MeterReadingDashb
 const PlumberDashboard = lazy(() => import("./pages/plumber/PlumberDashboard"));
 const CashierDashboard = lazy(() => import("./pages/cashier/CashierDashboard"));
 const ManagerDashboard = lazy(() => import("./pages/manager/ManagerDashboard"));
+const AuditDashboard = lazy(() => import("./pages/audit/AuditDashboard"));
 const BookkeeperDashboard = lazy(() => import("./pages/bookkeeper/BookkeeperDashboard"));
 const MemberInquiryPage = lazy(() => import("./pages/public/MemberInquiryPage"));
 const TariffCalculatorPage = lazy(() => import("./pages/public/TariffCalculatorPage"));
@@ -51,6 +52,7 @@ function RoleHome() {
 const ROLE_HOME = {
   admin: "/admin",
   manager: "/manager",
+  audit_committee: "/audit",
   water_bill_officer: "/water",
   loan_officer: "/loan",
   meter_reader: "/meter",
@@ -115,6 +117,15 @@ export default function App() {
           element={
             <Protected roles={["admin", "manager"]}>
               <ManagerDashboard />
+            </Protected>
+          }
+        />
+
+        <Route
+          path="/audit"
+          element={
+            <Protected roles={["admin", "audit_committee"]}>
+              <AuditDashboard />
             </Protected>
           }
         />

@@ -10,7 +10,7 @@ const router = express.Router();
 const guard = [requireAuth, requireRole(["admin"])];
 const sha256 = (s) => crypto.createHash("sha256").update(String(s)).digest("hex");
 
-router.get("/", guard, async (req, res) => {
+router.get("/", requireAuth, requireRole(["admin", "audit_committee"]), async (req, res) => {
   const { q = "", actor = "", action = "", category = "", kind = "", from = "", to = "", page = "1", limit = "25" } = req.query;
   const filter = {};
   if (actor) filter.actorName = new RegExp(String(actor).trim(), "i");

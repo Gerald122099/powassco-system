@@ -47,7 +47,7 @@ function statusTone(code) {
   return "text-emerald-600";
 }
 
-export default function AuditLogPanel() {
+export default function AuditLogPanel({ readOnly = false }) {
   const { token } = useAuth();
   const [q, setQ] = useState("");
   const [from, setFrom] = useState("");
@@ -125,13 +125,15 @@ export default function AuditLogPanel() {
             <input type="date" value={to} onChange={(e) => { setPage(1); setTo(e.target.value); }} className="rounded-xl border border-slate-200 px-3 py-2 text-sm" />
           </div>
           <button onClick={load} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold hover:bg-slate-50"><RefreshCw size={16} className={loading ? "animate-spin" : ""} /></button>
-          <button
-            onClick={() => { setResetConfirm(""); setResetPw(""); setResetCode(""); setResetOpen(true); }}
-            className="inline-flex items-center gap-2 rounded-xl border border-red-200 px-4 py-2.5 text-sm font-semibold text-red-700 hover:bg-red-50"
-            title="Reset audit log (admin + password + 2FA)"
-          >
-            <Trash2 size={16} /> Reset
-          </button>
+          {!readOnly && (
+            <button
+              onClick={() => { setResetConfirm(""); setResetPw(""); setResetCode(""); setResetOpen(true); }}
+              className="inline-flex items-center gap-2 rounded-xl border border-red-200 px-4 py-2.5 text-sm font-semibold text-red-700 hover:bg-red-50"
+              title="Reset audit log (admin + password + 2FA)"
+            >
+              <Trash2 size={16} /> Reset
+            </button>
+          )}
         </div>
       </div>
 
