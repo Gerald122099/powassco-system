@@ -18,6 +18,7 @@ import express from "express";
 import { requireAuth, requireRole } from "../../middleware/auth.js";
 import { regenLoanAmortization } from "../../scripts/regenLoanAmortization.js";
 import { rebuildLoanCharges } from "../../scripts/rebuildLoanCharges.js";
+import { importLegacyLoans, LEGACY_LOAN_BATCHES } from "../../utils/legacyLoanImport.js";
 
 const router = express.Router();
 const guard = [requireAuth, requireRole(["admin"])];
@@ -43,6 +44,29 @@ router.post("/rebuild-loan-charges", guard, async (req, res) => {
   try {
     const summary = await rebuildLoanCharges({ all: Boolean(all), dry: Boolean(dry) });
     res.json({ mode: { all: Boolean(all), dry: Boolean(dry) }, ...summary });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Available legacy-loan batches + row counts (for the UI month picker).
+router.get("/legacy-loans/batches", guard, (req, res) => {
+  res.json(Object.fromEntries(Object.entries(LEGACY_LOAN_BATCHES).map(([k, v]) => [k, v.length])));
+});
+
+// Import legacy loans from the embedded monthly batches. Dry-run by
+// default — returns per-row resolution (account matched / NOT FOUND /
+// ambiguous) + net proceeds so the admin verifies on prod before
+// applying. Idempotent: existing (pnNo, principal, releasedAt-day)
+// loans are skipped.
+router.post("/import-legacy-loans", guard, async (req, res) => {
+  const { confirm, months = [], dry = true } = req.body || {};
+  if (confirm !== "IMPORT LEGACY LOANS") {
+    return res.status(400).json({ error: 'Pass { confirm: "IMPORT LEGACY LOANS" } to proceed.' });
+  }
+  try {
+    const summary = await importLegacyLoans({ months: Array.isArray(months) ? months : [], dry: Boolean(dry) });
+    res.json(summary);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
