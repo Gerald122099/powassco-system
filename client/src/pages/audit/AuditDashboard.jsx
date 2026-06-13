@@ -36,7 +36,7 @@ const items = [
   { key: "loancollections", label: "Loan Collections", icon: Banknote, desc: "Capital, interest, paid/unpaid by period" },
   { key: "products", label: "Product Analytics", icon: Boxes, desc: "Capital + profit per product, inventory, sale vs loan, paid/unpaid" },
   { key: "payroll", label: "Payroll", icon: Coins, desc: "Payslips + cash advances with status (read-only)" },
-  { key: "auditlog", label: "Audit Log", icon: ScrollText, desc: "Who did what, and when — across the whole system" },
+  { key: "auditlog", label: "System Audit Logs", icon: ScrollText, desc: "Who did what, and when — across the whole system" },
 ];
 
 export default function AuditDashboard() {
