@@ -10,9 +10,18 @@
     "build:staging": "vite build --mode staging",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "app:add-android": "cap add android",
+    "app:sync": "vite build && cap sync android",
+    "app:open": "cap open android"
   },
   "dependencies": {
+    "@capacitor/android": "^8.4.0",
+    "@capacitor/app": "^8.1.0",
+    "@capacitor/cli": "^8.4.0",
+    "@capacitor/core": "^8.4.0",
+    "@capacitor/splash-screen": "^8.0.1",
+    "@capacitor/status-bar": "^8.0.2",
     "file-saver": "^2.0.5",
     "html2canvas": "^1.4.1",
     "html5-qrcode": "^2.3.8",

@@ -86,6 +86,11 @@ const allowedOrigins = new Set([
   "http://100.100.137.248:5173",
   "https://powassco.site",
   "https://www.powassco.site",
+  // Capacitor native app (Android/iOS) WebView origins — the bundled
+  // member app calls this API from one of these.
+  "http://localhost",
+  "https://localhost",
+  "capacitor://localhost",
   ...envOrigins,
 ]);
 

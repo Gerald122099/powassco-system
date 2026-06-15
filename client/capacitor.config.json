@@ -1,0 +1,18 @@
+{
+  "appId": "site.powassco.member",
+  "appName": "POWASSCO Member",
+  "webDir": "dist",
+  "backgroundColor": "#166534",
+  "android": {
+    "backgroundColor": "#166534",
+    "allowMixedContent": false
+  },
+  "plugins": {
+    "SplashScreen": {
+      "backgroundColor": "#166534",
+      "showSpinner": false,
+      "launchAutoHide": false,
+      "androidScaleType": "CENTER_CROP"
+    }
+  }
+}

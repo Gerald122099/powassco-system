@@ -9,6 +9,7 @@ import Toaster from "./components/Toast";
 import OnlineStatus from "./components/OnlineStatus";
 import AdminAuthzGate from "./components/AdminAuthzGate";
 import StagingBanner from "./components/StagingBanner";
+import NativeBoot from "./components/NativeBoot";
 
 // Role dashboards + public sub-pages are lazy-loaded so each user only
 // downloads the code they need (much faster startup, esp. on phones).
@@ -75,6 +76,7 @@ function Protected({ roles, children }) {
 export default function App() {
   return (
     <AuthProvider>
+      <NativeBoot />
       <StagingBanner />
       <InstallPrompt />
       <OnlineStatus />
