@@ -29,10 +29,10 @@ const DEFAULTS = {
         minConsumption: 0, 
         maxConsumption: 5, 
         chargeType: "flat",
-        ratePerCubic: 0, 
-        flatAmount: 74.00,
-        description: "Residential 0-5 m³ (Minimum ₱74.00)", 
-        isActive: true 
+        ratePerCubic: 0,
+        flatAmount: 135.00,
+        description: "Residential 0-5 m³ (Minimum ₱135.00)",
+        isActive: true
       },
       { 
         tier: "6-10", 
