@@ -10,6 +10,7 @@ import OnlineStatus from "./components/OnlineStatus";
 import AdminAuthzGate from "./components/AdminAuthzGate";
 import StagingBanner from "./components/StagingBanner";
 import NativeBoot from "./components/NativeBoot";
+import DesktopBoot from "./components/DesktopBoot";
 
 // Role dashboards + public sub-pages are lazy-loaded so each user only
 // downloads the code they need (much faster startup, esp. on phones).
@@ -77,6 +78,7 @@ export default function App() {
   return (
     <AuthProvider>
       <NativeBoot />
+      <DesktopBoot />
       <StagingBanner />
       <InstallPrompt />
       <OnlineStatus />

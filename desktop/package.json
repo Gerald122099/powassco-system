@@ -1,0 +1,39 @@
+{
+  "name": "powassco-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "POWASSCO Staff desktop app — Electron shell that opens the staff web app at /employee-login.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "start:local": "cross-env POWASSCO_DESKTOP_URL=http://localhost:5173 electron .",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win"
+  },
+  "devDependencies": {
+    "cross-env": "^10.1.0",
+    "electron": "^42.4.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "site.powassco.staff",
+    "productName": "POWASSCO Staff",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "mac": {
+      "target": "dmg"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
+  }
+}
