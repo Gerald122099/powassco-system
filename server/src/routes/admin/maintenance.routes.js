@@ -21,6 +21,7 @@ import { rebuildLoanCharges } from "../../scripts/rebuildLoanCharges.js";
 import { importLegacyLoans, LEGACY_LOAN_BATCHES } from "../../utils/legacyLoanImport.js";
 import { recomputeWaterBills } from "../../scripts/recomputeWaterBills.js";
 import { importLegacyWater } from "../../utils/legacyWaterImport.js";
+import { emitJobProgress } from "../../realtime.js";
 
 const router = express.Router();
 const guard = [requireAuth, requireRole(["admin"])];
@@ -102,12 +103,21 @@ router.post("/recompute-water-bills", guard, async (req, res) => {
 // (reconcile flags), so the admin verifies on prod before applying.
 // Idempotent: existing (pnNo, periodKey, meterNumber) bills are skipped.
 router.post("/import-legacy-water", guard, async (req, res) => {
-  const { confirm, dry = true, limit = 0, includeUnmatched = false } = req.body || {};
+  const { confirm, dry = true, limit = 0, includeUnmatched = false, jobId = "" } = req.body || {};
   if (confirm !== "IMPORT LEGACY WATER") {
     return res.status(400).json({ error: 'Pass { confirm: "IMPORT LEGACY WATER" } to proceed.' });
   }
   try {
-    const summary = await importLegacyWater({ dry: Boolean(dry), includeUnmatched: Boolean(includeUnmatched), limit: Number(limit) || 0 });
+    // Throttle progress emits to ~5/sec so the socket isn't flooded.
+    let lastEmit = 0;
+    const onProgress = jobId ? (processed, total) => {
+      const now = Date.now();
+      if (processed === total || now - lastEmit >= 200) {
+        lastEmit = now;
+        emitJobProgress(jobId, { processed, total, pct: Math.round((processed / total) * 100) });
+      }
+    } : null;
+    const summary = await importLegacyWater({ dry: Boolean(dry), includeUnmatched: Boolean(includeUnmatched), limit: Number(limit) || 0, onProgress });
     res.json(summary);
   } catch (e) {
     res.status(500).json({ error: e.message });

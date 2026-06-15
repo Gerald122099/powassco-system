@@ -12,6 +12,7 @@
 import { useEffect, useState } from "react";
 import Card from "../../components/Card";
 import { apiFetch } from "../../lib/api";
+import { getSocket } from "../../lib/realtime";
 import { useAuth } from "../../context/AuthContext";
 import { toast } from "../../components/Toast";
 import { Wrench, Play, CheckCircle2, AlertCircle, Receipt, Upload, Droplets, FileSpreadsheet, Loader2 } from "lucide-react";
@@ -255,6 +256,7 @@ function LegacyWaterImportCard() {
   const [edge, setEdge] = useState(false); // also create no-match accounts + add ambiguous meters
   const [mode, setMode] = useState("");     // "Dry run" | "Apply" — for the loading label
   const [elapsed, setElapsed] = useState(0);
+  const [progress, setProgress] = useState(null); // { processed, total, pct } via socket
 
   // Live elapsed-seconds counter while a request is in flight (the import
   // loops over 362 accounts, so the operator sees it's working).
@@ -270,10 +272,17 @@ function LegacyWaterImportCard() {
     )) return;
     setMode(dry ? "Dry run" : "Apply");
     setResult(null);
+    setProgress(null);
     setWorking(true);
+    // Live progress over the realtime socket: join a per-run room and
+    // listen for "job:progress" emitted by the importer.
+    const jobId = `legwater-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const s = getSocket();
+    const onProg = (msg) => { if (msg?.jobId === jobId) setProgress({ processed: msg.processed, total: msg.total, pct: msg.pct }); };
+    if (s) { s.emit("joinJob", jobId); s.on("job:progress", onProg); }
     try {
       const res = await apiFetch("/admin/maintenance/import-legacy-water", {
-        method: "POST", token, body: { confirm: "IMPORT LEGACY WATER", dry, includeUnmatched: edge },
+        method: "POST", token, body: { confirm: "IMPORT LEGACY WATER", dry, includeUnmatched: edge, jobId },
       });
       setResult(res);
       toast.success(dry
@@ -282,6 +291,7 @@ function LegacyWaterImportCard() {
     } catch (e) {
       toast.error(e.message);
     } finally {
+      if (s) { s.off("job:progress", onProg); s.emit("leaveJob", jobId); }
       setWorking(false);
     }
   }
@@ -335,12 +345,16 @@ function LegacyWaterImportCard() {
           <div className="flex items-center justify-between text-sm font-semibold text-emerald-800">
             <span className="inline-flex items-center gap-2">
               <Loader2 size={16} className="animate-spin" />
-              {mode === "Apply" ? "Applying" : "Running dry run on"} the 362-account ledger…
+              {mode === "Apply" ? "Applying" : "Running dry run on"} the ledger…
             </span>
-            <span className="font-mono text-emerald-700">{elapsed}s</span>
+            <span className="font-mono text-emerald-700">
+              {progress ? `${progress.processed}/${progress.total} · ${progress.pct}%` : `${elapsed}s`}
+            </span>
           </div>
-          <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-emerald-100">
-            <div className="h-full w-1/3 animate-pulse rounded-full bg-emerald-500" />
+          <div className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-emerald-100">
+            {progress
+              ? <div className="h-full rounded-full bg-emerald-500 transition-all duration-200" style={{ width: `${progress.pct}%` }} />
+              : <div className="h-full w-1/3 animate-pulse rounded-full bg-emerald-500" />}
           </div>
           <div className="mt-1 text-[11px] text-emerald-700">
             Matching names → building bills &amp; payments → reconciling{mode === "Apply" ? " → writing" : ""}. Please keep this tab open.

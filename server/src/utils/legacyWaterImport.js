@@ -172,7 +172,7 @@ async function postCbuCredit(member, amount) {
  * @param includeUnmatched  also create accounts / add meters for none/ambiguous
  * @param limit          cap accounts processed (testing)
  */
-export async function importLegacyWater({ dry = true, includeUnmatched = false, limit = 0 } = {}) {
+export async function importLegacyWater({ dry = true, includeUnmatched = false, limit = 0, onProgress = null } = {}) {
   const data = loadData();
   const settings = (await WaterSettings.findOne()) || { tariffs: {}, seniorDiscount: {}, dueDayOfMonth: 17 };
   const dueDay = settings.dueDayOfMonth || 17;
@@ -185,10 +185,12 @@ export async function importLegacyWater({ dry = true, includeUnmatched = false, 
     unmatched: [], reconciled: [], sample: [],
   };
 
+  const total = limit ? Math.min(limit, data.accounts.length) : data.accounts.length;
   let processed = 0;
   for (const acct of data.accounts) {
     if (limit && processed >= limit) break;
     processed++;
+    if (onProgress) { try { onProgress(processed, total); } catch { /* progress is best-effort */ } }
     const parsed = parseLedgerName(acct.name);
     const lastReading = [...acct.months].reverse().find((m) => m.present != null)?.present
       ?? acct.months.find((m) => m.prev != null)?.prev ?? 0;

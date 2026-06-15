@@ -83,6 +83,10 @@ export function initRealtime(httpServer, { allowedOrigins, isPreview }) {
     socket.on("unsubscribe", (topics) => {
       for (const t of [].concat(topics || [])) socket.leave(`topic:${t}`);
     });
+    // Progress for long maintenance jobs (e.g. the legacy importer): the
+    // client joins a per-run room and receives "job:progress" events.
+    socket.on("joinJob", (jobId) => { if (typeof jobId === "string" && jobId) socket.join(`job:${jobId}`); });
+    socket.on("leaveJob", (jobId) => { if (typeof jobId === "string" && jobId) socket.leave(`job:${jobId}`); });
   });
 
   return io;
@@ -98,6 +102,12 @@ export function emitChange(topic, meta = {}) {
     pendingTimers.delete(topic);
     io.to(`topic:${topic}`).emit("data:changed", { topic, at: Date.now(), ...meta });
   }, 800));
+}
+
+// Emit progress for a long-running job to the client that joined its room.
+export function emitJobProgress(jobId, payload = {}) {
+  if (!io || !jobId) return;
+  io.to(`job:${jobId}`).emit("job:progress", { jobId, ...payload, at: Date.now() });
 }
 
 // Start the database-wide change stream. Call after Mongoose connects.
