@@ -124,6 +124,28 @@ export async function pushToHandles(handles, payload) {
   return { ok: true, sent, removed, devices: unique.length };
 }
 
+// Broadcast ONE payload to EVERY subscribed device (each subscription is
+// one device). Used for cooperative-wide announcements. Dead channels are
+// pruned as usual. Returns { ok, sent, removed, total }.
+export async function pushToAll(payload) {
+  if (!init()) return { ok: false, reason: "push_disabled", sent: 0 };
+  const subs = await PushSubscription.find({});
+  let sent = 0;
+  let removed = 0;
+  for (const s of subs) {
+    const r = await sendOne(s, payload);
+    if (r.ok) sent += 1;
+    if (r.removed) removed += 1;
+  }
+  return { ok: true, sent, removed, total: subs.length };
+}
+
+// Fire-and-forget broadcast — callers (e.g. announcement create) don't
+// want to block their HTTP response on the fan-out.
+export function pushToAllAsync(payload) {
+  pushToAll(payload).catch((e) => console.error("broadcast push error:", e?.message || e));
+}
+
 // Count distinct devices subscribed to any of the given handles, without
 // sending anything — used by the reminder job's dry-run preview.
 export async function countDevicesForHandles(handles) {
