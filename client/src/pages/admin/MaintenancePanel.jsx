@@ -14,7 +14,7 @@ import Card from "../../components/Card";
 import { apiFetch } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
 import { toast } from "../../components/Toast";
-import { Wrench, Play, CheckCircle2, AlertCircle, Receipt, Upload, Droplets, FileSpreadsheet } from "lucide-react";
+import { Wrench, Play, CheckCircle2, AlertCircle, Receipt, Upload, Droplets, FileSpreadsheet, Loader2 } from "lucide-react";
 
 const peso = (n) =>
   "₱" + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -253,11 +253,23 @@ function LegacyWaterImportCard() {
   const [result, setResult] = useState(null);
   const [working, setWorking] = useState(false);
   const [edge, setEdge] = useState(false); // also create no-match accounts + add ambiguous meters
+  const [mode, setMode] = useState("");     // "Dry run" | "Apply" — for the loading label
+  const [elapsed, setElapsed] = useState(0);
+
+  // Live elapsed-seconds counter while a request is in flight (the import
+  // loops over 362 accounts, so the operator sees it's working).
+  useEffect(() => {
+    if (!working) { setElapsed(0); return undefined; }
+    const t = setInterval(() => setElapsed((e) => e + 1), 1000);
+    return () => clearInterval(t);
+  }, [working]);
 
   async function call(dry) {
     if (!dry && !window.confirm(
       `Insert legacy water bills + payments${edge ? ", create new accounts, add meters, and post CBU credits" : ""}. Re-running is safe (nothing duplicated). Proceed?`
     )) return;
+    setMode(dry ? "Dry run" : "Apply");
+    setResult(null);
     setWorking(true);
     try {
       const res = await apiFetch("/admin/maintenance/import-legacy-water", {
@@ -306,14 +318,35 @@ function LegacyWaterImportCard() {
         <div className="flex-1" />
         <button onClick={() => call(true)} disabled={working}
           className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50">
-          <Play size={14} /> Dry run
+          {working && mode === "Dry run" ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+          {working && mode === "Dry run" ? "Running…" : "Dry run"}
         </button>
         <button onClick={() => call(false)} disabled={working || !result}
           className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
           title={!result ? "Dry-run first" : ""}>
-          <CheckCircle2 size={14} /> Apply
+          {working && mode === "Apply" ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+          {working && mode === "Apply" ? "Applying…" : "Apply"}
         </button>
       </div>
+
+      {/* Live loading indicator while the 362-account import runs */}
+      {working && (
+        <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+          <div className="flex items-center justify-between text-sm font-semibold text-emerald-800">
+            <span className="inline-flex items-center gap-2">
+              <Loader2 size={16} className="animate-spin" />
+              {mode === "Apply" ? "Applying" : "Running dry run on"} the 362-account ledger…
+            </span>
+            <span className="font-mono text-emerald-700">{elapsed}s</span>
+          </div>
+          <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-emerald-100">
+            <div className="h-full w-1/3 animate-pulse rounded-full bg-emerald-500" />
+          </div>
+          <div className="mt-1 text-[11px] text-emerald-700">
+            Matching names → building bills &amp; payments → reconciling{mode === "Apply" ? " → writing" : ""}. Please keep this tab open.
+          </div>
+        </div>
+      )}
 
       {result && (
         <div className="mt-4 space-y-3">
