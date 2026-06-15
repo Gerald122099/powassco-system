@@ -19,6 +19,7 @@ import { requireAuth, requireRole } from "../../middleware/auth.js";
 import { regenLoanAmortization } from "../../scripts/regenLoanAmortization.js";
 import { rebuildLoanCharges } from "../../scripts/rebuildLoanCharges.js";
 import { importLegacyLoans, LEGACY_LOAN_BATCHES } from "../../utils/legacyLoanImport.js";
+import { recomputeWaterBills } from "../../scripts/recomputeWaterBills.js";
 
 const router = express.Router();
 const guard = [requireAuth, requireRole(["admin"])];
@@ -67,6 +68,28 @@ router.post("/import-legacy-loans", guard, async (req, res) => {
   try {
     const summary = await importLegacyLoans({ months: Array.isArray(months) ? months : [], dry: Boolean(dry) });
     res.json(summary);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Re-price UNPAID / OVERDUE water bills onto the CURRENT tariff. Dry-run
+// by default — returns each bill's old → new amount so the admin verifies
+// before applying. PAID bills are never touched; bills already matching
+// the current tariff are left alone (idempotent). Optional filters:
+// months[] (periodKeys) and classification.
+router.post("/recompute-water-bills", guard, async (req, res) => {
+  const { confirm, months = [], classification = null, dry = true } = req.body || {};
+  if (confirm !== "RECOMPUTE WATER BILLS") {
+    return res.status(400).json({ error: 'Pass { confirm: "RECOMPUTE WATER BILLS" } to proceed.' });
+  }
+  try {
+    const summary = await recomputeWaterBills({
+      months: Array.isArray(months) ? months : [],
+      classification: classification || null,
+      dry: Boolean(dry),
+    });
+    res.json({ mode: { dry: Boolean(dry), months, classification: classification || null }, ...summary });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

@@ -14,7 +14,7 @@ import Card from "../../components/Card";
 import { apiFetch } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
 import { toast } from "../../components/Toast";
-import { Wrench, Play, CheckCircle2, AlertCircle, Receipt, Upload } from "lucide-react";
+import { Wrench, Play, CheckCircle2, AlertCircle, Receipt, Upload, Droplets } from "lucide-react";
 
 const peso = (n) =>
   "₱" + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -236,7 +236,148 @@ export default function MaintenancePanel() {
       />
 
       <LegacyLoanImportCard />
+
+      <RecomputeWaterBillsCard />
     </div>
+  );
+}
+
+// Re-price unpaid/overdue water bills onto the CURRENT tariff. By design,
+// bills keep the tariff they were created with (so tariff changes aren't
+// retroactive); this is the deliberate, dry-run-first opt-out for unpaid
+// bills — e.g. after raising the residential minimum.
+function RecomputeWaterBillsCard() {
+  const { token } = useAuth();
+  const [months, setMonths] = useState("");
+  const [classification, setClassification] = useState("");
+  const [result, setResult] = useState(null);
+  const [working, setWorking] = useState(false);
+
+  async function call(dry) {
+    const changeCount = result?.changes?.length || 0;
+    if (!dry && !window.confirm(
+      `Re-price ${changeCount} unpaid bill(s) onto the CURRENT tariff. Paid bills are never touched. This changes amounts owed. Proceed?`
+    )) return;
+    setWorking(true);
+    try {
+      const body = {
+        confirm: "RECOMPUTE WATER BILLS",
+        dry,
+        months: months.split(",").map((s) => s.trim()).filter(Boolean),
+        classification: classification || null,
+      };
+      const res = await apiFetch("/admin/maintenance/recompute-water-bills", { method: "POST", token, body });
+      setResult(res);
+      toast.success(dry
+        ? `Dry run: ${res.changes.length} bill(s) would change.`
+        : `Re-priced ${res.updated} bill(s).`);
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  const changes = (result?.changes || []).filter((c) => !c.error);
+  const isDry = result?.mode?.dry !== false;
+
+  return (
+    <Card>
+      <div className="flex items-center gap-2 text-lg font-bold tracking-tight text-slate-900">
+        <Droplets size={20} className="text-cyan-600" /> Maintenance — Recompute Water Bills
+      </div>
+      <div className="mt-0.5 text-sm text-slate-600">
+        Re-prices <b>unpaid / overdue</b> water bills onto the <b>current</b> Water Settings tariff.
+        Use this only when you deliberately want existing unpaid bills to follow a new tariff (e.g. after
+        raising the residential minimum). Bills already matching the current tariff are left alone.
+      </div>
+
+      <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900 flex items-start gap-2">
+        <AlertCircle size={16} className="mt-0.5 shrink-0" />
+        <div>
+          <b>Always dry-run first.</b> Paid bills are never touched. The dry run shows each bill's
+          old → new amount; only <b>Apply</b> writes. By default, bills keep the tariff they were issued
+          with — this is the explicit override.
+        </div>
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <label className="block">
+          <span className="text-xs font-semibold text-slate-600">Periods (optional, comma-separated YYYY-MM)</span>
+          <input value={months} onChange={(e) => setMonths(e.target.value)} placeholder="e.g. 2026-06, 2026-07"
+            className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
+        </label>
+        <label className="block">
+          <span className="text-xs font-semibold text-slate-600">Classification (optional)</span>
+          <select value={classification} onChange={(e) => setClassification(e.target.value)}
+            className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white">
+            <option value="">All</option>
+            <option value="residential">Residential</option>
+            <option value="commercial">Commercial</option>
+          </select>
+        </label>
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <div className="flex-1" />
+        <button onClick={() => call(true)} disabled={working}
+          className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50">
+          <Play size={14} /> Dry run
+        </button>
+        <button onClick={() => call(false)} disabled={working || !result || changes.length === 0}
+          className="inline-flex items-center gap-2 rounded-xl bg-cyan-600 px-5 py-2 text-sm font-bold text-white hover:bg-cyan-700 disabled:opacity-50"
+          title={!result ? "Dry-run first" : changes.length === 0 ? "Nothing to write" : ""}>
+          <CheckCircle2 size={14} /> Apply ({changes.length})
+        </button>
+      </div>
+
+      {result && (
+        <div className="mt-4 rounded-2xl border border-slate-200">
+          <div className="bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-700 flex items-center justify-between">
+            <span>
+              {isDry ? "Dry run" : "Applied"} — scanned <b>{result.scanned}</b>, changing <b>{changes.length}</b>
+              {!isDry && <>, updated <b>{result.updated}</b></>}, unchanged <b>{result.unchanged}</b>
+              {result.failed > 0 && <>, failed <b className="text-red-600">{result.failed}</b></>}
+            </span>
+            {!isDry && changes.length > 0 && (
+              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">WROTE</span>
+            )}
+          </div>
+          {changes.length === 0 ? (
+            <div className="px-4 py-6 text-center text-sm text-slate-500">Nothing to do — every unpaid bill already matches the current tariff.</div>
+          ) : (
+            <div className="max-h-96 overflow-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-white sticky top-0 text-left text-xs text-slate-500">
+                  <tr>
+                    <th className="px-3 py-2">Account</th>
+                    <th className="px-3 py-2">Period</th>
+                    <th className="px-3 py-2">Meter</th>
+                    <th className="px-3 py-2 text-right">m³</th>
+                    <th className="px-3 py-2 text-right">Old → New</th>
+                    <th className="px-3 py-2 text-right">Δ</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {changes.map((c, i) => (
+                    <tr key={i} className="border-t border-slate-100">
+                      <td className="px-3 py-2"><span className="font-mono">{c.pnNo}</span> <span className="text-slate-400">{c.accountName}</span></td>
+                      <td className="px-3 py-2">{c.periodKey}</td>
+                      <td className="px-3 py-2 font-mono">{c.meterNumber}</td>
+                      <td className="px-3 py-2 text-right">{c.consumed}</td>
+                      <td className="px-3 py-2 text-right font-mono">{peso2(c.oldAmount)} → {peso2(c.newAmount)}</td>
+                      <td className={`px-3 py-2 text-right font-mono ${c.delta >= 0 ? "text-amber-700" : "text-emerald-700"}`}>
+                        {c.delta >= 0 ? "+" : ""}{peso2(c.delta)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
   );
 }
 
