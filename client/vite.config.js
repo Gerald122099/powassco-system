@@ -33,13 +33,12 @@ export default defineConfig({
         // (e.g. older Safari) still get the best available experience.
         display_override: ['standalone', 'minimal-ui', 'browser'],
         orientation: 'portrait',
-        // Installed PWA opens directly to the plumber's Field Mode — the
-        // primary Android use case (offline meter reading). Plumbers stay
-        // signed in (30-day JWT) so a cold start lands them on their
-        // dashboard with no extra taps. If they're signed out, the
-        // Protected wrapper kicks them to /employee-login, and after
-        // logging in routeAfter sends them right back to /plumber.
-        start_url: '/plumber',
+        // The DEFAULT install is the MEMBER app — it opens to the public
+        // homepage (bills, balance, announcements), NOT the staff login.
+        // Field staff get the separate field manifest (/field.webmanifest,
+        // start_url /plumber) which ManifestForRoute swaps in while on the
+        // /plumber and /meter routes, plus the dedicated field APK.
+        start_url: '/',
         scope: '/',
         categories: ['utilities', 'business', 'productivity'],
         prefer_related_applications: false,
@@ -76,24 +75,24 @@ export default defineConfig({
         // access, so it stays safe even with the wrong role logged in.
         shortcuts: [
           {
-            name: 'Field Mode',
-            short_name: 'Field',
-            description: 'Read assigned meters offline',
-            url: '/plumber',
+            name: 'My Bills',
+            short_name: 'Bills',
+            description: 'Check your water bills and dues',
+            url: '/inquiry',
             icons: [{ src: '/icon-192.png', sizes: '192x192', type: 'image/png' }],
           },
           {
-            name: 'Cashier Lookup',
-            short_name: 'Cashier',
-            description: 'Look up dues + receive walk-in payments',
-            url: '/cashier',
+            name: 'My Balance',
+            short_name: 'Balance',
+            description: 'Savings and Share Capital (CBU)',
+            url: '/check-balance',
             icons: [{ src: '/icon-192.png', sizes: '192x192', type: 'image/png' }],
           },
           {
-            name: 'Water Billing',
-            short_name: 'Water',
-            description: 'Members, bills, payments',
-            url: '/water',
+            name: 'My Account',
+            short_name: 'Account',
+            description: 'Member home, reminders, and app PIN',
+            url: '/app',
             icons: [{ src: '/icon-192.png', sizes: '192x192', type: 'image/png' }],
           },
         ],

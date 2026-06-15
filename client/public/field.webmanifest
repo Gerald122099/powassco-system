@@ -1,0 +1,27 @@
+{
+  "id": "/plumber?source=pwa",
+  "name": "POWASSCO Field",
+  "short_name": "POWASSCO Field",
+  "description": "Offline meter reading, on-site bill printing, and disconnections for POWASSCO field staff.",
+  "lang": "en",
+  "dir": "ltr",
+  "theme_color": "#166534",
+  "background_color": "#ffffff",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui", "browser"],
+  "orientation": "portrait",
+  "start_url": "/plumber",
+  "scope": "/",
+  "categories": ["utilities", "business", "productivity"],
+  "prefer_related_applications": false,
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Field Mode", "short_name": "Field", "description": "Read assigned meters offline", "url": "/plumber", "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }] },
+    { "name": "Disconnections", "short_name": "Disconnect", "description": "Disconnect / reconnect queue", "url": "/plumber", "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }] }
+  ]
+}

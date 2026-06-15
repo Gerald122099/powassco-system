@@ -100,7 +100,7 @@ export default function PublicAppInstallBanner() {
                   <Download size={18} /> Install now
                 </button>
               ) : (
-                <a href="/downloads/powassco-field.apk" download className="inline-flex items-center gap-2 rounded-2xl bg-white text-emerald-700 px-5 py-3 text-sm font-extrabold shadow-lg hover:bg-emerald-50 active:scale-95">
+                <a href="/downloads/powassco-member.apk" download className="inline-flex items-center gap-2 rounded-2xl bg-white text-emerald-700 px-5 py-3 text-sm font-extrabold shadow-lg hover:bg-emerald-50 active:scale-95">
                   <Download size={18} /> Download .APK
                 </a>
               )}
