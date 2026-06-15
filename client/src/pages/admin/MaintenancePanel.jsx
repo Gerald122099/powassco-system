@@ -14,7 +14,7 @@ import Card from "../../components/Card";
 import { apiFetch } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
 import { toast } from "../../components/Toast";
-import { Wrench, Play, CheckCircle2, AlertCircle, Receipt, Upload, Droplets } from "lucide-react";
+import { Wrench, Play, CheckCircle2, AlertCircle, Receipt, Upload, Droplets, FileSpreadsheet } from "lucide-react";
 
 const peso = (n) =>
   "₱" + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -238,7 +238,143 @@ export default function MaintenancePanel() {
       <LegacyLoanImportCard />
 
       <RecomputeWaterBillsCard />
+
+      <LegacyWaterImportCard />
     </div>
+  );
+}
+
+// Import legacy water bills + payments from the embedded LoocSur ledger.
+// Dry-run shows matched/unmatched accounts and per-account paid/unpaid +
+// outstanding vs the ledger receivable (reconcile flags). Apply inserts
+// (idempotent on existing pn/period/meter bills).
+function LegacyWaterImportCard() {
+  const { token } = useAuth();
+  const [result, setResult] = useState(null);
+  const [working, setWorking] = useState(false);
+
+  async function call(dry) {
+    if (!dry && !window.confirm(
+      `Insert legacy water bills + payments for ${result?.matched || 0} matched account(s). Unmatched names are skipped. Re-running is safe (existing bills are not duplicated). Proceed?`
+    )) return;
+    setWorking(true);
+    try {
+      const res = await apiFetch("/admin/maintenance/import-legacy-water", {
+        method: "POST", token, body: { confirm: "IMPORT LEGACY WATER", dry },
+      });
+      setResult(res);
+      toast.success(dry
+        ? `Dry run: ${res.matched}/${res.accounts} matched, ${res.unmatched.length} unmatched, ${res.reconcileFlags.length} to review.`
+        : `Inserted ${res.billsInserted} bill(s) + ${res.paymentsInserted} payment(s).`);
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  const isDry = result?.dry !== false;
+
+  return (
+    <Card>
+      <div className="flex items-center gap-2 text-lg font-bold tracking-tight text-slate-900">
+        <FileSpreadsheet size={20} className="text-emerald-600" /> Maintenance — Import Legacy Water Bills (LoocSur)
+      </div>
+      <div className="mt-0.5 text-sm text-slate-600">
+        Imports the LoocSur ledger (Jan–May 2026 readings, bills, and payments) into existing accounts,
+        matched by name. Each account gets an opening-balance bill (Dec 2025) + monthly bills using the
+        ledger's recorded amounts; paid bills get their OR# + date, unpaid bills become the current dues.
+        Tariff is stamped per period (₱74 ≤ Mar, ₱135 ≥ Apr).
+      </div>
+
+      <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900 flex items-start gap-2">
+        <AlertCircle size={16} className="mt-0.5 shrink-0" />
+        <div>
+          <b>Always dry-run first.</b> The dry run shows which names matched, the meter assigned, and each
+          account's computed outstanding vs the ledger receivable (mismatches are flagged for review).
+          Unmatched names need a name→account override before they import. Only <b>Apply</b> writes;
+          re-running never duplicates.
+        </div>
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <div className="flex-1" />
+        <button onClick={() => call(true)} disabled={working}
+          className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50">
+          <Play size={14} /> Dry run
+        </button>
+        <button onClick={() => call(false)} disabled={working || !result || result.matched === 0}
+          className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
+          title={!result ? "Dry-run first" : ""}>
+          <CheckCircle2 size={14} /> Apply ({result?.matched || 0})
+        </button>
+      </div>
+
+      {result && (
+        <div className="mt-4 space-y-3">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-700">
+            {isDry ? "Dry run" : "Applied"} — accounts <b>{result.accounts}</b>, matched <b>{result.matched}</b>,
+            unmatched <b className={result.unmatched.length ? "text-red-600" : ""}>{result.unmatched.length}</b>,
+            to review <b className={result.reconcileFlags.length ? "text-amber-700" : ""}>{result.reconcileFlags.length}</b>
+            {!isDry && <>, inserted <b>{result.billsInserted}</b> bills + <b>{result.paymentsInserted}</b> payments (skipped {result.billsSkipped})</>}
+          </div>
+
+          {/* sample matched */}
+          {result.sample?.length > 0 && (
+            <div className="overflow-x-auto rounded-xl border border-slate-200">
+              <table className="w-full text-xs">
+                <thead className="bg-white text-left text-slate-500">
+                  <tr><th className="px-3 py-2">Ledger name</th><th className="px-3 py-2">Account</th><th className="px-3 py-2">Meter</th><th className="px-3 py-2 text-right">Bills</th><th className="px-3 py-2 text-right">Paid/Unpaid</th><th className="px-3 py-2 text-right">Outstanding</th><th className="px-3 py-2 text-right">Ledger</th><th className="px-3 py-2">OK</th></tr>
+                </thead>
+                <tbody>
+                  {result.sample.map((s, i) => (
+                    <tr key={i} className="border-t border-slate-100">
+                      <td className="px-3 py-1.5">{s.name}</td>
+                      <td className="px-3 py-1.5"><span className="font-mono">{s.pnNo}</span> <span className="text-slate-400">{s.accountName}</span></td>
+                      <td className="px-3 py-1.5 font-mono">{s.meter}</td>
+                      <td className="px-3 py-1.5 text-right">{s.bills}</td>
+                      <td className="px-3 py-1.5 text-right">{s.paid}/{s.unpaid}</td>
+                      <td className="px-3 py-1.5 text-right font-mono">{peso2(s.outstanding)}</td>
+                      <td className="px-3 py-1.5 text-right font-mono text-slate-500">{peso2(s.sheetReceivable)}</td>
+                      <td className="px-3 py-1.5">{s.reconciles ? "✅" : <span className="text-amber-600">⚠️</span>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="px-3 py-1.5 text-[11px] text-slate-400">Showing first {result.sample.length} matched accounts.</div>
+            </div>
+          )}
+
+          {/* reconcile flags */}
+          {result.reconcileFlags?.length > 0 && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-2">
+              <div className="px-2 py-1 text-xs font-bold text-amber-800">To review — computed outstanding ≠ ledger receivable ({result.reconcileFlags.length})</div>
+              <div className="max-h-40 overflow-auto text-xs">
+                {result.reconcileFlags.map((f, i) => (
+                  <div key={i} className="px-2 py-1 font-mono">{f.name} ({f.pnNo}): computed {peso2(f.computed)} vs ledger {peso2(f.sheet)} (Δ {peso2(f.diff)})</div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* unmatched */}
+          {result.unmatched?.length > 0 && (
+            <div className="rounded-xl border border-red-200 bg-red-50/60 p-2">
+              <div className="px-2 py-1 text-xs font-bold text-red-700">Unmatched names — need a name→account override ({result.unmatched.length})</div>
+              <div className="max-h-40 overflow-auto text-xs">
+                {result.unmatched.map((u, i) => (
+                  <div key={i} className="px-2 py-1">
+                    <span className="font-semibold">{u.name}</span> <span className="text-slate-400">→ {u.target}</span>{" "}
+                    <span className={u.reason === "ambiguous" ? "text-amber-700" : "text-red-600"}>[{u.reason}]</span>
+                    {u.candidates?.length > 0 && <span className="text-slate-500"> candidates: {u.candidates.map((c) => `${c.accountName} (${c.pnNo})`).join("; ")}</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
   );
 }
 

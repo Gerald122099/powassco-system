@@ -20,6 +20,7 @@ import { regenLoanAmortization } from "../../scripts/regenLoanAmortization.js";
 import { rebuildLoanCharges } from "../../scripts/rebuildLoanCharges.js";
 import { importLegacyLoans, LEGACY_LOAN_BATCHES } from "../../utils/legacyLoanImport.js";
 import { recomputeWaterBills } from "../../scripts/recomputeWaterBills.js";
+import { importLegacyWater } from "../../utils/legacyWaterImport.js";
 
 const router = express.Router();
 const guard = [requireAuth, requireRole(["admin"])];
@@ -90,6 +91,24 @@ router.post("/recompute-water-bills", guard, async (req, res) => {
       dry: Boolean(dry),
     });
     res.json({ mode: { dry: Boolean(dry), months, classification: classification || null }, ...summary });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Import legacy water bills + payments from the embedded ledger
+// (LoocSur). Dry-run by default — returns matched/unmatched accounts,
+// per-account paid/unpaid + outstanding vs the ledger receivable
+// (reconcile flags), so the admin verifies on prod before applying.
+// Idempotent: existing (pnNo, periodKey, meterNumber) bills are skipped.
+router.post("/import-legacy-water", guard, async (req, res) => {
+  const { confirm, dry = true, limit = 0 } = req.body || {};
+  if (confirm !== "IMPORT LEGACY WATER") {
+    return res.status(400).json({ error: 'Pass { confirm: "IMPORT LEGACY WATER" } to proceed.' });
+  }
+  try {
+    const summary = await importLegacyWater({ dry: Boolean(dry), limit: Number(limit) || 0 });
+    res.json(summary);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
