@@ -18,19 +18,19 @@ export default function TariffCalculatorPage() {
     isSenior: false,
   });
   const [calculatorResult, setCalculatorResult] = useState(null);
-  const [tariffExamples, setTariffExamples] = useState(null);
+  const [tariffData, setTariffData] = useState(null); // { table, description }
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    fetchTariffExamples("residential");
+    fetchTariffTable("residential");
   }, []);
 
-  async function fetchTariffExamples(classification) {
+  async function fetchTariffTable(classification) {
     try {
       const json = await apiFetch(`/public/water/tariff-examples/${classification}`);
-      setTariffExamples(json);
+      setTariffData(json);
     } catch (error) {
-      console.error("Failed to fetch tariff examples:", error);
+      console.error("Failed to fetch tariff table:", error);
     }
   }
 
@@ -40,7 +40,6 @@ export default function TariffCalculatorPage() {
       setCalculatorResult(null);
       return;
     }
-
     setLoading(true);
     try {
       const json = await apiFetch("/public/water/calculate-estimate", {
@@ -51,46 +50,36 @@ export default function TariffCalculatorPage() {
           isSenior: !!calculatorForm.isSenior,
         },
       });
-
       setCalculatorResult(json);
     } catch (error) {
       console.error("Calculation error:", error);
-      setCalculatorResult({
-        error: true,
-        message: error.message || "Calculation failed",
-      });
+      setCalculatorResult({ error: true, message: error.message || "Calculation failed" });
     } finally {
       setLoading(false);
     }
   }
 
+  const entered = Number(calculatorForm.consumption || 0);
+
   return (
     <>
       <Navbar />
       <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-green-100 pt-24 pb-8 px-4">
-        <div className="max-w-4xl mx-auto">
+        <div className="max-w-5xl mx-auto">
           {/* Header */}
           <div className="rounded-3xl bg-white border border-green-100 shadow-lg p-6 mb-5">
             <div className="flex items-center gap-4">
-              <div className="relative">
-                <div className="absolute inset-0 bg-green-500 rounded-2xl blur-sm opacity-20"></div>
-                <img 
-                  src={logo} 
-                  alt="POWASSCO Logo" 
-                  className="h-16 w-16 rounded-2xl object-contain relative z-10 border-2 border-green-200" 
-                />
-              </div>
+              <img src={logo} alt="POWASSCO Logo" className="h-16 w-16 rounded-2xl object-contain border-2 border-green-200" />
               <div>
                 <div className="text-xs font-semibold uppercase tracking-wide text-green-600">POWASSCO</div>
                 <div className="text-2xl font-bold text-gray-800">Water Tariff Calculator</div>
                 <div className="text-sm text-gray-500 mt-1">
-                  Estimate your water bill based on consumption and classification
+                  Estimate your bill and see exactly which tiers your consumption falls into.
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Calculator Section */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
             {/* Calculator Form */}
             <div className="rounded-3xl bg-white border border-green-100 shadow-lg p-6">
@@ -104,8 +93,8 @@ export default function TariffCalculatorPage() {
                     value={calculatorForm.classification}
                     onChange={(e) => {
                       const cls = e.target.value;
-                      setCalculatorForm(prev => ({ ...prev, classification: cls }));
-                      fetchTariffExamples(cls);
+                      setCalculatorForm((prev) => ({ ...prev, classification: cls }));
+                      fetchTariffTable(cls);
                       setCalculatorResult(null);
                     }}
                   >
@@ -117,9 +106,7 @@ export default function TariffCalculatorPage() {
                 <div>
                   <label className="mb-2 block text-sm font-medium text-gray-700">Monthly Consumption (m³)</label>
                   <input
-                    type="number"
-                    min="0"
-                    step="0.1"
+                    type="number" min="0" step="0.1"
                     className="w-full rounded-xl border border-green-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-green-400"
                     value={calculatorForm.consumption}
                     onChange={(e) => setCalculatorForm((prev) => ({ ...prev, consumption: e.target.value }))}
@@ -129,21 +116,18 @@ export default function TariffCalculatorPage() {
 
                 <div className="flex items-center gap-2 p-3 bg-green-50 rounded-xl">
                   <input
-                    type="checkbox"
-                    id="isSenior"
+                    type="checkbox" id="isSenior"
                     checked={calculatorForm.isSenior}
-                    onChange={(e) =>
-                      setCalculatorForm(prev => ({ ...prev, isSenior: e.target.checked }))
-                    }
+                    onChange={(e) => setCalculatorForm((prev) => ({ ...prev, isSenior: e.target.checked }))}
                     className="rounded border-green-300 text-green-600 focus:ring-green-500"
                   />
-                  <label htmlFor="isSenior" className="text-sm text-gray-700">Apply Senior Citizen Discount (5%)</label>
+                  <label htmlFor="isSenior" className="text-sm text-gray-700">Apply Senior Citizen Discount</label>
                 </div>
 
                 <button
                   onClick={calculateTariff}
-                  disabled={Number(calculatorForm.consumption || 0) <= 0 || loading}
-                  className="w-full rounded-xl bg-gradient-to-r from-green-600 to-green-700 text-white py-3 font-semibold hover:from-green-700 hover:to-green-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all transform hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2"
+                  disabled={entered <= 0 || loading}
+                  className="w-full rounded-xl bg-gradient-to-r from-green-600 to-green-700 text-white py-3 font-semibold hover:from-green-700 hover:to-green-800 disabled:opacity-50 transition-all"
                 >
                   {loading ? "Calculating..." : "Calculate Bill"}
                 </button>
@@ -157,16 +141,38 @@ export default function TariffCalculatorPage() {
                       <>
                         <div className="flex items-center justify-between mb-3">
                           <div className="text-sm font-semibold text-gray-600">Estimated Total</div>
-                          <div className="text-3xl font-black text-green-700">
-                            ₱{money(calculatorResult.totalAmount)}
-                          </div>
+                          <div className="text-3xl font-black text-green-700">₱{money(calculatorResult.totalAmount)}</div>
                         </div>
 
-                        <div className="space-y-2 text-sm">
-                          <div className="flex justify-between py-1 border-b border-green-100">
-                            <span className="text-gray-600">Tier</span>
-                            <span className="font-semibold">{calculatorResult.tier}</span>
+                        {/* Per-tier breakdown — "what tiers is consumed" */}
+                        {Array.isArray(calculatorResult.tierBreakdown) && calculatorResult.tierBreakdown.length > 0 && (
+                          <div className="rounded-xl border border-green-100 bg-white overflow-hidden">
+                            <div className="bg-green-50 px-3 py-2 text-xs font-bold text-green-800">
+                              Consumption breakdown ({calculatorResult.consumption} m³)
+                            </div>
+                            <table className="w-full text-xs">
+                              <tbody>
+                                {calculatorResult.tierBreakdown.map((b, i) => (
+                                  <tr key={i} className="border-t border-green-50">
+                                    <td className="px-3 py-1.5">
+                                      {b.isMinimum ? (
+                                        <span className="font-semibold">0–{b.to} m³ <span className="text-gray-400">(minimum)</span></span>
+                                      ) : (
+                                        <span>
+                                          <span className="font-semibold">{b.from}–{b.to} m³</span>
+                                          <span className="text-gray-400"> · {b.units} m³ × ₱{money(b.rate)}</span>
+                                        </span>
+                                      )}
+                                    </td>
+                                    <td className="px-3 py-1.5 text-right font-mono font-semibold">₱{money(b.amount)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
                           </div>
+                        )}
+
+                        <div className="mt-3 space-y-1 text-sm">
                           <div className="flex justify-between py-1">
                             <span className="text-gray-600">Base Amount</span>
                             <span className="font-bold">₱{money(calculatorResult.breakdown?.baseAmount)}</span>
@@ -177,13 +183,12 @@ export default function TariffCalculatorPage() {
                               <span className="font-bold">-₱{money(calculatorResult.seniorDiscount.amount)}</span>
                             </div>
                           )}
-                          <div className="flex justify-between py-2 mt-2 border-t-2 border-green-200 font-black text-gray-800">
+                          <div className="flex justify-between py-2 mt-1 border-t-2 border-green-200 font-black text-gray-800">
                             <span>Total Amount Due</span>
                             <span>₱{money(calculatorResult.totalAmount)}</span>
                           </div>
                         </div>
-
-                        <div className="mt-3 rounded-lg bg-slate-50 p-2 text-xs text-gray-500">{calculatorResult.message}</div>
+                        <div className="mt-2 rounded-lg bg-slate-50 p-2 text-xs text-gray-500">{calculatorResult.message}</div>
                       </>
                     )}
                   </div>
@@ -191,44 +196,57 @@ export default function TariffCalculatorPage() {
               </div>
             </div>
 
-            {/* Tariff Guide */}
+            {/* Full Tariff Table (grouped by tier) */}
             <div className="rounded-3xl bg-white border border-green-100 shadow-lg p-6">
-              <h3 className="mb-4 text-lg font-bold text-gray-900">Tariff Guide</h3>
+              <h3 className="mb-1 text-lg font-bold text-gray-900">Full Tariff Table</h3>
+              <p className="text-sm text-gray-600 mb-4">{tariffData?.description || "Loading the configured tariff…"}</p>
 
-              <p className="text-sm text-gray-600 mb-4">
-                {tariffExamples?.description || "Select a classification to see example calculations"}
-              </p>
-
-              {tariffExamples?.examples?.length > 0 && (
-                <div className="border border-green-100 rounded-xl overflow-hidden">
-                  <div className="bg-gradient-to-r from-green-50 to-green-100 px-4 py-3 text-sm font-bold text-gray-700">
-                    Example Calculations ({calculatorForm.classification})
-                  </div>
-                  <div className="max-h-96 overflow-y-auto">
-                    <table className="w-full text-sm">
-                      <thead className="bg-white sticky top-0">
-                        <tr className="text-gray-500">
-                          <th className="py-2 px-4 text-left">Consumption</th>
-                          <th className="py-2 px-4 text-left">Amount</th>
-                          <th className="py-2 px-4 text-left">Tier</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {tariffExamples.examples.map((ex, idx) => (
-                          <tr key={idx} className="border-t border-green-50 hover:bg-green-50/50">
-                            <td className="py-2 px-4 font-semibold">{ex.consumption} m³</td>
-                            <td className="py-2 px-4 font-bold text-green-700">₱{money(ex.amount)}</td>
-                            <td className="py-2 px-4 text-gray-600">{ex.tier || 'N/A'}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+              {Array.isArray(tariffData?.table) && tariffData.table.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {tariffData.table.map((group) => {
+                    const isOpen = String(group.label).startsWith("over");
+                    return (
+                      <div key={group.tier} className="rounded-xl border border-green-100 overflow-hidden">
+                        <div className="bg-gradient-to-r from-green-50 to-green-100 px-3 py-2">
+                          <div className="text-sm font-bold text-gray-800">{group.label}</div>
+                          <div className="text-[11px] text-gray-500">
+                            {group.chargeType === "flat" ? `Minimum ₱${money(group.flat)}` : `₱${money(group.rate)} / m³`}
+                          </div>
+                        </div>
+                        <div className="max-h-72 overflow-y-auto">
+                          <table className="w-full text-xs">
+                            <thead className="bg-white sticky top-0 text-gray-400">
+                              <tr>
+                                <th className="px-3 py-1.5 text-left font-medium">m³</th>
+                                <th className="px-3 py-1.5 text-right font-medium">Amount</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {group.rows.map((r, idx) => {
+                                const isHit = !isOpen && Number(r.consumption) === entered && entered > 0;
+                                const isHitOpen = isOpen && entered > 0 && Number(r.consumption) === entered;
+                                const hit = isHit || isHitOpen;
+                                return (
+                                  <tr key={idx} className={`border-t border-green-50 ${hit ? "bg-amber-100 font-bold" : "hover:bg-green-50/50"}`}>
+                                    <td className="px-3 py-1.5">{r.consumption}</td>
+                                    <td className="px-3 py-1.5 text-right font-mono">₱{money(r.amount)}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
+              ) : (
+                <div className="text-sm text-gray-500">No tariff configured.</div>
               )}
 
               <div className="mt-4 rounded-xl bg-amber-50 p-3 text-xs text-amber-700">
-                This calculator provides estimates only. Actual bills may include additional charges, penalties, or verified discounts.
+                This table is generated live from the cooperative's Water Settings tariff. Estimates only —
+                actual bills may include penalties or verified discounts.
               </div>
             </div>
           </div>

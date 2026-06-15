@@ -408,30 +408,52 @@ router.get("/tariff-examples/:classification", rateLimit, async (req, res) => {
       .filter((t) => t.isActive)
       .sort((a, b) => Number(a.minConsumption) - Number(b.minConsumption));
 
-    let examples = [];
-    if (tiers.length > 0) {
-      const pts = new Set();
-      pts.add(Number(tiers[0].maxConsumption)); // minimum-charge ceiling
-      for (let i = 1; i < tiers.length; i++) {
-        pts.add(Number(tiers[i].minConsumption)); // first m³ of this tier
-        const mx = Number(tiers[i].maxConsumption);
-        if (mx && mx <= 200) pts.add(mx); // skip the huge open-ended cap
-      }
-      // A representative point inside the open-ended top tier.
-      pts.add(Number(tiers[tiers.length - 1].minConsumption) + 9);
+    // The full billing table, grouped by tier (like the cooperative's
+    // printed chart) — every value computed from Water Settings via the
+    // canonical engine, so it always reflects the configured tariff.
+    const OPEN_TIER_ROWS = 60; // how many m³ to list for the open-ended top tier
+    const table = [];
+    const examples = []; // one representative row per tier (back-compat)
 
-      const consumptions = [...pts].filter((n) => Number.isFinite(n) && n > 0).sort((a, b) => a - b);
-      for (const c of consumptions) {
+    for (let i = 0; i < tiers.length; i++) {
+      const t = tiers[i];
+      const isLast = i === tiers.length - 1;
+      const min = Number(t.minConsumption);
+      const max = Number(t.maxConsumption);
+      const rate = Number(t.ratePerCubic) || 0;
+
+      // First/flat tier → a single "minimum charge" summary row.
+      if (i === 0 && t.chargeType === "flat") {
+        const calc = await calculateWaterBill(max, classification, null, null, settings);
+        const amount = Number(calc.amount);
+        table.push({
+          tier: t.tier,
+          label: `0–${max} m³ (minimum)`,
+          chargeType: "flat",
+          rate: 0,
+          flat: Number(t.flatAmount) || 0,
+          rows: [{ consumption: `0–${max}`, amount }],
+        });
+        examples.push({ consumption: max, amount, tier: t.tier });
+        continue;
+      }
+
+      const end = isLast ? min + OPEN_TIER_ROWS - 1 : max;
+      const rows = [];
+      for (let c = min; c <= end; c++) {
         try {
           const calc = await calculateWaterBill(c, classification, null, null, settings);
-          examples.push({
-            consumption: c,
-            amount: Number(calc.amount),
-            tier: calc.tariffUsed?.tier || "",
-            description: `${c} m³ = ₱${Number(calc.amount).toFixed(2)}`,
-          });
+          rows.push({ consumption: c, amount: Number(calc.amount) });
         } catch { /* skip a misconfigured point */ }
       }
+      table.push({
+        tier: t.tier,
+        label: isLast ? `over ${min - 1} m³` : `${min}–${max} m³`,
+        chargeType: t.chargeType,
+        rate,
+        rows,
+      });
+      if (rows.length) examples.push({ consumption: rows[rows.length - 1].consumption, amount: rows[rows.length - 1].amount, tier: t.tier });
     }
 
     const minTier = tiers[0];
@@ -441,6 +463,7 @@ router.get("/tariff-examples/:classification", rateLimit, async (req, res) => {
 
     res.json({
       classification,
+      table,
       examples,
       description: `${classification === "residential" ? "Residential" : "Commercial"}: ${minLabel}`,
     });
@@ -499,6 +522,9 @@ router.post("/calculate-estimate", rateLimit, async (req, res) => {
         rate: discountRate,
         amount: discountAmount.toFixed(2),
       },
+      // Per-tier breakdown so the calculator can show exactly which tiers
+      // were consumed and how much each contributed.
+      tierBreakdown: calc.tierBreakdown || [],
       totalAmount: Number(calc.amount).toFixed(2),
       message: seniorDiscountApplied
         ? `${discountRate}% senior citizen discount applied to ${tierLabel} tier`

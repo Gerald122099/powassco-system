@@ -85,6 +85,19 @@ export async function calculateWaterBill(consumption, classification, member = n
       : Math.min(consumption, minMax) * (Number(minTier.ratePerCubic) || 0);
     let baseAmount = minimumCharge;
 
+    // tierBreakdown — which brackets the consumption touched and how much
+    // each contributed. Lets the UI show "what tiers is consumed."
+    const tierBreakdown = [{
+      tier: minTier.tier,
+      chargeType: minTier.chargeType,
+      rate: minTier.chargeType === "flat" ? 0 : (Number(minTier.ratePerCubic) || 0),
+      from: Number(minTier.minConsumption) || 0,
+      to: minMax,
+      units: Math.min(consumption, minMax),
+      amount: Number(minimumCharge.toFixed(2)),
+      isMinimum: minTier.chargeType === "flat",
+    }];
+
     if (consumption > minMax) {
       let prevMax = minMax; // m³ already billed by lower brackets
       for (let i = 1; i < activeTiers.length; i++) {
@@ -96,9 +109,20 @@ export async function calculateWaterBill(consumption, classification, member = n
           : Number(t.maxConsumption);
         const units = Math.max(0, Math.min(consumption, cap) - prevMax);
         if (units > 0) {
-          baseAmount += t.chargeType === "flat"
+          const amt = t.chargeType === "flat"
             ? (Number(t.flatAmount) || 0)
             : units * (Number(t.ratePerCubic) || 0);
+          baseAmount += amt;
+          tierBreakdown.push({
+            tier: t.tier,
+            chargeType: t.chargeType,
+            rate: t.chargeType === "flat" ? 0 : (Number(t.ratePerCubic) || 0),
+            from: prevMax + 1,
+            to: prevMax + units,
+            units,
+            amount: Number(amt.toFixed(2)),
+            isMinimum: false,
+          });
         }
         prevMax = Number(t.maxConsumption);
       }
@@ -162,7 +186,8 @@ export async function calculateWaterBill(consumption, classification, member = n
       },
       consumption,
       classification,
-      breakdown
+      breakdown,
+      tierBreakdown,
     };
   } catch (error) {
     console.error("Error calculating bill:", error);
