@@ -39,35 +39,40 @@ export function calculateWaterBillLocal(consumption, classification, member, met
   if (!tariff && consumption > lastTier.maxConsumption) tariff = lastTier;
   if (!tariff) return null;
 
-  // Honor each tier's chargeType: "flat" → flatAmount; "per_cubic" →
-  // m³ × ratePerCubic. Same logic as the server's calculateWaterBill.
+  // PROGRESSIVE (marginal) tiering — each bracket billed at its OWN rate.
+  // MUST stay identical to the server's calculateWaterBill so an offline
+  // thermal bill matches the official bill to the centavo.
   const minMax = Number(minTier.maxConsumption) || 0;
-  let baseAmount = 0;
-  const breakdown = {
-    minimumCharge: 0,
-    excessConsumption: 0,
-    excessRate: Number(tariff.ratePerCubic) || 0,
-    excessAmount: 0,
-  };
+  const minimumCharge = minTier.chargeType === "flat"
+    ? (Number(minTier.flatAmount) || 0)
+    : Math.min(consumption, minMax) * (Number(minTier.ratePerCubic) || 0);
+  let baseAmount = minimumCharge;
 
-  if (consumption <= minMax) {
-    baseAmount = minTier.chargeType === "flat"
-      ? (Number(minTier.flatAmount) || 0)
-      : consumption * (Number(minTier.ratePerCubic) || 0);
-    breakdown.minimumCharge = baseAmount;
-  } else {
-    const firstTierBase = minTier.chargeType === "flat"
-      ? (Number(minTier.flatAmount) || 0)
-      : minMax * (Number(minTier.ratePerCubic) || 0);
-    const excess = consumption - minMax;
-    const excessRate = Number(tariff.ratePerCubic) || 0;
-    const excessAmount = excess * excessRate;
-    baseAmount = firstTierBase + excessAmount;
-    breakdown.minimumCharge = firstTierBase;
-    breakdown.excessConsumption = excess;
-    breakdown.excessAmount = excessAmount;
-    breakdown.excessRate = excessRate;
+  if (consumption > minMax) {
+    let prevMax = minMax; // m³ already billed by lower brackets
+    for (let i = 1; i < activeTiers.length; i++) {
+      const t = activeTiers[i];
+      if (consumption <= prevMax) break;
+      const isLast = i === activeTiers.length - 1;
+      const cap = isLast && consumption > Number(t.maxConsumption)
+        ? consumption // open-ended top tier
+        : Number(t.maxConsumption);
+      const units = Math.max(0, Math.min(consumption, cap) - prevMax);
+      if (units > 0) {
+        baseAmount += t.chargeType === "flat"
+          ? (Number(t.flatAmount) || 0)
+          : units * (Number(t.ratePerCubic) || 0);
+      }
+      prevMax = Number(t.maxConsumption);
+    }
   }
+
+  const breakdown = {
+    minimumCharge: Number(minimumCharge.toFixed(2)),
+    excessConsumption: Math.max(0, consumption - minMax),
+    excessRate: Number(tariff.ratePerCubic) || 0,
+    excessAmount: Number((baseAmount - minimumCharge).toFixed(2)),
+  };
 
   let discountAmount = 0;
   let discountReason = "";

@@ -21,10 +21,12 @@ function discountAppliesToMeter(member, meterNumber) {
 /**
  * Calculate water bill with new tariff structure including minimum charges
  */
-export async function calculateWaterBill(consumption, classification, member = null, meterNumber = null) {
+export async function calculateWaterBill(consumption, classification, member = null, meterNumber = null, preloadedSettings = null) {
   try {
-    // Get settings with tariffs
-    const settings = await WaterSettings.findOne();
+    // Get settings with tariffs. Callers that compute many estimates in a
+    // row (e.g. the public tariff calculator's example table) can pass a
+    // preloaded settings doc to avoid N findOne() roundtrips.
+    const settings = preloadedSettings || await WaterSettings.findOne();
     if (!settings) {
       throw new Error("Water settings not found");
     }
@@ -70,43 +72,44 @@ export async function calculateWaterBill(consumption, classification, member = n
     //                              minimum-charge bracket
     //   • chargeType="per_cubic" → this tier bills (consumption_within
     //                              × ratePerCubic)
-    const tierBaseAmount = (tier, m3) => {
-      if (tier.chargeType === "flat") return Number(tier.flatAmount) || 0;
-      return m3 * (Number(tier.ratePerCubic) || 0);
-    };
     const minMax = Number(minTier.maxConsumption) || 0;
-    let baseAmount = 0;
-    const breakdown = {
-      minimumCharge: 0,
-      excessConsumption: 0,
-      excessRate: Number(tariff.ratePerCubic) || 0,
-      excessAmount: 0,
-    };
 
-    if (consumption <= minMax) {
-      // Within the first tier. If it's flat → flatAmount. If it's
-      // per-cubic → consumption × that tier's rate.
-      baseAmount = tierBaseAmount(minTier, consumption);
-      breakdown.minimumCharge = baseAmount;
-    } else {
-      // Above the minimum bracket. The first tier contributes its
-      // "base" (flatAmount if flat, or the full bracket × rate if
-      // per-cubic); excess is billed at the MATCHING tier's per-cubic
-      // rate against (consumption − minMax). This matches the
-      // cooperative's printed examples where 10 m³ residential =
-      // ₱74 + (5 × ₱16.20) = ₱155, etc.
-      const firstTierBase = minTier.chargeType === "flat"
-        ? (Number(minTier.flatAmount) || 0)
-        : minMax * (Number(minTier.ratePerCubic) || 0);
-      const excess = consumption - minMax;
-      const excessRate = Number(tariff.ratePerCubic) || 0;
-      const excessAmount = excess * excessRate;
-      baseAmount = firstTierBase + excessAmount;
-      breakdown.minimumCharge = firstTierBase;
-      breakdown.excessConsumption = excess;
-      breakdown.excessAmount = excessAmount;
-      breakdown.excessRate = excessRate;
+    // PROGRESSIVE (marginal) tiering — each bracket is billed at its OWN
+    // rate, exactly matching the cooperative's published tariff examples
+    // (e.g. residential 40 m³ = ₱74 + 5×16.20 + 10×17.70 + 10×19.20 +
+    // 10×20.70 = ₱731). The first tier is the flat minimum bracket
+    // (covers 0..minMax); each later per-cubic tier bills only the m³ that
+    // fall within it; the last tier is open-ended above its max.
+    const minimumCharge = minTier.chargeType === "flat"
+      ? (Number(minTier.flatAmount) || 0)
+      : Math.min(consumption, minMax) * (Number(minTier.ratePerCubic) || 0);
+    let baseAmount = minimumCharge;
+
+    if (consumption > minMax) {
+      let prevMax = minMax; // m³ already billed by lower brackets
+      for (let i = 1; i < activeTiers.length; i++) {
+        const t = activeTiers[i];
+        if (consumption <= prevMax) break;
+        const isLast = i === activeTiers.length - 1;
+        const cap = isLast && consumption > Number(t.maxConsumption)
+          ? consumption // open-ended top tier
+          : Number(t.maxConsumption);
+        const units = Math.max(0, Math.min(consumption, cap) - prevMax);
+        if (units > 0) {
+          baseAmount += t.chargeType === "flat"
+            ? (Number(t.flatAmount) || 0)
+            : units * (Number(t.ratePerCubic) || 0);
+        }
+        prevMax = Number(t.maxConsumption);
+      }
     }
+
+    const breakdown = {
+      minimumCharge: Number(minimumCharge.toFixed(2)),
+      excessConsumption: Math.max(0, consumption - minMax),
+      excessRate: Number(tariff.ratePerCubic) || 0,
+      excessAmount: Number((baseAmount - minimumCharge).toFixed(2)),
+    };
     
     // Apply senior citizen discount if eligible
     let discountAmount = 0;

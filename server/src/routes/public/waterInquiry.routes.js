@@ -5,6 +5,8 @@ import WaterPayment from "../../models/WaterPayment.js";
 import LoanApplication from "../../models/LoanApplication.js";
 import LoanPayment from "../../models/LoanPayment.js";
 import OnlinePayment from "../../models/OnlinePayment.js";
+import WaterSettings from "../../models/WaterSettings.js";
+import { calculateWaterBill } from "../../utils/waterBilling.js";
 
 const router = express.Router();
 
@@ -394,49 +396,57 @@ router.get("/tariff-examples/:classification", rateLimit, async (req, res) => {
     if (!["residential", "commercial"].includes(classification)) {
       return res.status(400).json({ message: "Invalid classification" });
     }
-    
-    // Define tariff examples (simplified for public view)
-    const getTariffExamples = (classification) => {
-      if (classification === "residential") {
-        return [
-          { consumption: 5, amount: 74.00, description: "0-5 m³ = ₱74.00 (minimum charge)" },
-          { consumption: 6, amount: 90.20, description: "6 m³ = ₱74.00 + (1 × ₱16.20)" },
-          { consumption: 10, amount: 155.00, description: "10 m³ = ₱74.00 + (5 × ₱16.20)" },
-          { consumption: 20, amount: 332.00, description: "20 m³ = ₱74.00 + (15 × ₱17.70)" },
-          { consumption: 30, amount: 524.00, description: "30 m³ = ₱74.00 + (25 × ₱19.20)" },
-          { consumption: 40, amount: 731.00, description: "40 m³ = ₱74.00 + (35 × ₱20.70)" },
-          { consumption: 50, amount: 953.00, description: "50 m³ = ₱74.00 + (45 × ₱22.20)" },
-          { consumption: 60, amount: 1175.00, description: "60 m³ = ₱74.00 + (55 × ₱22.20)" },
-          { consumption: 70, amount: 1397.00, description: "70 m³ = ₱74.00 + (65 × ₱22.20)" }
-        ];
-      } else if (classification === "commercial") {
-        return [
-          { consumption: 15, amount: 442.50, description: "0-15 m³ = ₱442.50 (minimum charge)" },
-          { consumption: 16, amount: 475.00, description: "16 m³ = ₱442.50 + (1 × ₱32.50)" },
-          { consumption: 20, amount: 605.00, description: "20 m³ = ₱442.50 + (5 × ₱32.50)" },
-          { consumption: 30, amount: 930.00, description: "30 m³ = ₱442.50 + (15 × ₱32.50)" },
-          { consumption: 31, amount: 965.40, description: "31 m³ = ₱442.50 + (16 × ₱35.40)" },
-          { consumption: 40, amount: 1284.00, description: "40 m³ = ₱442.50 + (25 × ₱35.40)" },
-          { consumption: 50, amount: 1638.00, description: "50 m³ = ₱442.50 + (35 × ₱35.40)" },
-          { consumption: 70, amount: 2346.00, description: "70 m³ = ₱442.50 + (55 × ₱35.40)" },
-          { consumption: 90, amount: 3054.00, description: "90 m³ = ₱442.50 + (75 × ₱35.40)" }
-        ];
+
+    // Build the example table straight from the configured tariff so the
+    // public guide always reflects Water Settings. Sample points: the
+    // minimum bracket's ceiling, then the first + last m³ of each higher
+    // tier, computed with the canonical (progressive) engine.
+    const settings = await WaterSettings.findOne();
+    const tiers = ((classification === "residential"
+      ? settings?.tariffs?.residential
+      : settings?.tariffs?.commercial) || [])
+      .filter((t) => t.isActive)
+      .sort((a, b) => Number(a.minConsumption) - Number(b.minConsumption));
+
+    let examples = [];
+    if (tiers.length > 0) {
+      const pts = new Set();
+      pts.add(Number(tiers[0].maxConsumption)); // minimum-charge ceiling
+      for (let i = 1; i < tiers.length; i++) {
+        pts.add(Number(tiers[i].minConsumption)); // first m³ of this tier
+        const mx = Number(tiers[i].maxConsumption);
+        if (mx && mx <= 200) pts.add(mx); // skip the huge open-ended cap
       }
-      return [];
-    };
-    
-    const examples = getTariffExamples(classification);
-    
+      // A representative point inside the open-ended top tier.
+      pts.add(Number(tiers[tiers.length - 1].minConsumption) + 9);
+
+      const consumptions = [...pts].filter((n) => Number.isFinite(n) && n > 0).sort((a, b) => a - b);
+      for (const c of consumptions) {
+        try {
+          const calc = await calculateWaterBill(c, classification, null, null, settings);
+          examples.push({
+            consumption: c,
+            amount: Number(calc.amount),
+            tier: calc.tariffUsed?.tier || "",
+            description: `${c} m³ = ₱${Number(calc.amount).toFixed(2)}`,
+          });
+        } catch { /* skip a misconfigured point */ }
+      }
+    }
+
+    const minTier = tiers[0];
+    const minLabel = minTier
+      ? `₱${Number(minTier.flatAmount || 0).toFixed(2)} minimum for ${minTier.minConsumption}-${minTier.maxConsumption} m³, then tiered rates`
+      : "Tariff not configured";
+
     res.json({
       classification,
       examples,
-      description: classification === "residential" 
-        ? "Residential: ₱74.00 minimum for 0-5 m³, then tiered rates"
-        : "Commercial: ₱442.50 minimum for 0-15 m³, then tiered rates"
+      description: `${classification === "residential" ? "Residential" : "Commercial"}: ${minLabel}`,
     });
   } catch (error) {
     console.error("Error getting tariff examples:", error);
-    res.status(500).json({ 
+    res.status(500).json({
       message: "Failed to get tariff examples"
     });
   }
@@ -456,103 +466,43 @@ router.post("/calculate-estimate", rateLimit, async (req, res) => {
     if (!["residential", "commercial"].includes(classification)) {
       return res.status(400).json({ message: "Invalid classification" });
     }
-    
-    // Simplified calculation for public use (matches your tariff structure)
-    let baseAmount = 0;
-    let tier = "";
-    let ratePerCubic = 0;
-    let excessConsumption = 0;
-    
-    if (classification === "residential") {
-      if (consumptionNum <= 5) {
-        baseAmount = 74.00;
-        tier = "0-5 m³";
-        ratePerCubic = 0;
-      } else if (consumptionNum <= 10) {
-        excessConsumption = consumptionNum - 5;
-        ratePerCubic = 16.20;
-        baseAmount = 74.00 + (excessConsumption * ratePerCubic);
-        tier = "6-10 m³";
-      } else if (consumptionNum <= 20) {
-        excessConsumption = consumptionNum - 5;
-        ratePerCubic = 17.70;
-        baseAmount = 74.00 + (excessConsumption * ratePerCubic);
-        tier = "11-20 m³";
-      } else if (consumptionNum <= 30) {
-        excessConsumption = consumptionNum - 5;
-        ratePerCubic = 19.20;
-        baseAmount = 74.00 + (excessConsumption * ratePerCubic);
-        tier = "21-30 m³";
-      } else if (consumptionNum <= 40) {
-        excessConsumption = consumptionNum - 5;
-        ratePerCubic = 20.70;
-        baseAmount = 74.00 + (excessConsumption * ratePerCubic);
-        tier = "31-40 m³";
-      } else {
-        excessConsumption = consumptionNum - 5;
-        ratePerCubic = 22.20;
-        baseAmount = 74.00 + (excessConsumption * ratePerCubic);
-        tier = "41+ m³";
-      }
-    } else if (classification === "commercial") {
-      if (consumptionNum <= 15) {
-        baseAmount = 442.50;
-        tier = "0-15 m³";
-        ratePerCubic = 0;
-      } else if (consumptionNum <= 30) {
-        excessConsumption = consumptionNum - 15;
-        ratePerCubic = 32.50;
-        baseAmount = 442.50 + (excessConsumption * ratePerCubic);
-        tier = "16-30 m³";
-      } else {
-        excessConsumption = consumptionNum - 15;
-        ratePerCubic = 35.40;
-        baseAmount = 442.50 + (excessConsumption * ratePerCubic);
-        tier = "31+ m³";
-      }
-    }
-    
-    // Apply senior discount if applicable
-    let discountAmount = 0;
-    let discountRate = 0;
-    let seniorDiscountApplied = false;
-    let finalAmount = baseAmount;
-    
-    if (isSenior) {
-      // Senior discount applies to residential: tiers 31-40 and 41+
-      // Senior discount applies to commercial: tier 31+
-      const discountEligible = (classification === "residential" && consumptionNum >= 31) ||
-                              (classification === "commercial" && consumptionNum >= 31);
-      
-      if (discountEligible) {
-        discountRate = 5; // Default 5% senior discount
-        discountAmount = baseAmount * (discountRate / 100);
-        finalAmount = baseAmount - discountAmount;
-        seniorDiscountApplied = true;
-      }
-    }
-    
+
+    // Compute through the SAME canonical engine that issues real bills, so
+    // the public estimate follows Water Settings (progressive tiers,
+    // configured senior-discount tiers/rate) exactly. A synthetic senior
+    // member lets the engine apply the discount on eligible tiers only.
+    const member = isSenior ? { personal: { isSeniorCitizen: true }, billing: {}, meters: [] } : null;
+    const calc = await calculateWaterBill(consumptionNum, classification, member);
+
+    const baseAmount = Number(calc.baseAmount) || 0;
+    const discountAmount = Number(calc.discount) || 0;
+    const seniorDiscountApplied = discountAmount > 0;
+    const discountRate = seniorDiscountApplied && baseAmount > 0
+      ? Math.round((discountAmount / baseAmount) * 100)
+      : 0;
+    const tierLabel = calc.tariffUsed?.tier ? `${calc.tariffUsed.tier} m³` : "";
+
     res.json({
       classification,
       consumption: consumptionNum,
-      tier,
-      ratePerCubic,
+      tier: tierLabel,
+      ratePerCubic: calc.tariffUsed?.ratePerCubic || 0,
       breakdown: {
-        minimumCharge: classification === "residential" ? 74.00 : 442.50,
-        excessConsumption: excessConsumption,
-        excessRate: ratePerCubic,
-        excessAmount: excessConsumption * ratePerCubic,
-        baseAmount: baseAmount.toFixed(2)
+        minimumCharge: calc.breakdown?.minimumCharge ?? 0,
+        excessConsumption: calc.breakdown?.excessConsumption ?? 0,
+        excessRate: calc.breakdown?.excessRate ?? 0,
+        excessAmount: calc.breakdown?.excessAmount ?? 0,
+        baseAmount: baseAmount.toFixed(2),
       },
       seniorDiscount: {
         applied: seniorDiscountApplied,
         rate: discountRate,
-        amount: discountAmount.toFixed(2)
+        amount: discountAmount.toFixed(2),
       },
-      totalAmount: finalAmount.toFixed(2),
-      message: seniorDiscountApplied 
-        ? `5% senior citizen discount applied to ${tier} tier`
-        : "No senior discount applied"
+      totalAmount: Number(calc.amount).toFixed(2),
+      message: seniorDiscountApplied
+        ? `${discountRate}% senior citizen discount applied to ${tierLabel} tier`
+        : (isSenior ? "Senior discount applies to higher tiers only" : "No senior discount applied"),
     });
   } catch (error) {
     console.error("Calculate estimate error:", error);
