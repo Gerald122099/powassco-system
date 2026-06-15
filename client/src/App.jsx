@@ -22,6 +22,7 @@ const ManagerDashboard = lazy(() => import("./pages/manager/ManagerDashboard"));
 const AuditDashboard = lazy(() => import("./pages/audit/AuditDashboard"));
 const BookkeeperDashboard = lazy(() => import("./pages/bookkeeper/BookkeeperDashboard"));
 const MemberInquiryPage = lazy(() => import("./pages/public/MemberInquiryPage"));
+const MemberAppPage = lazy(() => import("./pages/public/MemberAppPage"));
 const TariffCalculatorPage = lazy(() => import("./pages/public/TariffCalculatorPage"));
 const CheckBalancePage = lazy(() => import("./pages/public/CheckBalancePage"));
 const AboutPage = lazy(() => import("./pages/public/AboutPage"));
@@ -84,6 +85,7 @@ export default function App() {
         {/* PUBLIC PAGES */}
         <Route path="/" element={<HomePage />} />
         <Route path="/employee-login" element={<LoginPage />} />
+        <Route path="/app" element={<MemberAppPage />} />
         <Route path="/inquiry" element={<MemberInquiryPage />} />
         <Route path="/calculator" element={<TariffCalculatorPage />} />
         <Route path="/check-balance" element={<CheckBalancePage />} />

@@ -7,6 +7,7 @@ import AnnouncementsBell from "./AnnouncementsBell";
 
 const links = [
   { to: "/", label: "Home" },
+  { to: "/app", label: "My App" },
   { to: "/inquiry", label: "Bill Inquiry" },
   { to: "/check-balance", label: "Check Balance" },
   { to: "/calculator", label: "Tariff Calculator" },
