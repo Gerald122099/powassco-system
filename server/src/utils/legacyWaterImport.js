@@ -42,10 +42,18 @@ const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 // Manual name → account-number overrides (fill to pin ambiguous/no-match names).
 const NAME_TO_PN = {};
 
-let DATA = null;
-function loadData() {
-  if (!DATA) DATA = JSON.parse(fs.readFileSync(path.join(__dirname, "../data/legacyWater_loocSur.json"), "utf8"));
-  return DATA;
+// Available legacy water ledgers (Excel files parsed into JSON).
+const LEDGERS = {
+  loocSur: { file: "legacyWater_loocSur.json", label: "Looc Sur" },
+  owakProper: { file: "legacyWater_owakProper.json", label: "Owak Proper" },
+};
+export const LEGACY_WATER_AREAS = Object.entries(LEDGERS).map(([key, v]) => ({ key, label: v.label }));
+
+const DATA = {};
+function loadData(area) {
+  const led = LEDGERS[area] || LEDGERS.loocSur;
+  if (!DATA[led.file]) DATA[led.file] = JSON.parse(fs.readFileSync(path.join(__dirname, "../data/", led.file), "utf8"));
+  return DATA[led.file];
 }
 
 export function parseLedgerName(raw) {
@@ -172,13 +180,13 @@ async function postCbuCredit(member, amount) {
  * @param includeUnmatched  also create accounts / add meters for none/ambiguous
  * @param limit          cap accounts processed (testing)
  */
-export async function importLegacyWater({ dry = true, includeUnmatched = false, limit = 0, onProgress = null } = {}) {
-  const data = loadData();
+export async function importLegacyWater({ area = "loocSur", dry = true, includeUnmatched = false, limit = 0, onProgress = null } = {}) {
+  const data = loadData(area);
   const settings = (await WaterSettings.findOne()) || { tariffs: {}, seniorDiscount: {}, dueDayOfMonth: 17 };
   const dueDay = settings.dueDayOfMonth || 17;
 
   const r = {
-    dry, source: data.source, accounts: data.accounts.length,
+    dry, area: data.area, source: data.source, accounts: data.accounts.length,
     matched: 0, ambiguous: 0, created: 0, metersAdded: 0,
     billsInserted: 0, paymentsInserted: 0, billsSkipped: 0, cbuCredits: 0,
     deferred: 0,

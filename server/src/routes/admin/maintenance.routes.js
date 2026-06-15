@@ -20,7 +20,7 @@ import { regenLoanAmortization } from "../../scripts/regenLoanAmortization.js";
 import { rebuildLoanCharges } from "../../scripts/rebuildLoanCharges.js";
 import { importLegacyLoans, LEGACY_LOAN_BATCHES } from "../../utils/legacyLoanImport.js";
 import { recomputeWaterBills } from "../../scripts/recomputeWaterBills.js";
-import { importLegacyWater } from "../../utils/legacyWaterImport.js";
+import { importLegacyWater, LEGACY_WATER_AREAS } from "../../utils/legacyWaterImport.js";
 import { emitJobProgress } from "../../realtime.js";
 
 const router = express.Router();
@@ -102,8 +102,10 @@ router.post("/recompute-water-bills", guard, async (req, res) => {
 // per-account paid/unpaid + outstanding vs the ledger receivable
 // (reconcile flags), so the admin verifies on prod before applying.
 // Idempotent: existing (pnNo, periodKey, meterNumber) bills are skipped.
+router.get("/legacy-water/areas", guard, (req, res) => res.json(LEGACY_WATER_AREAS));
+
 router.post("/import-legacy-water", guard, async (req, res) => {
-  const { confirm, dry = true, limit = 0, includeUnmatched = false, jobId = "" } = req.body || {};
+  const { confirm, area = "loocSur", dry = true, limit = 0, includeUnmatched = false, jobId = "" } = req.body || {};
   if (confirm !== "IMPORT LEGACY WATER") {
     return res.status(400).json({ error: 'Pass { confirm: "IMPORT LEGACY WATER" } to proceed.' });
   }
@@ -117,7 +119,7 @@ router.post("/import-legacy-water", guard, async (req, res) => {
         emitJobProgress(jobId, { processed, total, pct: Math.round((processed / total) * 100) });
       }
     } : null;
-    const summary = await importLegacyWater({ dry: Boolean(dry), includeUnmatched: Boolean(includeUnmatched), limit: Number(limit) || 0, onProgress });
+    const summary = await importLegacyWater({ area: String(area || "loocSur"), dry: Boolean(dry), includeUnmatched: Boolean(includeUnmatched), limit: Number(limit) || 0, onProgress });
     res.json(summary);
   } catch (e) {
     res.status(500).json({ error: e.message });

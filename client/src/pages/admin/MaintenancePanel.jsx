@@ -257,6 +257,9 @@ function LegacyWaterImportCard() {
   const [mode, setMode] = useState("");     // "Dry run" | "Apply" — for the loading label
   const [elapsed, setElapsed] = useState(0);
   const [progress, setProgress] = useState(null); // { processed, total, pct } via socket
+  const [area, setArea] = useState("loocSur");
+  const [areas, setAreas] = useState([{ key: "loocSur", label: "Looc Sur" }, { key: "owakProper", label: "Owak Proper" }]);
+  useEffect(() => { apiFetch("/admin/maintenance/legacy-water/areas", { token }).then((a) => Array.isArray(a) && a.length && setAreas(a)).catch(() => {}); }, [token]);
 
   // Live elapsed-seconds counter while a request is in flight (the import
   // loops over 362 accounts, so the operator sees it's working).
@@ -282,7 +285,7 @@ function LegacyWaterImportCard() {
     if (s) { s.emit("joinJob", jobId); s.on("job:progress", onProg); }
     try {
       const res = await apiFetch("/admin/maintenance/import-legacy-water", {
-        method: "POST", token, body: { confirm: "IMPORT LEGACY WATER", dry, includeUnmatched: edge, jobId },
+        method: "POST", token, body: { confirm: "IMPORT LEGACY WATER", area, dry, includeUnmatched: edge, jobId },
       });
       setResult(res);
       toast.success(dry
@@ -321,6 +324,14 @@ function LegacyWaterImportCard() {
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-3">
+        <label className="text-sm font-semibold text-slate-700">Area / ledger</label>
+        <select value={area} onChange={(e) => { setArea(e.target.value); setResult(null); }} disabled={working}
+          className="rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white">
+          {areas.map((a) => <option key={a.key} value={a.key}>{a.label}</option>)}
+        </select>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-3">
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={edge} onChange={(e) => setEdge(e.target.checked)} />
           <span>Handle new accounts + ambiguous meters + CBU credits</span>
