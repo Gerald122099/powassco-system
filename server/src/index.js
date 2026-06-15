@@ -53,6 +53,7 @@ import { auditLogger } from "./middleware/auditLogger.js";
 import { ensureBootstrapAdmin } from "./utils/ensureAdmin.js";
 import { startSavingsInterestJob } from "./jobs/savingsInterest.js";
 import { startBillReminderJob } from "./jobs/billReminders.js";
+import { initRealtime, startChangeStream } from "./realtime.js";
 
 dotenv.config();
 
@@ -215,9 +216,14 @@ const PORT = process.env.PORT || 5000;
 // Start listening IMMEDIATELY so the platform can route traffic and /api/health
 // responds even while the database is still connecting or unreachable. A DB
 // outage must not take the whole HTTP server down.
-app.listen(PORT, "0.0.0.0", () => {
+const httpServer = app.listen(PORT, "0.0.0.0", () => {
   console.log(`✅ Server running on port ${PORT}`);
 });
+
+// Real-time layer (Socket.IO). Reuses the same CORS allowlist + Vercel
+// preview matcher as the REST API. The change stream is started after
+// Mongo connects (below).
+initRealtime(httpServer, { allowedOrigins, isPreview: isPowasscoVercelPreview });
 
 // Connect to MongoDB independently, with retry.
 async function connectDB() {
@@ -239,6 +245,8 @@ async function connectDB() {
     // Hourly tick that runs the water-bill reminder pass once a day at
     // the configured local hour. Idempotent per (bill, day) via ReminderLog.
     startBillReminderJob();
+    // Real-time: watch the DB for changes and ping subscribed clients.
+    startChangeStream(mongoose.connection);
   } catch (err) {
     console.error("❌ MongoDB connection failed; retrying in 5s:", err.message);
     setTimeout(connectDB, 5000);

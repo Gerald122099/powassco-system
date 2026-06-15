@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Card from "../../components/Card";
 import { apiFetch } from "../../lib/api";
+import { useRealtime } from "../../lib/realtime";
 import { useAuth } from "../../context/AuthContext";
 import { Receipt, RefreshCw, Filter, Search } from "lucide-react";
 
@@ -30,6 +31,8 @@ export default function TransactionsPanel() {
   }, [moduleFilter, from, to, token]);
 
   useEffect(() => { load(); }, [load]);
+  // Live: a new payment anywhere refreshes the transaction feed.
+  useRealtime(["payments"], load);
 
   return (
     <Card>

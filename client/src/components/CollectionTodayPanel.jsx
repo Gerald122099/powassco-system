@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Card from "./Card";
 import { apiFetch } from "../lib/api";
+import { useRealtime } from "../lib/realtime";
 import { useAuth } from "../context/AuthContext";
 import { Banknote, CreditCard, RefreshCw, ReceiptText, Printer, Filter, ArrowDownUp } from "lucide-react";
 
@@ -32,6 +33,8 @@ export default function CollectionTodayPanel({ module = "all", defaultMine = fal
   }, [date, module, mine, token]);
 
   useEffect(() => { load(); }, [load]);
+  // Live: refresh the moment any payment is posted anywhere in the system.
+  useRealtime(["payments"], load);
 
   function printReport() {
     if (!data) return;
