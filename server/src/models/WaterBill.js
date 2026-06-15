@@ -79,6 +79,11 @@ const WaterBillSchema = new mongoose.Schema(
     discount: { type: Number, default: 0 },
     discountReason: { type: String, default: "" },
     tariffUsed: { type: Object, default: null },
+    // Full tariff context this bill was PRICED with — { tariffs: { <class>: [...tiers] }, seniorDiscount }.
+    // A later Water Settings tariff change never re-prices this bill: any
+    // recompute (e.g. a reading correction) reuses this snapshot, so old
+    // bills stay on the old tariff and only NEW bills use the new one.
+    tariffSnapshot: { type: Object, default: null },
 
     penaltyTypeUsed: { type: String, default: "flat" },
     penaltyValueUsed: { type: Number, default: 0 },

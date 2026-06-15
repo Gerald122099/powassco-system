@@ -40,6 +40,7 @@ export async function upsertWaterBill({
   remarks = "",
   createdBy = "",
   forceUpdate = false, // Add this parameter
+  reTariff = false,    // maintenance-only: re-price an existing bill with the CURRENT tariff
 }) {
   if (!member) throw new Error("Member is required");
   if (!periodCovered) throw new Error("periodCovered is required");
@@ -65,15 +66,20 @@ export async function upsertWaterBill({
   const rawConsumed = Math.max(0, pres - prev);
   const consumed = rawConsumed * mult;
 
-  const computation = await calculateWaterBill(consumed, classification, member, meterNo);
-
   const dueDate = calculateDueDate(periodCovered, settings);
-
   const filter = { pnNo: member.pnNo, periodKey: periodCovered, meterNumber: meterNo };
 
-  // Check existing bill
+  // Look at the existing bill FIRST: its tariff snapshot (if any) is what
+  // prices it, so a later Water Settings tariff change never re-prices an
+  // already-computed bill. Only a NEW bill (or an explicit reTariff) uses
+  // the current tariff.
   const existing = await WaterBill.findOne(filter);
-  
+  const tariffCtx = (existing && existing.tariffSnapshot && !reTariff)
+    ? existing.tariffSnapshot
+    : { tariffs: settings.tariffs, seniorDiscount: settings.seniorDiscount };
+
+  const computation = await calculateWaterBill(consumed, classification, member, meterNo, tariffCtx);
+
   // If bill is paid and not forcing update, don't change it
   if (existing && existing.status === "paid" && !forceUpdate) {
     return { bill: existing, computation, consumed, breakdown: existing.meterReadings || [] };
@@ -127,6 +133,7 @@ export async function upsertWaterBill({
     discount: toMoney(computation.discount),
     discountReason: computation.discountReason || "",
     tariffUsed: computation.tariffUsed || null,
+    tariffSnapshot: tariffCtx, // the tariff this bill is priced with (immutable to later changes)
 
     penaltyTypeUsed: settings.penaltyType || "flat",
     penaltyValueUsed: settings.penaltyValue || 0,
@@ -192,7 +199,7 @@ export async function upsertWaterBillsBulk(items) {
     pnNo: { $in: pnNosForFetch },
     periodKey: { $in: periodsForFetch },
   })
-    .select("pnNo periodKey meterNumber status")
+    .select("pnNo periodKey meterNumber status tariffSnapshot")
     .lean();
   const existingByKey = new Map();
   for (const b of existingBills) {
@@ -206,7 +213,7 @@ export async function upsertWaterBillsBulk(items) {
 
   for (const it of items) {
     try {
-      const { member, periodCovered, meterReading, readingDate, readerId, remarks, createdBy, forceUpdate } = it;
+      const { member, periodCovered, meterReading, readingDate, readerId, remarks, createdBy, forceUpdate, reTariff } = it;
       const meterNo = String(meterReading.meterNumber || "").toUpperCase().trim();
       const prev = Number(meterReading.previousReading ?? 0);
       const pres = Number(meterReading.presentReading ?? 0);
@@ -229,7 +236,11 @@ export async function upsertWaterBillsBulk(items) {
       const rawConsumed = Math.max(0, pres - prev);
       const consumed = rawConsumed * mult;
       const classification = member.billing?.classification || "residential";
-      const computation = await calculateWaterBill(consumed, classification, member, meterNo);
+      // Existing bill keeps its tariff snapshot; new bills use current tariff.
+      const tariffCtx = (existing && existing.tariffSnapshot && !reTariff)
+        ? existing.tariffSnapshot
+        : { tariffs: settings.tariffs, seniorDiscount: settings.seniorDiscount };
+      const computation = await calculateWaterBill(consumed, classification, member, meterNo, tariffCtx);
       const dueDate = calculateDueDate(periodCovered, settings);
 
       const meterDoc = (member.meters || []).find(
@@ -266,6 +277,7 @@ export async function upsertWaterBillsBulk(items) {
         discount: toMoney(computation.discount),
         discountReason: computation.discountReason || "",
         tariffUsed: computation.tariffUsed || null,
+        tariffSnapshot: tariffCtx, // immutable pricing context for this bill
         penaltyTypeUsed: settings.penaltyType || "flat",
         penaltyValueUsed: settings.penaltyValue || 0,
         dueDayUsed: settings.dueDayOfMonth || 15,
