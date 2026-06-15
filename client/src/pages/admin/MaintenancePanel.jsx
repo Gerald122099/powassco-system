@@ -252,20 +252,21 @@ function LegacyWaterImportCard() {
   const { token } = useAuth();
   const [result, setResult] = useState(null);
   const [working, setWorking] = useState(false);
+  const [edge, setEdge] = useState(false); // also create no-match accounts + add ambiguous meters
 
   async function call(dry) {
     if (!dry && !window.confirm(
-      `Insert legacy water bills + payments for ${result?.matched || 0} matched account(s). Unmatched names are skipped. Re-running is safe (existing bills are not duplicated). Proceed?`
+      `Insert legacy water bills + payments${edge ? ", create new accounts, add meters, and post CBU credits" : ""}. Re-running is safe (nothing duplicated). Proceed?`
     )) return;
     setWorking(true);
     try {
       const res = await apiFetch("/admin/maintenance/import-legacy-water", {
-        method: "POST", token, body: { confirm: "IMPORT LEGACY WATER", dry },
+        method: "POST", token, body: { confirm: "IMPORT LEGACY WATER", dry, includeUnmatched: edge },
       });
       setResult(res);
       toast.success(dry
-        ? `Dry run: ${res.matched}/${res.accounts} matched, ${res.unmatched.length} unmatched, ${res.reconcileFlags.length} to review.`
-        : `Inserted ${res.billsInserted} bill(s) + ${res.paymentsInserted} payment(s).`);
+        ? `Dry run: ${res.matched} matched, ${res.ambiguous} ambiguous, ${res.unmatched.length} to handle.`
+        : `Inserted ${res.billsInserted} bills + ${res.paymentsInserted} payments, created ${res.created}, +${res.cbuCredits} CBU.`);
     } catch (e) {
       toast.error(e.message);
     } finally {
@@ -281,32 +282,36 @@ function LegacyWaterImportCard() {
         <FileSpreadsheet size={20} className="text-emerald-600" /> Maintenance — Import Legacy Water Bills (LoocSur)
       </div>
       <div className="mt-0.5 text-sm text-slate-600">
-        Imports the LoocSur ledger (Jan–May 2026 readings, bills, and payments) into existing accounts,
-        matched by name. Each account gets an opening-balance bill (Dec 2025) + monthly bills using the
-        ledger's recorded amounts; paid bills get their OR# + date, unpaid bills become the current dues.
-        Tariff is stamped per period (₱74 ≤ Mar, ₱135 ≥ Apr).
+        Imports the LoocSur ledger (Jan–May 2026) into accounts matched by name: an opening-balance bill
+        (Dec 2025) + monthly bills using the ledger's recorded amounts; paid bills get their OR# + date,
+        unpaid become current dues, each reconciled to the ledger receivable. Tariff stamped per period
+        (₱74 ≤ Mar, ₱135 ≥ Apr).
       </div>
 
       <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900 flex items-start gap-2">
         <AlertCircle size={16} className="mt-0.5 shrink-0" />
         <div>
-          <b>Always dry-run first.</b> The dry run shows which names matched, the meter assigned, and each
-          account's computed outstanding vs the ledger receivable (mismatches are flagged for review).
-          Unmatched names need a name→account override before they import. Only <b>Apply</b> writes;
-          re-running never duplicates.
+          <b>Always dry-run first.</b> Without the edge-case toggle, only cleanly-matched accounts import.
+          Turn on <b>"Handle new accounts + ambiguous meters"</b> to also CREATE accounts for unmatched
+          names (auto #/meter), ADD the ledger meter to ambiguous accounts (first candidate — verify it!),
+          and post overpayment CREDITS to CBU. Idempotent; only <b>Apply</b> writes.
         </div>
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-3">
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={edge} onChange={(e) => setEdge(e.target.checked)} />
+          <span>Handle new accounts + ambiguous meters + CBU credits</span>
+        </label>
         <div className="flex-1" />
         <button onClick={() => call(true)} disabled={working}
           className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50">
           <Play size={14} /> Dry run
         </button>
-        <button onClick={() => call(false)} disabled={working || !result || result.matched === 0}
+        <button onClick={() => call(false)} disabled={working || !result}
           className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
           title={!result ? "Dry-run first" : ""}>
-          <CheckCircle2 size={14} /> Apply ({result?.matched || 0})
+          <CheckCircle2 size={14} /> Apply
         </button>
       </div>
 
@@ -314,58 +319,58 @@ function LegacyWaterImportCard() {
         <div className="mt-4 space-y-3">
           <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-700">
             {isDry ? "Dry run" : "Applied"} — accounts <b>{result.accounts}</b>, matched <b>{result.matched}</b>,
-            unmatched <b className={result.unmatched.length ? "text-red-600" : ""}>{result.unmatched.length}</b>,
-            to review <b className={result.reconcileFlags.length ? "text-amber-700" : ""}>{result.reconcileFlags.length}</b>
-            {!isDry && <>, inserted <b>{result.billsInserted}</b> bills + <b>{result.paymentsInserted}</b> payments (existing skipped {result.billsSkipped}, flagged deferred {result.deferredOnApply})</>}
+            ambiguous <b className={result.ambiguous ? "text-amber-700" : ""}>{result.ambiguous}</b>,
+            create/created <b>{result.created}</b>, meters added <b>{result.metersAdded}</b>,
+            CBU credits <b>{result.cbuCredits}</b>, unmatched <b className={result.unmatched.length ? "text-red-600" : ""}>{result.unmatched.length}</b>
+            {!isDry && <>, inserted <b>{result.billsInserted}</b> bills + <b>{result.paymentsInserted}</b> payments (existing skipped {result.billsSkipped})</>}
           </div>
 
-          {/* sample matched */}
           {result.sample?.length > 0 && (
             <div className="overflow-x-auto rounded-xl border border-slate-200">
               <table className="w-full text-xs">
                 <thead className="bg-white text-left text-slate-500">
-                  <tr><th className="px-3 py-2">Ledger name</th><th className="px-3 py-2">Account</th><th className="px-3 py-2">Meter</th><th className="px-3 py-2 text-right">Bills</th><th className="px-3 py-2 text-right">Paid/Unpaid</th><th className="px-3 py-2 text-right">Outstanding</th><th className="px-3 py-2 text-right">Ledger</th><th className="px-3 py-2">OK</th></tr>
+                  <tr><th className="px-3 py-2">Ledger name</th><th className="px-3 py-2">Account</th><th className="px-3 py-2">Meter</th><th className="px-3 py-2">Type</th><th className="px-3 py-2 text-right">Paid/Unpaid</th><th className="px-3 py-2 text-right">Outstanding</th><th className="px-3 py-2 text-right">Ledger</th><th className="px-3 py-2 text-right">CBU</th><th className="px-3 py-2">OK</th></tr>
                 </thead>
                 <tbody>
                   {result.sample.map((s, i) => (
                     <tr key={i} className="border-t border-slate-100">
                       <td className="px-3 py-1.5">{s.name}</td>
                       <td className="px-3 py-1.5"><span className="font-mono">{s.pnNo}</span> <span className="text-slate-400">{s.accountName}</span></td>
-                      <td className="px-3 py-1.5 font-mono">{s.meter}</td>
-                      <td className="px-3 py-1.5 text-right">{s.bills}</td>
+                      <td className="px-3 py-1.5 font-mono">{s.meter}{s.meterAdded ? <span className="text-emerald-600"> +new</span> : ""}</td>
+                      <td className="px-3 py-1.5">{s.createdNow ? <span className="text-emerald-600 font-semibold">created</span> : s.kind === "ambiguous" ? <span className="text-amber-600">ambig</span> : s.classification}</td>
                       <td className="px-3 py-1.5 text-right">{s.paid}/{s.unpaid}</td>
                       <td className="px-3 py-1.5 text-right font-mono">{peso2(s.outstanding)}</td>
-                      <td className="px-3 py-1.5 text-right font-mono text-slate-500">{peso2(s.sheetReceivable)}</td>
+                      <td className="px-3 py-1.5 text-right font-mono text-slate-500">{peso2(s.ledger)}</td>
+                      <td className="px-3 py-1.5 text-right font-mono">{s.cbuCredit ? peso2(s.cbuCredit) : "—"}</td>
                       <td className="px-3 py-1.5">{s.reconciles ? "✅" : <span className="text-amber-600">⚠️</span>}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-              <div className="px-3 py-1.5 text-[11px] text-slate-400">Showing first {result.sample.length} matched accounts.</div>
+              <div className="px-3 py-1.5 text-[11px] text-slate-400">Showing first {result.sample.length} accounts.</div>
             </div>
           )}
 
-          {/* reconcile flags */}
-          {result.reconcileFlags?.length > 0 && (
-            <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-2">
-              <div className="px-2 py-1 text-xs font-bold text-amber-800">To review — computed outstanding ≠ ledger receivable ({result.reconcileFlags.length})</div>
+          {result.reconciled?.length > 0 && (
+            <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-2">
+              <div className="px-2 py-1 text-xs font-bold text-blue-800">Overpayment credits → CBU ({result.reconciled.length})</div>
               <div className="max-h-40 overflow-auto text-xs">
-                {result.reconcileFlags.map((f, i) => (
-                  <div key={i} className="px-2 py-1 font-mono">{f.name} ({f.pnNo}): computed {peso2(f.computed)} vs ledger {peso2(f.sheet)} (Δ {peso2(f.diff)})</div>
+                {result.reconciled.map((f, i) => (
+                  <div key={i} className="px-2 py-1 font-mono">{f.name} ({f.pnNo}): +{peso2(f.amount)} to CBU</div>
                 ))}
               </div>
             </div>
           )}
 
-          {/* unmatched */}
           {result.unmatched?.length > 0 && (
             <div className="rounded-xl border border-red-200 bg-red-50/60 p-2">
-              <div className="px-2 py-1 text-xs font-bold text-red-700">Unmatched names — need a name→account override ({result.unmatched.length})</div>
-              <div className="max-h-40 overflow-auto text-xs">
+              <div className="px-2 py-1 text-xs font-bold text-red-700">To handle ({result.unmatched.length}) — turn on the toggle to create/add, or add a name→account override</div>
+              <div className="max-h-44 overflow-auto text-xs">
                 {result.unmatched.map((u, i) => (
                   <div key={i} className="px-2 py-1">
                     <span className="font-semibold">{u.name}</span> <span className="text-slate-400">→ {u.target}</span>{" "}
                     <span className={u.reason === "ambiguous" ? "text-amber-700" : "text-red-600"}>[{u.reason}]</span>
+                    {u.action && <span className="text-emerald-700"> — {u.action}</span>}
                     {u.candidates?.length > 0 && <span className="text-slate-500"> candidates: {u.candidates.map((c) => `${c.accountName} (${c.pnNo})`).join("; ")}</span>}
                   </div>
                 ))}

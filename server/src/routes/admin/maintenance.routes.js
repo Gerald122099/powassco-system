@@ -102,12 +102,12 @@ router.post("/recompute-water-bills", guard, async (req, res) => {
 // (reconcile flags), so the admin verifies on prod before applying.
 // Idempotent: existing (pnNo, periodKey, meterNumber) bills are skipped.
 router.post("/import-legacy-water", guard, async (req, res) => {
-  const { confirm, dry = true, limit = 0 } = req.body || {};
+  const { confirm, dry = true, limit = 0, includeUnmatched = false } = req.body || {};
   if (confirm !== "IMPORT LEGACY WATER") {
     return res.status(400).json({ error: 'Pass { confirm: "IMPORT LEGACY WATER" } to proceed.' });
   }
   try {
-    const summary = await importLegacyWater({ dry: Boolean(dry), limit: Number(limit) || 0 });
+    const summary = await importLegacyWater({ dry: Boolean(dry), includeUnmatched: Boolean(includeUnmatched), limit: Number(limit) || 0 });
     res.json(summary);
   } catch (e) {
     res.status(500).json({ error: e.message });
