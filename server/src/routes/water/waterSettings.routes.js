@@ -156,6 +156,8 @@ router.put("/", ...adminGuard, async (req, res) => {
       tappingFee,
       dueDayOfMonth,
       graceDays,
+      collectionDayOfMonth,
+      billReminders,
       readingStartDayOfMonth,
       readingWindowDays,
       tariffs,
@@ -187,6 +189,23 @@ router.put("/", ...adminGuard, async (req, res) => {
 
     if (graceDays !== undefined)
       settings.graceDays = Math.min(60, Math.max(0, Number(graceDays)));
+
+    if (collectionDayOfMonth !== undefined)
+      settings.collectionDayOfMonth = Math.min(31, Math.max(1, Number(collectionDayOfMonth) || 17));
+
+    // Bill-reminder config — partial merge so the panel can send only the
+    // fields it edits without wiping the others.
+    if (billReminders && typeof billReminders === "object") {
+      const cur = settings.billReminders || {};
+      const br = billReminders;
+      settings.billReminders = {
+        enabled: br.enabled !== undefined ? Boolean(br.enabled) : cur.enabled !== false,
+        sendHour: br.sendHour !== undefined ? Math.min(23, Math.max(0, Number(br.sendHour) || 0)) : (cur.sendHour ?? 8),
+        dueSoonDays: br.dueSoonDays !== undefined ? Math.min(30, Math.max(0, Number(br.dueSoonDays) || 0)) : (cur.dueSoonDays ?? 3),
+        collectionLeadDays: br.collectionLeadDays !== undefined ? Math.min(30, Math.max(0, Number(br.collectionLeadDays) || 0)) : (cur.collectionLeadDays ?? 2),
+        overdueDaily: br.overdueDaily !== undefined ? Boolean(br.overdueDaily) : (cur.overdueDaily !== false),
+      };
+    }
 
     if (readingStartDayOfMonth !== undefined)
       settings.readingStartDayOfMonth = Math.min(31, Math.max(1, Number(readingStartDayOfMonth)));

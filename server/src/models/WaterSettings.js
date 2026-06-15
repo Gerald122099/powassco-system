@@ -57,6 +57,31 @@ const WaterSettingsSchema = new mongoose.Schema(
     dueDayOfMonth: { type: Number, default: 17, min: 1, max: 31 },
     graceDays: { type: Number, default: 0, min: 0, max: 60 },
 
+    // COLLECTION DAY — the coop's scheduled collection date (day of the
+    // month AFTER the billed period). Drives the "collection is coming"
+    // reminders. Separate from dueDayOfMonth on purpose.
+    collectionDayOfMonth: { type: Number, default: 17, min: 1, max: 31 },
+
+    // BILL REMINDER (push) ENGINE — see jobs/billReminders.js.
+    //   • enabled            — master switch
+    //   • sendHour           — local (Asia/Manila) hour the daily pass fires
+    //   • dueSoonDays        — start due-date reminders this many days before due
+    //   • collectionLeadDays — start collection reminders this many days before
+    //   • overdueDaily       — keep nagging daily once overdue (until paid)
+    // The job sends at most ONE reminder per bill per day (most urgent wins)
+    // and never reminds a bill whose meter is disconnected or whose account
+    // is suspended.
+    billReminders: {
+      enabled: { type: Boolean, default: true },
+      sendHour: { type: Number, default: 8, min: 0, max: 23 },
+      dueSoonDays: { type: Number, default: 3, min: 0, max: 30 },
+      collectionLeadDays: { type: Number, default: 2, min: 0, max: 30 },
+      overdueDaily: { type: Boolean, default: true },
+    },
+    // Atomic per-day claim ("YYYY-MM-DD" in Asia/Manila) so the hourly tick
+    // only runs the reminder pass once a day even across server instances.
+    reminderLastRunDate: { type: String, default: "" },
+
     // METER READING SCHEDULE
     readingStartDayOfMonth: { type: Number, default: 1, min: 1, max: 31 },
     readingWindowDays: { type: Number, default: 7, min: 1, max: 31 },

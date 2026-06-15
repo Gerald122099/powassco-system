@@ -90,3 +90,48 @@ export function pushAsync(handle, payload) {
     console.error("push error:", e?.message || e);
   });
 }
+
+// Send ONE payload to every device subscribed to ANY of the given
+// handles, de-duplicated by device — so a phone that saved both the PN
+// and the meter for the same account receives a single push, not two.
+// Used by the bill-reminder job. handles: [{ kind, value }, ...].
+// Returns { ok, sent, removed, devices }.
+export async function pushToHandles(handles, payload) {
+  if (!init()) return { ok: false, reason: "push_disabled", sent: 0 };
+  const clauses = (handles || [])
+    .filter((h) => h && h.kind && h.value)
+    .map((h) => ({ "items.kind": h.kind, "items.value": String(h.value).toUpperCase() }));
+  if (clauses.length === 0) return { ok: true, sent: 0, devices: 0 };
+
+  const subs = await PushSubscription.find({ $or: clauses });
+  // De-dupe by endpoint (a device may match on more than one handle).
+  const seen = new Set();
+  const unique = [];
+  for (const s of subs) {
+    if (seen.has(s.endpoint)) continue;
+    seen.add(s.endpoint);
+    unique.push(s);
+  }
+  if (unique.length === 0) return { ok: true, sent: 0, devices: 0 };
+
+  let sent = 0;
+  let removed = 0;
+  for (const s of unique) {
+    const r = await sendOne(s, payload);
+    if (r.ok) sent += 1;
+    if (r.removed) removed += 1;
+  }
+  return { ok: true, sent, removed, devices: unique.length };
+}
+
+// Count distinct devices subscribed to any of the given handles, without
+// sending anything — used by the reminder job's dry-run preview.
+export async function countDevicesForHandles(handles) {
+  if (!init()) return 0;
+  const clauses = (handles || [])
+    .filter((h) => h && h.kind && h.value)
+    .map((h) => ({ "items.kind": h.kind, "items.value": String(h.value).toUpperCase() }));
+  if (clauses.length === 0) return 0;
+  const subs = await PushSubscription.find({ $or: clauses }).select("endpoint").lean();
+  return new Set(subs.map((s) => s.endpoint)).size;
+}

@@ -45,12 +45,14 @@ import chatRoutes from "./routes/chat.routes.js";
 import treasuryRoutes from "./routes/treasury.routes.js";
 import dataResetRoutes from "./routes/admin/dataReset.routes.js";
 import maintenanceRoutes from "./routes/admin/maintenance.routes.js";
+import remindersRoutes from "./routes/admin/reminders.routes.js";
 import errorsRoutes from "./routes/admin/errors.routes.js";
 import auditReportRoutes from "./routes/auditReport.routes.js";
 
 import { auditLogger } from "./middleware/auditLogger.js";
 import { ensureBootstrapAdmin } from "./utils/ensureAdmin.js";
 import { startSavingsInterestJob } from "./jobs/savingsInterest.js";
+import { startBillReminderJob } from "./jobs/billReminders.js";
 
 dotenv.config();
 
@@ -188,6 +190,7 @@ app.use("/api/chat", chatRoutes);
 app.use("/api/treasury", treasuryRoutes);
 app.use("/api/admin/data-reset", dataResetRoutes);
 app.use("/api/admin/maintenance", maintenanceRoutes);
+app.use("/api/admin/reminders", remindersRoutes);
 app.use("/api/admin/errors", errorsRoutes);
 app.use("/api/audit-report", auditReportRoutes);
 
@@ -228,6 +231,9 @@ async function connectDB() {
     // Hourly savings-interest check; no-op until the admin sets a
     // non-zero rate in Savings Policy. Idempotent per period.
     startSavingsInterestJob();
+    // Hourly tick that runs the water-bill reminder pass once a day at
+    // the configured local hour. Idempotent per (bill, day) via ReminderLog.
+    startBillReminderJob();
   } catch (err) {
     console.error("❌ MongoDB connection failed; retrying in 5s:", err.message);
     setTimeout(connectDB, 5000);

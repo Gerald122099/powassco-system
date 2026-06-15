@@ -3,6 +3,7 @@ import Card from "../../components/Card";
 import { apiFetch } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
 import Swal from "sweetalert2";
+import BillRemindersPanel from "./BillRemindersPanel";
 
 export default function WaterSettingsPanel() {
   const { token } = useAuth();
@@ -422,6 +423,7 @@ export default function WaterSettingsPanel() {
   }, []);
 
   return (
+    <>
     <Card>
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
@@ -1154,5 +1156,11 @@ export default function WaterSettingsPanel() {
         </div>
       )}
     </Card>
+
+    {/* Push-notification reminder schedule + Collection Day */}
+    <div className="mt-4">
+      <BillRemindersPanel />
+    </div>
+    </>
   );
 }
