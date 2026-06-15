@@ -63,12 +63,17 @@ router.get("/legacy-loans/batches", guard, (req, res) => {
 // applying. Idempotent: existing (pnNo, principal, releasedAt-day)
 // loans are skipped.
 router.post("/import-legacy-loans", guard, async (req, res) => {
-  const { confirm, months = [], dry = true } = req.body || {};
+  const { confirm, months = [], dry = true, jobId = "" } = req.body || {};
   if (confirm !== "IMPORT LEGACY LOANS") {
     return res.status(400).json({ error: 'Pass { confirm: "IMPORT LEGACY LOANS" } to proceed.' });
   }
   try {
-    const summary = await importLegacyLoans({ months: Array.isArray(months) ? months : [], dry: Boolean(dry) });
+    let lastEmit = 0;
+    const onProgress = jobId ? (processed, total) => {
+      const now = Date.now();
+      if (processed === total || now - lastEmit >= 200) { lastEmit = now; emitJobProgress(jobId, { processed, total, pct: Math.round((processed / total) * 100) }); }
+    } : null;
+    const summary = await importLegacyLoans({ months: Array.isArray(months) ? months : [], dry: Boolean(dry), onProgress });
     res.json(summary);
   } catch (e) {
     res.status(500).json({ error: e.message });

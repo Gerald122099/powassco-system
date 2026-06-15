@@ -589,12 +589,20 @@ function LegacyLoanImportCard() {
   const [picked, setPicked] = useState({});
   const [result, setResult] = useState(null);
   const [working, setWorking] = useState(false);
+  const [mode, setMode] = useState("");
+  const [elapsed, setElapsed] = useState(0);
+  const [progress, setProgress] = useState(null);
 
   useEffect(() => {
     apiFetch("/admin/maintenance/legacy-loans/batches", { token })
       .then((b) => { setBatches(b); setPicked(Object.fromEntries(Object.keys(b).map((k) => [k, true]))); })
       .catch(() => {});
   }, [token]);
+  useEffect(() => {
+    if (!working) { setElapsed(0); return undefined; }
+    const t = setInterval(() => setElapsed((e) => e + 1), 1000);
+    return () => clearInterval(t);
+  }, [working]);
 
   const months = Object.keys(batches);
   const selected = months.filter((m) => picked[m]);
@@ -602,17 +610,23 @@ function LegacyLoanImportCard() {
   async function run(dry) {
     if (!selected.length) { toast.error("Pick at least one month."); return; }
     if (!dry && !window.confirm(`Insert ${result?.willInsert?.filter((r) => r.status === "would insert").length || "the matched"} loan(s) into THIS environment's database? Idempotent — re-running skips existing.`)) return;
+    setMode(dry ? "Dry run" : "Apply");
+    setProgress(null);
     setWorking(true);
+    const jobId = `legloan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const s = getSocket();
+    const onProg = (msg) => { if (msg?.jobId === jobId) setProgress({ processed: msg.processed, total: msg.total, pct: msg.pct }); };
+    if (s) { s.emit("joinJob", jobId); s.on("job:progress", onProg); }
     try {
       const res = await apiFetch("/admin/maintenance/import-legacy-loans", {
         method: "POST", token,
-        body: { confirm: "IMPORT LEGACY LOANS", months: selected, dry },
+        body: { confirm: "IMPORT LEGACY LOANS", months: selected, dry, jobId },
       });
       setResult(res);
       const ins = res.willInsert.filter((r) => r.status === (dry ? "would insert" : "inserted")).length;
       toast.success(dry ? `Dry run: ${ins} would insert, ${res.skipped} already exist, ${res.failed.length} unmatched.` : `Inserted ${res.inserted}; ${res.skipped} skipped; ${res.failed.length} unmatched.`);
     } catch (e) { toast.error(e.message || e.error || "Import failed."); }
-    finally { setWorking(false); }
+    finally { if (s) { s.off("job:progress", onProg); s.emit("leaveJob", jobId); } setWorking(false); }
   }
 
   const totalRows = selected.reduce((s, m) => s + (batches[m] || 0), 0);
@@ -647,12 +661,31 @@ function LegacyLoanImportCard() {
         ))}
         <div className="flex-1" />
         <button onClick={() => run(true)} disabled={working} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50">
-          <Play size={14} /> Dry run ({totalRows})
+          {working && mode === "Dry run" ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+          {working && mode === "Dry run" ? "Running…" : `Dry run (${totalRows})`}
         </button>
         <button onClick={() => run(false)} disabled={working || !result} className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-5 py-2 text-sm font-bold text-white hover:bg-violet-700 disabled:opacity-50" title={!result ? "Dry-run first" : ""}>
-          <CheckCircle2 size={14} /> Apply
+          {working && mode === "Apply" ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+          {working && mode === "Apply" ? "Applying…" : "Apply"}
         </button>
       </div>
+
+      {working && (
+        <div className="mt-4 rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3">
+          <div className="flex items-center justify-between text-sm font-semibold text-violet-800">
+            <span className="inline-flex items-center gap-2">
+              <Loader2 size={16} className="animate-spin" />
+              {mode === "Apply" ? "Applying" : "Running dry run on"} the selected loan batches…
+            </span>
+            <span className="font-mono text-violet-700">{progress ? `${progress.processed}/${progress.total} · ${progress.pct}%` : `${elapsed}s`}</span>
+          </div>
+          <div className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-violet-100">
+            {progress
+              ? <div className="h-full rounded-full bg-violet-500 transition-all duration-200" style={{ width: `${progress.pct}%` }} />
+              : <div className="h-full w-1/3 animate-pulse rounded-full bg-violet-500" />}
+          </div>
+        </div>
+      )}
 
       {result && (
         <div className="mt-4 space-y-3">

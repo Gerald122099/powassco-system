@@ -287,6 +287,8 @@ const NAME_TO_PN = {
 
 const fold = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "");
 const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const norm = (s) => String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
+const dkey = (dt) => { const d = new Date(dt); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 
 async function resolveMember(last, first) {
   const target = `${last.trim()}, ${first.trim()}`;
@@ -315,35 +317,58 @@ async function resolveMember(last, first) {
 const addMonths = (date, n) => { const d = new Date(date); d.setMonth(d.getMonth() + n); return d; };
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
+// In-memory member index — one DB read, no per-loan name queries.
+function buildLoanIndex(members) {
+  const exact = new Map(), folded = new Map(), byPn = new Map();
+  const add = (m, k, v) => { if (!m.has(k)) m.set(k, []); m.get(k).push(v); };
+  for (const x of members) { byPn.set(x.pnNo, x); add(exact, norm(x.accountName), x); add(folded, norm(fold(x.accountName)), x); }
+  return { exact, folded, byPn, all: members };
+}
+function resolveMemberInIndex(last, first, idx) {
+  const target = `${String(last).trim()}, ${String(first).trim()}`;
+  if (NAME_TO_PN[target]) { const m = idx.byPn.get(NAME_TO_PN[target]); if (m) return { ok: true, member: m }; }
+  let hits = idx.exact.get(norm(target)) || [];
+  if (!hits.length) hits = idx.folded.get(norm(fold(target))) || [];
+  if (!hits.length) { const re = new RegExp(`${esc(String(last).trim())}.*${esc(String(first).trim())}`, "i"); hits = idx.all.filter((m) => re.test(m.accountName)); }
+  if (!hits.length) return { ok: false, reason: "no_match", candidates: [] };
+  if (hits.length > 1) return { ok: false, reason: "ambiguous", candidates: hits.map((h) => ({ pnNo: h.pnNo, accountName: h.accountName })) };
+  return { ok: true, member: hits[0] };
+}
+
 // months: array like ["2026-01","2026-02","2026-03"] (or all if empty).
-export async function importLegacyLoans({ months = [], dry = true } = {}) {
+export async function importLegacyLoans({ months = [], dry = true, onProgress = null } = {}) {
   const keys = months.length ? months : Object.keys(LEGACY_LOAN_BATCHES);
   const settings = (await LoanSettings.findOne()) || {};
   const rate = Number(settings.interestRatePerMonth ?? 2.5);
 
   const result = { months: keys, dry, inserted: 0, skipped: 0, willInsert: [], failed: [] };
 
+  // Pre-load: all members (in-memory matching) + existing legacy loans (idempotency).
+  const idx = buildLoanIndex(await WaterMember.find({}).select("pnNo accountName").lean());
+  const existing = new Map();
+  for (const l of await LoanApplication.find({ createdBy: "import-script" }).select("borrowerPnNo principal releasedAt loanId").lean())
+    existing.set(`${l.borrowerPnNo}|${l.principal}|${dkey(l.releasedAt)}`, l);
+
+  const total = keys.reduce((s, k) => s + (LEGACY_LOAN_BATCHES[k] || []).length, 0);
+  let processed = 0;
   for (const key of keys) {
     const rows = LEGACY_LOAN_BATCHES[key] || [];
     for (const row of rows) {
+      processed++;
+      if (onProgress) { try { onProgress(processed, total); } catch { /* best-effort */ } }
       const name = `${row.last}, ${row.first}`;
       const net = round2(row.principal - row.deduction);
-      const res = await resolveMember(row.last, row.first);
+      const res = resolveMemberInIndex(row.last, row.first, idx);
       if (!res.ok) {
         result.failed.push({ month: key, name, principal: row.principal, deduction: row.deduction, net, reason: res.reason, candidates: res.candidates });
         continue;
       }
       const member = res.member;
       const releasedAt = new Date(`${row.releasedOn}T00:00:00`);
-      const dayStart = new Date(releasedAt);
-      const dayEnd = new Date(releasedAt.getTime() + 86400000);
-      const existing = await LoanApplication.findOne({
-        borrowerPnNo: member.pnNo, principal: row.principal,
-        releasedAt: { $gte: dayStart, $lt: dayEnd },
-      }).select("_id loanId").lean();
-      if (existing) {
+      const existingLoan = existing.get(`${member.pnNo}|${row.principal}|${row.releasedOn}`);
+      if (existingLoan) {
         result.skipped++;
-        result.willInsert.push({ month: key, name, account: member.pnNo, accountName: member.accountName, principal: row.principal, deduction: row.deduction, net, releasedOn: row.releasedOn, status: "already exists", loanId: existing.loanId });
+        result.willInsert.push({ month: key, name, account: member.pnNo, accountName: member.accountName, principal: row.principal, deduction: row.deduction, net, releasedOn: row.releasedOn, status: "already exists", loanId: existingLoan.loanId });
         continue;
       }
 
