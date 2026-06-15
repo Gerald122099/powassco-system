@@ -13,6 +13,7 @@
 import { useEffect, useState } from "react";
 import Card from "./Card";
 import { apiFetch } from "../lib/api";
+import { useRealtime } from "../lib/realtime";
 import { useAuth } from "../context/AuthContext";
 import { toast } from "./Toast";
 import { RefreshCw, AlertTriangle, Power, PlugZap, MapPin, CheckCircle, Wrench } from "lucide-react";
@@ -34,6 +35,7 @@ export default function DisconnectionsPanel() {
   const [err, setErr] = useState("");
   const [tab, setTab] = useState("pending");
 
+  useRealtime(["water-bills", "members"], () => load());
   async function load() {
     setLoading(true);
     setErr("");

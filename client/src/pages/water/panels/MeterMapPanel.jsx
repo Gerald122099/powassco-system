@@ -16,6 +16,7 @@ import "leaflet/dist/leaflet.css";
 import "leaflet.heat";
 import Card from "../../../components/Card";
 import { apiFetch } from "../../../lib/api";
+import { useRealtime } from "../../../lib/realtime";
 import { useAuth } from "../../../context/AuthContext";
 
 // Fix Leaflet's default marker icon paths — Vite bundles assets via
@@ -177,6 +178,8 @@ export default function MeterMapPanel() {
     mapRef.current.flyTo(target, MAP_HOME.zoom, { duration: 0.8 });
   };
 
+  const [rtTick, setRtTick] = useState(0);
+  useRealtime(["readings", "members", "water-bills"], () => setRtTick((t) => t + 1));
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -189,7 +192,7 @@ export default function MeterMapPanel() {
       .catch((e) => !cancelled && setErr(e.message || "Failed to load map"))
       .finally(() => !cancelled && setLoading(false));
     return () => { cancelled = true; };
-  }, [periodKey, token]);
+  }, [periodKey, token, rtTick]);
 
   const counts = useMemo(() => {
     const c = { read: 0, unread: 0, unpaid: 0, overdue: 0, disconnect: 0, senior: 0, total: pins.length };

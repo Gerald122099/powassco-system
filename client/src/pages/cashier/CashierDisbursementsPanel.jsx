@@ -13,6 +13,7 @@ import { useEffect, useState, useCallback } from "react";
 import Card from "../../components/Card";
 import Modal from "../../components/Modal";
 import { apiFetch } from "../../lib/api";
+import { useRealtime } from "../../lib/realtime";
 import { useAuth } from "../../context/AuthContext";
 import { toast } from "../../components/Toast";
 import { Receipt, RefreshCw, CheckCircle2, Clock, AlertCircle } from "lucide-react";
@@ -48,6 +49,7 @@ function LoanDisburseQueue({ token }) {
     } catch {/* ignore */} finally { setBusy(false); }
   }, [token]);
   useEffect(() => { load(); }, [load]);
+  useRealtime(["payments", "expenses", "loans", "payroll"], load);
 
   function openPay(l) {
     setTarget(l); setOrNo(""); setMethod("cash"); setBankAccountId(""); setChequeNumber("");
@@ -200,6 +202,7 @@ function PayrollDisburseQueue({ token }) {
     } catch {/* ignore */}
   }, [token]);
   useEffect(() => { load(); }, [load]);
+  useRealtime(["payments", "expenses", "loans", "payroll"], load);
 
   async function pay(p) {
     const net = Number(p.netPay) || 0;
@@ -327,6 +330,7 @@ function MemberFeeQueue({ token }) {
     } catch {/* ignore */}
   }, [token]);
   useEffect(() => { load(); }, [load]);
+  useRealtime(["payments", "expenses", "loans", "payroll"], load);
 
   async function pay(f) {
     const orNo = prompt("Collect PHP " + Number(f.total).toLocaleString() + " from " + f.accountName + " (membership " + f.membershipFee + " + tapping " + f.tappingFee + "). OR number:", "");
@@ -398,6 +402,7 @@ export default function CashierDisbursementsPanel() {
     }
   }, [token]);
   useEffect(() => { load(); }, [load]);
+  useRealtime(["payments", "expenses", "loans", "payroll"], load);
 
   async function open(row) {
     setTarget(row);

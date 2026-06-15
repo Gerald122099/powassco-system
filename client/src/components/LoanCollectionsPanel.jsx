@@ -6,6 +6,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Card from "./Card";
 import { apiFetch } from "../lib/api";
+import { useRealtime } from "../lib/realtime";
 import { useAuth } from "../context/AuthContext";
 import { Banknote, RefreshCw, Calendar } from "lucide-react";
 
@@ -74,6 +75,7 @@ export default function LoanCollectionsPanel() {
     } catch { /* ignore */ } finally { setBusy(false); }
   }, [token, from, to]);
   useEffect(() => { load(); }, [load]);
+  useRealtime(["payments", "loans"], load);
 
   function pick(k) {
     setPreset(k);

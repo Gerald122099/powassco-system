@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import Card from "../../../components/Card";
 import Modal from "../../../components/Modal";
 import { apiFetch } from "../../../lib/api";
+import { useRealtime } from "../../../lib/realtime";
 import { useAuth } from "../../../context/AuthContext";
 import { printApplication, printDisclosure, printPromissory, printReceipt } from "../../../lib/loanPrint";
 import { Eye, FileText, FileSpreadsheet, ScrollText, CheckCircle2, XCircle, Banknote } from "lucide-react";
@@ -66,6 +67,7 @@ export default function LoansPanel() {
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / PAGE_SIZE)), [total]);
 
+  useRealtime(["loans", "payments"], () => load());
   async function load() {
     setLoading(true);
     setErr("");

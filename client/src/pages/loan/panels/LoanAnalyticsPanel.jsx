@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import Card from "../../../components/Card";
 import CollectionTodayPanel from "../../../components/CollectionTodayPanel";
 import { apiFetch } from "../../../lib/api";
+import { useRealtime } from "../../../lib/realtime";
 import { useAuth } from "../../../context/AuthContext";
 import { RefreshCw, Banknote, TrendingUp, Wallet, AlertCircle, Receipt, PiggyBank } from "lucide-react";
 
@@ -44,6 +45,7 @@ export default function LoanAnalyticsPanel() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
 
+  useRealtime(["loans", "payments"], () => load());
   async function load() {
     setErr("");
     setLoading(true);

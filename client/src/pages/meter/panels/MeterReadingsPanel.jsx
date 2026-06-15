@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense } fro
 import Card from "../../../components/Card";
 import Modal from "../../../components/Modal";
 import { apiFetch } from "../../../lib/api";
+import { useRealtime } from "../../../lib/realtime";
 import { useAuth } from "../../../context/AuthContext";
 import { on, emit } from "../../../lib/events"; // Import event system
 import { parseMeterQR } from "../../../lib/meterQr";
@@ -510,6 +511,7 @@ export default function MeterReadingsPanel() {
     }
   };
     // ---------- load members ----------
+  useRealtime(["readings", "water-bills", "members"], () => loadMembers());
   const loadMembers = async () => {
     setLoading(true);
     try {

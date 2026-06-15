@@ -12,6 +12,7 @@ import Card from "../../../components/Card";
 import Modal from "../../../components/Modal";
 import InvoiceReceipt from "../../../components/InvoiceReceipt";
 import { apiFetch } from "../../../lib/api";
+import { useRealtime } from "../../../lib/realtime";
 import { useAuth } from "../../../context/AuthContext";
 import { on } from "../../../lib/events"; // Import event system
 import { CheckCircle, AlertCircle } from "lucide-react";
@@ -114,6 +115,7 @@ export default function BillsPanel() {
     return options;
   }, []);
 
+  useRealtime(["water-bills", "readings", "payments"], () => load());
   async function load() {
     setLoading(true);
     setErr("");

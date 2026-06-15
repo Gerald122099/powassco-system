@@ -5,6 +5,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Card from "./Card";
 import { apiFetch } from "../lib/api";
+import { useRealtime } from "../lib/realtime";
 import { useAuth } from "../context/AuthContext";
 import { Coins, RefreshCw } from "lucide-react";
 
@@ -33,6 +34,7 @@ export default function PayrollAuditPanel() {
     } catch {/* ignore */} finally { setBusy(false); }
   }, [token, status]);
   useEffect(() => { load(); }, [load]);
+  useRealtime(["payroll"], load);
 
   const total = items.reduce((s, p) => s + (Number(p.netPay) || 0), 0);
 

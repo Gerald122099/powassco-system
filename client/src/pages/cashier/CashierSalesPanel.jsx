@@ -12,6 +12,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import Card from "../../components/Card";
 import Modal from "../../components/Modal";
 import { apiFetch } from "../../lib/api";
+import { useRealtime } from "../../lib/realtime";
 import { useAuth } from "../../context/AuthContext";
 import { toast } from "../../components/Toast";
 import {
@@ -93,6 +94,7 @@ export default function CashierSalesPanel() {
     } catch {/* ignore */} finally { setBusy(false); }
   }, [token]);
   useEffect(() => { load(); }, [load]);
+  useRealtime(["payments"], load);
 
   function resetForm() {
     setMode("member");

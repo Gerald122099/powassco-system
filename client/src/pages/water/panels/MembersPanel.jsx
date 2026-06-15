@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Card from "../../../components/Card";
 import Modal from "../../../components/Modal";
 import { apiFetch } from "../../../lib/api";
+import { useRealtime } from "../../../lib/realtime";
 import { useAuth } from "../../../context/AuthContext";
 import { QrCode } from "lucide-react";
 import MeterQRModal from "../../../components/MeterQRModal";
@@ -254,6 +255,7 @@ export default function MembersPanel() {
     [total]
   );
 
+  useRealtime(["members"], () => load());
   async function load() {
     setLoading(true);
     setErr("");

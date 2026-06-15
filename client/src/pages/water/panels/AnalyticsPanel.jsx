@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import Card from "../../../components/Card";
 import CollectionTodayPanel from "../../../components/CollectionTodayPanel";
 import { apiFetch } from "../../../lib/api";
+import { useRealtime } from "../../../lib/realtime";
 import { useAuth } from "../../../context/AuthContext";
 
 // ✅ Charts (screen only)
@@ -365,6 +366,7 @@ export default function AnalyticsPanel() {
     return `?mode=last12`;
   }, [mode, periodKey, year]);
 
+  useRealtime(["water-bills", "readings", "payments"], () => load());
   async function load() {
     setErr("");
     setLoading(true);

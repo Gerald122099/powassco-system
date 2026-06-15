@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import Card from "./Card";
 import { apiFetch } from "../lib/api";
+import { useRealtime } from "../lib/realtime";
 import { useAuth } from "../context/AuthContext";
 import { RefreshCw, CheckCircle2, XCircle } from "lucide-react";
 
@@ -24,6 +25,7 @@ export default function OnlinePaymentsPanel({ module }) {
 
   const flash = (m) => { setToast(m); setTimeout(() => setToast(""), 2500); };
 
+  useRealtime(["payments"], () => load());
   async function load() {
     setLoading(true);
     setErr("");

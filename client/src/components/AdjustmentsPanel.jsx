@@ -12,6 +12,7 @@ import { useEffect, useState, useCallback } from "react";
 import Card from "./Card";
 import Modal from "./Modal";
 import { apiFetch } from "../lib/api";
+import { useRealtime } from "../lib/realtime";
 import { useAuth } from "../context/AuthContext";
 import { toast } from "./Toast";
 import { Scale, Plus, Check, X, RefreshCw, AlertCircle } from "lucide-react";
@@ -54,6 +55,7 @@ export default function AdjustmentsPanel() {
     }
   }, [token, statusFilter]);
   useEffect(() => { load(); }, [load]);
+  useRealtime(["adjustments"], load);
 
   // Debounced member-name lookup on the request form.
   useEffect(() => {

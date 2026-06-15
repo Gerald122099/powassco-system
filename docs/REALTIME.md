@@ -38,9 +38,14 @@ Available topics: `payments`, `water-bills`, `readings`, `loans`,
 `treasury`, `cbu`, `savings`, `payroll`, `expenses`, `members`, `requests`,
 `adjustments`, `announcements`, `assets`, `meetings`.
 
-Already wired: **Collection (today)** and **Transactions** feeds
-(`payments`). Add `useRealtime(...)` to more panels as needed — the
-infrastructure already broadcasts every topic.
+Already wired across the system (auto-refresh on the relevant topics):
+Collection (today), Transactions, Treasury, Cash Drawer, Loan Approvals,
+Payroll Approvals, Loan Collections, Payroll (audit), Product Analytics,
+Product Loans, Adjustments, Online Payments, Members & CBU, Bookkeeper
+Analytics, Cashier Sales, Cashier Disbursements, Disconnections, and the
+Water (Bills, Members, Analytics, Payments, Meter Map), Loan (Loans,
+Analytics), and Meter Readings panels. Add `useRealtime(...)` to any new
+panel the same way — the infrastructure already broadcasts every topic.
 
 ## Requirements / notes
 - **Replica set required** for change streams — MongoDB Atlas (what we use)

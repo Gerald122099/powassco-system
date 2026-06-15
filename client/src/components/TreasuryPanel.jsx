@@ -12,6 +12,7 @@ import { useEffect, useState, useCallback } from "react";
 import Card from "./Card";
 import Modal from "./Modal";
 import { apiFetch } from "../lib/api";
+import { useRealtime } from "../lib/realtime";
 import { useAuth } from "../context/AuthContext";
 import { toast } from "./Toast";
 import { Landmark, Vault, Plus, Check, X, RefreshCw, ArrowRightLeft, Hash } from "lucide-react";
@@ -82,6 +83,7 @@ export default function TreasuryPanel() {
     } catch (e) { toast.error(e.message); } finally { setBusy(false); }
   }, [token, statusFilter]);
   useEffect(() => { load(); }, [load]);
+  useRealtime(["treasury", "payments"], load);
 
   function nextApprover(r) {
     return TYPES[r.type]?.approvers[(r.approvals || []).length] || null;

@@ -4,6 +4,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Card from "./Card";
 import { apiFetch } from "../lib/api";
+import { useRealtime } from "../lib/realtime";
 import { useAuth } from "../context/AuthContext";
 import { Package, RefreshCw } from "lucide-react";
 
@@ -37,6 +38,7 @@ export default function ProductAnalyticsPanel() {
     catch {/* ignore */} finally { setBusy(false); }
   }, [token]);
   useEffect(() => { load(); }, [load]);
+  useRealtime(["loans", "payments"], load);
 
   const o = data?.overall || {};
   const inv = data?.inventory || {};

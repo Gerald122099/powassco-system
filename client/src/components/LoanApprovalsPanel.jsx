@@ -7,6 +7,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Card from "./Card";
 import { apiFetch } from "../lib/api";
+import { useRealtime } from "../lib/realtime";
 import { useAuth } from "../context/AuthContext";
 import { toast } from "./Toast";
 import { ClipboardCheck, Check, X, RefreshCw } from "lucide-react";
@@ -34,6 +35,7 @@ export default function LoanApprovalsPanel() {
     } catch (e) { toast.error(e.message); } finally { setBusy(false); }
   }, [token, mine.queue]);
   useEffect(() => { load(); }, [load]);
+  useRealtime(["loans"], load);
 
   async function act(l, approve) {
     const note = approve ? "" : prompt("Reason for rejecting:", "");

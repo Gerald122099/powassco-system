@@ -13,6 +13,7 @@ import { useEffect, useState, useCallback } from "react";
 import Card from "../../components/Card";
 import Modal from "../../components/Modal";
 import { apiFetch } from "../../lib/api";
+import { useRealtime } from "../../lib/realtime";
 import { useAuth } from "../../context/AuthContext";
 import { Wallet, Search, RefreshCw, Droplets, Banknote, Package, AlertCircle, Calendar, PiggyBank } from "lucide-react";
 
@@ -141,6 +142,7 @@ export default function MembersCbuPanel() {
     } catch {/* ignore */} finally { setBusy(false); }
   }, [q, from, to, token]);
   useEffect(() => { load(); }, [load]);
+  useRealtime(["members", "cbu", "payments", "water-bills", "loans", "savings"], load);
 
   function pickPreset(k) {
     setPreset(k);

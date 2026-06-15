@@ -6,6 +6,7 @@ import { useEffect, useState, useCallback } from "react";
 import Card from "./Card";
 import Modal from "./Modal";
 import { apiFetch } from "../lib/api";
+import { useRealtime } from "../lib/realtime";
 import { useAuth } from "../context/AuthContext";
 import { toast } from "./Toast";
 import { Coins, Check, X, RefreshCw, Plus } from "lucide-react";
@@ -30,6 +31,7 @@ export default function PayrollApprovalsPanel() {
     } catch (e) { toast.error(e.message); } finally { setBusy(false); }
   }, [token]);
   useEffect(() => { load(); }, [load]);
+  useRealtime(["payroll"], load);
 
   async function act(p, approve) {
     const note = approve ? "" : prompt("Reason for rejecting:", "");

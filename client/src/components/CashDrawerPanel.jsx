@@ -5,6 +5,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Card from "./Card";
 import { apiFetch } from "../lib/api";
+import { useRealtime } from "../lib/realtime";
 import { useAuth } from "../context/AuthContext";
 import { Wallet, RefreshCw, ArrowDownLeft, ArrowUpRight } from "lucide-react";
 
@@ -40,6 +41,7 @@ export default function CashDrawerPanel() {
     const t = setInterval(load, 120000);
     return () => clearInterval(t);
   }, [load]);
+  useRealtime(["payments", "treasury", "expenses", "payroll"], load);
 
   const i = data?.inflows || {};
   const o = data?.outflows || {};

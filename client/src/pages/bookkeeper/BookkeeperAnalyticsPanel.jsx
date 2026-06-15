@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Card from "../../components/Card";
 import { apiFetch } from "../../lib/api";
+import { useRealtime } from "../../lib/realtime";
 import { useAuth } from "../../context/AuthContext";
 import { BarChart3, RefreshCw } from "lucide-react";
 
@@ -23,6 +24,7 @@ export default function BookkeeperAnalyticsPanel() {
     } catch {/* ignore */} finally { setBusy(false); }
   }, [from, to, token]);
   useEffect(() => { load(); }, [load]);
+  useRealtime(["payments", "water-bills", "loans", "treasury"], load);
 
   return (
     <Card>

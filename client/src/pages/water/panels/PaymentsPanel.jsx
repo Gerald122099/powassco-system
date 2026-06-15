@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Card from "../../../components/Card";
 import { apiFetch } from "../../../lib/api";
+import { useRealtime } from "../../../lib/realtime";
 import { useAuth } from "../../../context/AuthContext";
 
 const PAGE_SIZE = 12;
@@ -18,6 +19,7 @@ export default function PaymentsPanel() {
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / PAGE_SIZE)), [total]);
 
+  useRealtime(["payments", "water-bills"], () => load());
   async function load() {
     setLoading(true);
     setErr("");

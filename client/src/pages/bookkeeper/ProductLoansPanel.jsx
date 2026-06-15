@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import Card from "../../components/Card";
 import Modal from "../../components/Modal";
 import { apiFetch } from "../../lib/api";
+import { useRealtime } from "../../lib/realtime";
 import { useAuth } from "../../context/AuthContext";
 import { toast } from "../../components/Toast";
 import { Package, Plus, RefreshCw, Trash2, Edit3, ShoppingBag, CheckCircle, XCircle } from "lucide-react";
@@ -66,6 +67,7 @@ export default function ProductLoansPanel() {
     } catch {/* ignore */} finally { setBusy(false); }
   }, [token]);
   useEffect(() => { load(); }, [load]);
+  useRealtime(["loans", "payments"], load);
 
   // Debounced Account Number lookup — fires whenever the bookkeeper
   // types in the pnNo input of the apply modal. Hits the existing
