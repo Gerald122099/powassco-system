@@ -116,7 +116,7 @@ const NOW_DUE = new Date(Date.UTC(2026, 5, 17)); // 2026-06-17 — unpaid legacy
 /**
  * @returns { dry, accounts, billsInserted, paymentsInserted, matched, unmatched[], reconcileFlags[], summary }
  */
-export async function importLegacyWater({ dry = true, limit = 0 } = {}) {
+export async function importLegacyWater({ dry = true, limit = 0, includeFlagged = false } = {}) {
   const data = loadData();
   const settings = (await WaterSettings.findOne()) || { tariffs: {}, seniorDiscount: {}, dueDayOfMonth: 17 };
   const dueDay = settings.dueDayOfMonth || 17;
@@ -125,6 +125,7 @@ export async function importLegacyWater({ dry = true, limit = 0 } = {}) {
     dry, source: data.source,
     accounts: data.accounts.length,
     matched: 0, billsInserted: 0, paymentsInserted: 0, billsSkipped: 0,
+    deferredOnApply: 0,
     unmatched: [], reconcileFlags: [], sample: [],
   };
 
@@ -189,6 +190,11 @@ export async function importLegacyWater({ dry = true, limit = 0 } = {}) {
     }
 
     if (dry) continue;
+
+    // On APPLY, skip accounts that don't reconcile to the ledger (credits /
+    // adjustments) so we never post a wrong balance. They're handled in a
+    // dedicated pass; pass includeFlagged:true to force them.
+    if (!reconciles && !includeFlagged) { result.deferredOnApply++; continue; }
 
     // ---- WRITE ----
     for (const b of bills) {

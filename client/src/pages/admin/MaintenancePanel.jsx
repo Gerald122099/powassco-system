@@ -316,7 +316,7 @@ function LegacyWaterImportCard() {
             {isDry ? "Dry run" : "Applied"} — accounts <b>{result.accounts}</b>, matched <b>{result.matched}</b>,
             unmatched <b className={result.unmatched.length ? "text-red-600" : ""}>{result.unmatched.length}</b>,
             to review <b className={result.reconcileFlags.length ? "text-amber-700" : ""}>{result.reconcileFlags.length}</b>
-            {!isDry && <>, inserted <b>{result.billsInserted}</b> bills + <b>{result.paymentsInserted}</b> payments (skipped {result.billsSkipped})</>}
+            {!isDry && <>, inserted <b>{result.billsInserted}</b> bills + <b>{result.paymentsInserted}</b> payments (existing skipped {result.billsSkipped}, flagged deferred {result.deferredOnApply})</>}
           </div>
 
           {/* sample matched */}
