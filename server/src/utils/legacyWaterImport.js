@@ -46,6 +46,8 @@ const NAME_TO_PN = {};
 const LEDGERS = {
   loocSur: { file: "legacyWater_loocSur.json", label: "Looc Sur" },
   owakProper: { file: "legacyWater_owakProper.json", label: "Owak Proper" },
+  sanMiguel: { file: "legacyWater_sanMiguel.json", label: "San Miguel" },
+  baybay: { file: "legacyWater_baybay.json", label: "Baybay" },
 };
 export const LEGACY_WATER_AREAS = Object.entries(LEDGERS).map(([key, v]) => ({ key, label: v.label }));
 
