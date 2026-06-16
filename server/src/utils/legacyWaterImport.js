@@ -193,7 +193,7 @@ export async function importLegacyWater({ area = "loocSur", dry = true, includeU
     dry, area: data.area, source: data.source, accounts: data.accounts.length,
     matched: 0, ambiguous: 0, created: 0, metersAdded: 0,
     billsInserted: 0, paymentsInserted: 0, billsSkipped: 0, cbuCredits: 0,
-    unmatched: [], reconciled: [], sample: [],
+    unmatched: [], reconciled: [], disambiguated: [], sample: [],
   };
 
   const billBatch = [];   // { doc, meta } pending insert
@@ -209,7 +209,29 @@ export async function importLegacyWater({ area = "loocSur", dry = true, includeU
     const parsed = parseLedgerName(acct.name);
     const lastReading = [...acct.months].reverse().find((m) => m.present != null)?.present ?? acct.months.find((m) => m.prev != null)?.prev ?? 0;
 
-    const resolved = resolveInIndex(parsed, idx);
+    let resolved = resolveInIndex(parsed, idx);
+    let forcedMeter = null;
+    // Duplicate-name accounts: pick the candidate whose meter's last reading
+    // matches the ledger row's STARTING reading (so the meter lands on the
+    // right account automatically — no manual override needed).
+    if (resolved.status === "ambiguous") {
+      const ledgerPrev = acct.months.find((m) => m.prev != null)?.prev;
+      if (ledgerPrev != null) {
+        let best = null, bestMeter = null, bestDiff = Infinity;
+        for (const cand of resolved.candidates) {
+          const cm = idx.byPn.get(cand.pnNo);
+          for (const mt of (cm?.meters || [])) {
+            const d = Math.abs((Number(mt.lastReading) || 0) - Number(ledgerPrev));
+            if (d < bestDiff) { bestDiff = d; best = cm; bestMeter = mt; }
+          }
+        }
+        if (best && bestMeter && bestDiff <= 5) {
+          resolved = { status: "single", member: best };
+          forcedMeter = String(bestMeter.meterNumber).toUpperCase();
+          r.disambiguated.push({ name: acct.name, pnNo: best.pnNo, meter: forcedMeter, meterReading: bestMeter.lastReading || 0, ledgerPrev, diff: round2(bestDiff) });
+        }
+      }
+    }
     let member = resolved.member || null;
     const kind = resolved.status;
     let createdNow = false, meterAdded = false;
@@ -224,9 +246,15 @@ export async function importLegacyWater({ area = "loocSur", dry = true, includeU
     }
     if (kind === "single") r.matched++;
 
-    const mres = await ensureMeter(member, parsed, lastReading, dry);
-    const meterNumber = mres.meterNumber;
-    if (mres.added && !mres.plan) { meterAdded = true; r.metersAdded++; }
+    let meterNumber, meterAddedFlag = false;
+    if (forcedMeter) {
+      meterNumber = forcedMeter;
+    } else {
+      const mres = await ensureMeter(member, parsed, lastReading, dry);
+      meterNumber = mres.meterNumber;
+      if (mres.added && !mres.plan) { meterAddedFlag = true; r.metersAdded++; }
+    }
+    meterAdded = meterAddedFlag;
     const classification = parsed.commercial ? "commercial" : (member.billing?.classification || "residential");
 
     const bills = [];

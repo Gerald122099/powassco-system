@@ -377,6 +377,7 @@ function LegacyWaterImportCard() {
         <div className="mt-4 space-y-3">
           <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-700">
             {isDry ? "Dry run" : "Applied"} — accounts <b>{result.accounts}</b>, matched <b>{result.matched}</b>,
+            auto-matched by reading <b className={result.disambiguated?.length ? "text-emerald-700" : ""}>{result.disambiguated?.length || 0}</b>,
             ambiguous <b className={result.ambiguous ? "text-amber-700" : ""}>{result.ambiguous}</b>,
             create/created <b>{result.created}</b>, meters added <b>{result.metersAdded}</b>,
             CBU credits <b>{result.cbuCredits}</b>, unmatched <b className={result.unmatched.length ? "text-red-600" : ""}>{result.unmatched.length}</b>
@@ -406,6 +407,21 @@ function LegacyWaterImportCard() {
                 </tbody>
               </table>
               <div className="px-3 py-1.5 text-[11px] text-slate-400">Showing first {result.sample.length} accounts.</div>
+            </div>
+          )}
+
+          {result.disambiguated?.length > 0 && (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-2">
+              <div className="px-2 py-1 text-xs font-bold text-emerald-800">Duplicate names auto-matched by meter reading ({result.disambiguated.length}) — verify</div>
+              <div className="max-h-44 overflow-auto text-xs">
+                {result.disambiguated.map((d, i) => (
+                  <div key={i} className="px-2 py-1">
+                    <span className="font-semibold">{d.name}</span> <span className="text-slate-400">→</span>{" "}
+                    <span className="font-mono">{d.pnNo}</span> meter <span className="font-mono">{d.meter}</span>{" "}
+                    <span className="text-slate-500">(reading {d.meterReading} ≈ ledger {d.ledgerPrev}{d.diff ? `, Δ${d.diff}` : ""})</span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
