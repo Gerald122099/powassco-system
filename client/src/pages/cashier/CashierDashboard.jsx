@@ -22,10 +22,11 @@ import CashierSavingsPanel from "./CashierSavingsPanel";
 import ReportsPanel from "../../components/ReportsPanel";
 import TreasuryPanel from "../../components/TreasuryPanel";
 import CashDrawerPanel from "../../components/CashDrawerPanel";
+import PettyCashPanel from "./PettyCashPanel";
 import { apiFetch } from "../../lib/api";
 import { cashierBadges } from "../../lib/requestBadges";
 import { useAuth } from "../../context/AuthContext";
-import { Droplets, Banknote, ReceiptText, Wallet, CheckCircle, TrendingUp, History, ShoppingBag, FileDown, Receipt, PiggyBank } from "lucide-react";
+import { Droplets, Banknote, ReceiptText, Wallet, CheckCircle, TrendingUp, History, ShoppingBag, FileDown, Receipt, PiggyBank, Coins } from "lucide-react";
 
 const peso = (n) =>
   "₱" + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -176,6 +177,7 @@ export default function CashierDashboard() {
             { key: "savings", label: "Savings", icon: PiggyBank },
             { key: "disbursements", label: "Disbursements", icon: Receipt },
             { key: "drawer", label: "Cash Drawer", icon: Wallet },
+            { key: "pettycash", label: "Petty Cash", icon: Coins },
             { key: "collections", label: "Today's Collection", icon: ReceiptText },
             { key: "history", label: "Transaction History", icon: History },
             { key: "reports", label: "Reports", icon: FileDown },
@@ -211,6 +213,7 @@ export default function CashierDashboard() {
         {view === "savings" && <CashierSavingsPanel />}
         {view === "disbursements" && <CashierDisbursementsPanel />}
         {view === "drawer" && <CashDrawerPanel />}
+        {view === "pettycash" && <PettyCashPanel />}
         {view === "collections" && <CollectionTodayPanel module="all" />}
         {view === "history" && <TransactionsPanel />}
         {view === "reports" && <ReportsPanel />}
