@@ -13,6 +13,7 @@ import LoanCollectionsPanel from "../../components/LoanCollectionsPanel";
 import LoanApprovalsPanel from "../../components/LoanApprovalsPanel";
 import ProductAnalyticsPanel from "../../components/ProductAnalyticsPanel";
 import CashDrawerPanel from "../../components/CashDrawerPanel";
+import PettyCashPanel from "../cashier/PettyCashPanel";
 import PayrollPanel from "../admin/PayrollPanel";
 import { Receipt, Wallet, Package, BarChart3, Coins, FileDown, Scale, Landmark } from "lucide-react";
 
@@ -22,6 +23,7 @@ const items = [
   { key: "adjustments", label: "Adjustments", icon: Scale, desc: "Approve / reject admin-filed CBU + savings balance corrections" },
   { key: "treasury", label: "Treasury", icon: Landmark, desc: "Banks, Cash Vault, transfers — ordered approvals" },
   { key: "drawer", label: "Cash Drawer", icon: Wallet, desc: "Today's drawer inflow / outflow reconciliation" },
+  { key: "pettycash", label: "Petty Cash", icon: Coins, desc: "Imprest fund balance + voucher ledger (view-only)" },
   { key: "loan-approvals", label: "Loan Approvals", icon: Landmark, desc: "Second signature on loans the manager approved" },
   { key: "products", label: "Product Loans", icon: Package, desc: "Catalogue of available products + applications (meter, rice, …)" },
   { key: "product-analytics", label: "Product Analytics", icon: Package, desc: "Capital + profit per product, sale vs loan, paid/unpaid" },
@@ -49,6 +51,7 @@ export default function BookkeeperDashboard() {
       {tab === "adjustments" && <AdjustmentsPanel />}
       {tab === "treasury" && <TreasuryPanel />}
       {tab === "drawer" && <CashDrawerPanel />}
+      {tab === "pettycash" && <PettyCashPanel />}
       {tab === "loan-approvals" && <LoanApprovalsPanel />}
       {tab === "products" && <ProductLoansPanel />}
       {tab === "product-analytics" && <ProductAnalyticsPanel />}

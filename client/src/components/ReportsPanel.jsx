@@ -85,10 +85,15 @@ export default function ReportsPanel({ defaultTitle = "Treasurer's Report — Ca
   const load = useCallback(async () => {
     setBusy(true); setErr("");
     try {
-      const params = new URLSearchParams({ module: moduleFilter });
-      if (from) params.set("from", from);
-      if (to) params.set("to", to);
-      setData(await apiFetch(`/bookkeeper/transactions?${params.toString()}`, { token }));
+      if (moduleFilter === "pettycash") {
+        // Petty cash is a separate ledger; fetch it whole and filter client-side.
+        setData({ _petty: await apiFetch("/petty-cash?limit=1000", { token }) });
+      } else {
+        const params = new URLSearchParams({ module: moduleFilter });
+        if (from) params.set("from", from);
+        if (to) params.set("to", to);
+        setData(await apiFetch(`/bookkeeper/transactions?${params.toString()}`, { token }));
+      }
     } catch (e) { setErr(e.message); } finally { setBusy(false); }
   }, [moduleFilter, from, to, token]);
 
@@ -102,15 +107,42 @@ export default function ReportsPanel({ defaultTitle = "Treasurer's Report — Ca
     }
   }
 
-  // Combined rows for export — water + loan with a "type" marker.
-  const allRows = data
-    ? [
-        ...data.water.map((r) => ({ ...r, _type: "Water" })),
-        ...data.loan.map((r) => ({ ...r, _type: "Loan" })),
-      ].sort((a, b) => new Date(b.paidAt) - new Date(a.paidAt))
-    : [];
+  const isPetty = moduleFilter === "pettycash";
+  const inRange = (dt) => {
+    const d = ymd(new Date(dt));
+    return (!from || d >= from) && (!to || d <= to);
+  };
 
-  const exportColumns = [
+  // Petty cash rows for the chosen range (keeps the true cumulative balance).
+  const pettyRows = data?._petty
+    ? data._petty.transactions.filter((t) => inRange(t.date)).map((t) => ({ ...t, _type: "Petty" }))
+    : [];
+  const pettyIn = pettyRows.filter((r) => r.type === "replenish").reduce((s, r) => s + (r.amount || 0), 0);
+  const pettyOut = pettyRows.filter((r) => r.type === "voucher").reduce((s, r) => s + (r.amount || 0), 0);
+
+  // Combined rows for export — petty cash, or water + loan with a "type" marker.
+  const allRows = isPetty
+    ? pettyRows
+    : (data && !data._petty
+      ? [
+          ...data.water.map((r) => ({ ...r, _type: "Water" })),
+          ...data.loan.map((r) => ({ ...r, _type: "Loan" })),
+        ].sort((a, b) => new Date(b.paidAt) - new Date(a.paidAt))
+      : []);
+
+  const pettyColumns = [
+    { header: "Date", key: "date", format: (v) => dateTime(v) },
+    { header: "Type", key: "type", format: (v) => (v === "replenish" ? "Replenish" : "Voucher") },
+    { header: "Particulars", key: "description", format: (v, r) => v || (r.type === "replenish" ? "Fund replenishment" : "Petty cash voucher") },
+    { header: "Category", key: "category" },
+    { header: "Paid to", key: "payee" },
+    { header: "Ref", key: "reference" },
+    { header: "Cash in", key: "_in", align: "right", format: (_, r) => (r.type === "replenish" ? peso(r.amount) : "") },
+    { header: "Cash out", key: "_out", align: "right", format: (_, r) => (r.type === "voucher" ? peso(r.amount) : "") },
+    { header: "Balance", key: "running", align: "right", format: (v) => peso(v) },
+    { header: "By", key: "recordedBy" },
+  ];
+  const txColumns = [
     { header: "Date / Time", key: "paidAt", format: (v) => dateTime(v) },
     { header: "OR No.", key: "orNo" },
     { header: "Type", key: "_type" },
@@ -122,20 +154,32 @@ export default function ReportsPanel({ defaultTitle = "Treasurer's Report — Ca
     { header: "CBU excess", key: "cbuExcess", align: "right", format: (v) => peso(v) },
     { header: "Cashier", key: "receivedBy" },
   ];
+  const exportColumns = isPetty ? pettyColumns : txColumns;
 
-  const exportTotals = data
-    ? [
-        { label: "Water — transactions", value: data.totals.water.count },
-        { label: "Water — received", value: peso(data.totals.water.amountReceived) },
-        { label: "Loan — transactions", value: data.totals.loan.count },
-        { label: "Loan — received", value: peso(data.totals.loan.amountReceived) },
-        { label: "GRAND total received", value: peso(data.totals.grand.amountReceived) },
-        { label: "GRAND CBU credited", value: peso(data.totals.grand.cbuExcess) },
-      ]
-    : [];
+  const exportTotals = isPetty
+    ? (data?._petty
+      ? [
+          { label: "Replenished (in range)", value: peso(pettyIn) },
+          { label: "Vouchers (in range)", value: peso(pettyOut) },
+          { label: "Net (in range)", value: peso(pettyIn - pettyOut) },
+          { label: "Current fund balance", value: peso(data._petty.balance) },
+        ]
+      : [])
+    : (data && !data._petty
+      ? [
+          { label: "Water — transactions", value: data.totals.water.count },
+          { label: "Water — received", value: peso(data.totals.water.amountReceived) },
+          { label: "Loan — transactions", value: data.totals.loan.count },
+          { label: "Loan — received", value: peso(data.totals.loan.amountReceived) },
+          { label: "GRAND total received", value: peso(data.totals.grand.amountReceived) },
+          { label: "GRAND CBU credited", value: peso(data.totals.grand.cbuExcess) },
+        ]
+      : []);
 
   const periodLabel = PRESETS.find((p) => p.key === preset)?.label || "";
-  const reportTitle = `${defaultTitle}${moduleFilter === "all" ? "" : ` — ${moduleFilter[0].toUpperCase()}${moduleFilter.slice(1)}`}`;
+  const reportTitle = isPetty
+    ? "Petty Cash Report"
+    : `${defaultTitle}${moduleFilter === "all" ? "" : ` — ${moduleFilter[0].toUpperCase()}${moduleFilter.slice(1)}`}`;
   const filenameSuffix = `${from || "all"}_${to || "all"}`.replace(/[^0-9A-Za-z_-]+/g, "_");
 
   function doExportPdf() {
@@ -148,7 +192,7 @@ export default function ReportsPanel({ defaultTitle = "Treasurer's Report — Ca
       columns: exportColumns,
       rows: allRows,
       totals: exportTotals,
-      filename: `Treasurers_Report_${filenameSuffix}.pdf`,
+      filename: `${isPetty ? "Petty_Cash_Report" : "Treasurers_Report"}_${filenameSuffix}.pdf`,
     });
   }
   function doExportCsv() {
@@ -160,7 +204,7 @@ export default function ReportsPanel({ defaultTitle = "Treasurer's Report — Ca
       columns: exportColumns,
       rows: allRows,
       totals: exportTotals,
-      filename: `Treasurers_Report_${filenameSuffix}.csv`,
+      filename: `${isPetty ? "Petty_Cash_Report" : "Treasurers_Report"}_${filenameSuffix}.csv`,
     });
   }
 
@@ -221,14 +265,19 @@ export default function ReportsPanel({ defaultTitle = "Treasurer's Report — Ca
           className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs"
         />
         <div className="inline-flex rounded-xl border border-slate-200 ml-auto">
-          {["all", "water", "loan"].map((m) => (
+          {[
+            { key: "all", label: "ALL" },
+            { key: "water", label: "WATER" },
+            { key: "loan", label: "LOAN" },
+            { key: "pettycash", label: "PETTY CASH" },
+          ].map((m) => (
             <button
-              key={m}
+              key={m.key}
               type="button"
-              onClick={() => setModuleFilter(m)}
-              className={`px-3 py-1.5 text-xs font-semibold ${moduleFilter === m ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-50"}`}
+              onClick={() => setModuleFilter(m.key)}
+              className={`px-3 py-1.5 text-xs font-semibold ${moduleFilter === m.key ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-50"}`}
             >
-              {m.toUpperCase()}
+              {m.label}
             </button>
           ))}
         </div>
@@ -240,12 +289,20 @@ export default function ReportsPanel({ defaultTitle = "Treasurer's Report — Ca
       {err && <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{err}</div>}
 
       {/* Summary tiles */}
-      {data && (
+      {data && !data._petty && (
         <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
           <Stat label="Transactions" value={data.totals.grand.count} />
           <Stat label="Amount due" value={peso(data.totals.grand.amountDue)} />
           <Stat label="Received" value={peso(data.totals.grand.amountReceived)} tone="emerald" />
           <Stat label="CBU credited" value={peso(data.totals.grand.cbuExcess)} tone="blue" />
+        </div>
+      )}
+      {data && data._petty && (
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <Stat label="Replenished (range)" value={peso(pettyIn)} tone="emerald" />
+          <Stat label="Vouchers (range)" value={peso(pettyOut)} tone="blue" />
+          <Stat label="Net (range)" value={peso(pettyIn - pettyOut)} />
+          <Stat label="Fund balance" value={peso(data._petty.balance)} tone="emerald" />
         </div>
       )}
 

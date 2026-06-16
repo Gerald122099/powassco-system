@@ -31,9 +31,10 @@ import PayrollApprovalsPanel from "../../components/PayrollApprovalsPanel";
 import ProductLoansPanel from "../bookkeeper/ProductLoansPanel";
 import ProductAnalyticsPanel from "../../components/ProductAnalyticsPanel";
 import CashDrawerPanel from "../../components/CashDrawerPanel";
+import PettyCashPanel from "../cashier/PettyCashPanel";
 import {
   Wallet, UserCog, FileBarChart, Inbox, CalendarClock, Boxes,
-  MapPin, BarChart3, Banknote, ReceiptText, Megaphone, Landmark,
+  MapPin, BarChart3, Banknote, ReceiptText, Megaphone, Landmark, Coins,
 } from "lucide-react";
 
 const items = [
@@ -55,6 +56,7 @@ const items = [
   { key: "loanperiod", label: "Loan Collections", icon: Banknote, desc: "Capital, interest, paid/unpaid by period" },
   { key: "collections", label: "Overall Collections", icon: ReceiptText, desc: "Combined water + loan daily collection" },
   { key: "drawer", label: "Cash Drawer", icon: Wallet, desc: "Cashier's drawer inflow / outflow reconciliation" },
+  { key: "pettycash", label: "Petty Cash", icon: Coins, desc: "Imprest fund balance + voucher ledger (oversight)" },
   { key: "announcements", label: "Announcements", icon: Megaphone, desc: "Post announcements to the public homepage" },
 ];
 
@@ -89,6 +91,7 @@ export default function ManagerDashboard() {
       {tab === "loanperiod" && <LoanCollectionsPanel />}
       {tab === "collections" && <CollectionTodayPanel module="all" />}
       {tab === "drawer" && <CashDrawerPanel />}
+      {tab === "pettycash" && <PettyCashPanel />}
       {tab === "announcements" && <AnnouncementsPanel />}
     </DashboardLayout>
   );
