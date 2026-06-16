@@ -6,11 +6,14 @@ import { LogOut, Eye, CalendarClock, X, MonitorDown } from "lucide-react";
 import StaffChat from "./StaffChat";
 import IdleLock from "./IdleLock";
 
-// Windows desktop installer. Defaults to the public download path; set
-// VITE_DESKTOP_APP_URL to point at a GitHub Release asset instead (so the
-// big .exe doesn't have to live in the repo).
+// Windows desktop installer. The 98 MB .exe is hosted on a GitHub Release
+// (not in the repo). Default points at the expected release asset; override
+// with VITE_DESKTOP_APP_URL if you host it elsewhere. To make this live:
+// create a release tagged `desktop-v1.0.1` and attach an asset named
+// exactly `POWASSCO-Staff-Setup.exe`.
 const DESKTOP_APP_URL =
-  import.meta.env.VITE_DESKTOP_APP_URL || "/downloads/POWASSCO-Staff-Setup.exe";
+  import.meta.env.VITE_DESKTOP_APP_URL ||
+  "https://github.com/Gerald122099/powassco-system/releases/download/desktop-v1.0.1/POWASSCO-Staff-Setup.exe";
 
 function MeetingBanner() {
   const { token } = useAuth();
@@ -147,7 +150,8 @@ export default function DashboardLayout({
           {/* Download the Windows desktop app (opens to /employee-login). */}
           <a
             href={DESKTOP_APP_URL}
-            download
+            target="_blank"
+            rel="noopener noreferrer"
             title="Download the POWASSCO Staff desktop app (Windows)"
             className="mb-2 flex w-full items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100"
           >

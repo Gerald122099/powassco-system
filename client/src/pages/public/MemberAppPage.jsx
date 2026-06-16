@@ -13,6 +13,7 @@ import {
 import {
   hasMemberPin, setMemberPin, clearMemberPin, lockNow,
 } from "../../lib/memberPin";
+import useApkAvailable from "../../lib/useApkAvailable";
 import {
   Droplets, PiggyBank, Bell, BellOff, ShieldCheck, ShieldOff, ChevronRight, Lock, Download,
 } from "lucide-react";
@@ -24,6 +25,7 @@ function loadSaved() {
 
 function MemberAppInner() {
   const [saved] = useState(loadSaved);
+  const apkReady = useApkAvailable("/downloads/powassco-member.apk");
   const [pushOn, setPushOn] = useState(false);
   const [pushBusy, setPushBusy] = useState(false);
   const [pinOn, setPinOn] = useState(hasMemberPin());
@@ -179,12 +181,14 @@ function MemberAppInner() {
         <div className="mt-4">
           <PublicAppInstallBanner />
         </div>
-        <div className="mt-3 text-center">
-          <a href="/downloads/powassco-member.apk" download
-            className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-700 hover:text-emerald-800">
-            <Download size={15} /> Download the Android app (.apk)
-          </a>
-        </div>
+        {apkReady && (
+          <div className="mt-3 text-center">
+            <a href="/downloads/powassco-member.apk" download
+              className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-700 hover:text-emerald-800">
+              <Download size={15} /> Download the Android app (.apk)
+            </a>
+          </div>
+        )}
       </div>
     </div>
   );

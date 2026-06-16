@@ -12,8 +12,10 @@
 // so it doesn't re-appear on every navigation.
 import { useEffect, useState } from "react";
 import { Download, Smartphone, Apple, Bell, X, Plus, Share2, ChevronRight, CheckCircle } from "lucide-react";
+import useApkAvailable from "../lib/useApkAvailable";
 
 const DISMISS_KEY = "pow_install_banner_dismissed";
+const MEMBER_APK_URL = "/downloads/powassco-member.apk";
 
 function isStandalone() {
   if (typeof window === "undefined") return false;
@@ -30,6 +32,7 @@ export default function PublicAppInstallBanner() {
   const [installed, setInstalled] = useState(isStandalone());
   const [hidden, setHidden] = useState(() => sessionStorage.getItem(DISMISS_KEY) === "1");
   const [showGuide, setShowGuide] = useState(false);
+  const apkReady = useApkAvailable(MEMBER_APK_URL); // false until a real .apk is hosted
 
   useEffect(() => {
     const onPrompt = (e) => { e.preventDefault(); setDeferred(e); };
@@ -99,10 +102,14 @@ export default function PublicAppInstallBanner() {
                 <button onClick={install} className="inline-flex items-center gap-2 rounded-2xl bg-white text-emerald-700 px-5 py-3 text-sm font-extrabold shadow-lg hover:bg-emerald-50 active:scale-95">
                   <Download size={18} /> Install now
                 </button>
-              ) : (
-                <a href="/downloads/powassco-member.apk" download className="inline-flex items-center gap-2 rounded-2xl bg-white text-emerald-700 px-5 py-3 text-sm font-extrabold shadow-lg hover:bg-emerald-50 active:scale-95">
+              ) : apkReady ? (
+                <a href={MEMBER_APK_URL} download className="inline-flex items-center gap-2 rounded-2xl bg-white text-emerald-700 px-5 py-3 text-sm font-extrabold shadow-lg hover:bg-emerald-50 active:scale-95">
                   <Download size={18} /> Download .APK
                 </a>
+              ) : (
+                <button onClick={() => setShowGuide(true)} className="inline-flex items-center gap-2 rounded-2xl bg-white text-emerald-700 px-5 py-3 text-sm font-extrabold shadow-lg hover:bg-emerald-50 active:scale-95">
+                  <Plus size={18} /> Add to Home screen
+                </button>
               )}
               <button onClick={() => setShowGuide((v) => !v)} className="inline-flex items-center gap-2 rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold hover:bg-white/20">
                 How to install <ChevronRight size={16} className={`transition ${showGuide ? "rotate-90" : ""}`} />
@@ -134,7 +141,9 @@ export default function PublicAppInstallBanner() {
               <ol className="mt-2 space-y-1.5 list-decimal pl-5 text-emerald-50">
                 <li>Tap <b>Install now</b> above (one-tap install).</li>
                 <li>Or open this page in <b>Chrome</b>, tap the <b>⋮ menu</b>, then <b>Install app</b> / <b>Add to Home screen</b>.</li>
-                <li>Or download the <b>.APK</b> directly; in <b>Settings → Apps → Special access → Install unknown apps</b>, allow Chrome / Files; then tap the .apk to install.</li>
+                {apkReady && (
+                  <li>Or download the <b>.APK</b> directly; in <b>Settings → Apps → Special access → Install unknown apps</b>, allow Chrome / Files; then tap the .apk to install.</li>
+                )}
                 <li>Open POWASSCO from the home screen — sign in once, save your meter in Bill Inquiry, and your dues will be there on every open.</li>
               </ol>
             </>
