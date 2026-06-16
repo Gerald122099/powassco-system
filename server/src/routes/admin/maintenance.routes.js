@@ -20,7 +20,7 @@ import { regenLoanAmortization } from "../../scripts/regenLoanAmortization.js";
 import { rebuildLoanCharges } from "../../scripts/rebuildLoanCharges.js";
 import { importLegacyLoans, LEGACY_LOAN_BATCHES } from "../../utils/legacyLoanImport.js";
 import { recomputeWaterBills } from "../../scripts/recomputeWaterBills.js";
-import { importLegacyWater, LEGACY_WATER_AREAS } from "../../utils/legacyWaterImport.js";
+import { importLegacyWater, LEGACY_WATER_AREAS, importWaterRoster, WATER_ROSTER_AREAS } from "../../utils/legacyWaterImport.js";
 import { emitJobProgress } from "../../realtime.js";
 
 const router = express.Router();
@@ -125,6 +125,34 @@ router.post("/import-legacy-water", guard, async (req, res) => {
       }
     } : null;
     const summary = await importLegacyWater({ area: String(area || "loocSur"), dry: Boolean(dry), includeUnmatched: Boolean(includeUnmatched), limit: Number(limit) || 0, onProgress });
+    res.json(summary);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Create the water-member ACCOUNTS from the master roster (watermember.xlsx)
+// that aren't in the system yet — no bills/readings, just account + meter(s).
+// Dry-run by default: returns owners / already-exist / would-create counts +
+// a per-owner create list so the admin verifies before applying. Idempotent:
+// created owners resolve as existing on a re-run.
+router.get("/water-roster/areas", guard, (req, res) => res.json(WATER_ROSTER_AREAS));
+
+router.post("/import-water-roster", guard, async (req, res) => {
+  const { confirm, area = "all", dry = true, jobId = "" } = req.body || {};
+  if (confirm !== "IMPORT WATER ROSTER") {
+    return res.status(400).json({ error: 'Pass { confirm: "IMPORT WATER ROSTER" } to proceed.' });
+  }
+  try {
+    let lastEmit = 0;
+    const onProgress = jobId ? (processed, total) => {
+      const now = Date.now();
+      if (processed === total || now - lastEmit >= 200) {
+        lastEmit = now;
+        emitJobProgress(jobId, { processed, total, pct: Math.round((processed / total) * 100) });
+      }
+    } : null;
+    const summary = await importWaterRoster({ area: String(area || "all"), dry: Boolean(dry), onProgress });
     res.json(summary);
   } catch (e) {
     res.status(500).json({ error: e.message });

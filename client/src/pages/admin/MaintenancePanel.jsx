@@ -15,7 +15,7 @@ import { apiFetch } from "../../lib/api";
 import { getSocket } from "../../lib/realtime";
 import { useAuth } from "../../context/AuthContext";
 import { toast } from "../../components/Toast";
-import { Wrench, Play, CheckCircle2, AlertCircle, Receipt, Upload, Droplets, FileSpreadsheet, Loader2 } from "lucide-react";
+import { Wrench, Play, CheckCircle2, AlertCircle, Receipt, Upload, Droplets, FileSpreadsheet, Loader2, UserPlus } from "lucide-react";
 
 const peso = (n) =>
   "₱" + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -241,6 +241,8 @@ export default function MaintenancePanel() {
       <RecomputeWaterBillsCard />
 
       <LegacyWaterImportCard />
+
+      <LegacyRosterImportCard />
     </div>
   );
 }
@@ -457,6 +459,164 @@ function LegacyWaterImportCard() {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// Create the water-member ACCOUNTS from the master roster (watermember.xlsx)
+// that aren't in the system yet — account + meter(s) only, no bills/readings.
+// Dry-run shows owners / already-exist / would-create; Apply creates the
+// missing ones (idempotent — re-running creates nothing new).
+function LegacyRosterImportCard() {
+  const { token } = useAuth();
+  const [result, setResult] = useState(null);
+  const [working, setWorking] = useState(false);
+  const [mode, setMode] = useState("");
+  const [elapsed, setElapsed] = useState(0);
+  const [progress, setProgress] = useState(null);
+  const [area, setArea] = useState("all");
+  const [areas, setAreas] = useState([{ key: "all", label: "All areas" }]);
+  useEffect(() => { apiFetch("/admin/maintenance/water-roster/areas", { token }).then((a) => Array.isArray(a) && a.length && setAreas(a)).catch(() => {}); }, [token]);
+
+  useEffect(() => {
+    if (!working) { setElapsed(0); return undefined; }
+    const t = setInterval(() => setElapsed((e) => e + 1), 1000);
+    return () => clearInterval(t);
+  }, [working]);
+
+  async function call(dry) {
+    if (!dry && !window.confirm(
+      `Create ${result?.toCreate ?? "the"} missing water-member account(s) from the roster (account + meter only, no bills). Re-running is safe (nothing duplicated). Proceed?`
+    )) return;
+    setMode(dry ? "Dry run" : "Apply");
+    setResult(null);
+    setProgress(null);
+    setWorking(true);
+    const jobId = `legroster-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const s = getSocket();
+    const onProg = (msg) => { if (msg?.jobId === jobId) setProgress({ processed: msg.processed, total: msg.total, pct: msg.pct }); };
+    if (s) { s.emit("joinJob", jobId); s.on("job:progress", onProg); }
+    try {
+      const res = await apiFetch("/admin/maintenance/import-water-roster", {
+        method: "POST", token, body: { confirm: "IMPORT WATER ROSTER", area, dry, jobId },
+      });
+      setResult(res);
+      toast.success(dry
+        ? `Dry run: ${res.owners} owners — ${res.exists} exist, ${res.toCreate} to create (${res.metersToCreate} meters).`
+        : `Created ${res.created} accounts (${res.metersCreated} meters).`);
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      if (s) { s.off("job:progress", onProg); s.emit("leaveJob", jobId); }
+      setWorking(false);
+    }
+  }
+
+  const isDry = result?.dry !== false;
+
+  return (
+    <Card>
+      <div className="flex items-center gap-2 text-lg font-bold tracking-tight text-slate-900">
+        <UserPlus size={20} className="text-emerald-600" /> Maintenance — Import Water Members (Roster)
+      </div>
+      <div className="mt-0.5 text-sm text-slate-600">
+        Creates the water-member <b>accounts</b> from the master name list (<span className="font-mono">watermember.xlsx</span>,
+        1,484 names across the 4 areas) that aren't in the system yet — account + meter(s) only,
+        <b> no bills or readings</b>. Names already matching an existing account are left untouched.
+        Multi-meter owners (<span className="font-mono">Name # 1</span>, <span className="font-mono"># 2</span>…) become one account with that many meters.
+      </div>
+
+      <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900 flex items-start gap-2">
+        <AlertCircle size={16} className="mt-0.5 shrink-0" />
+        <div>
+          <b>Always dry-run first.</b> Only names with <b>no</b> existing account are created (auto pn# + meter#,
+          residential/commercial per the roster flag). Idempotent — created owners match on a re-run, so
+          re-applying adds nothing. Only <b>Apply</b> writes.
+        </div>
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <label className="text-sm font-semibold text-slate-700">Area</label>
+        <select value={area} onChange={(e) => { setArea(e.target.value); setResult(null); }} disabled={working}
+          className="rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white">
+          {areas.map((a) => <option key={a.key} value={a.key}>{a.label}</option>)}
+        </select>
+        <div className="flex-1" />
+        <button onClick={() => call(true)} disabled={working}
+          className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50">
+          {working && mode === "Dry run" ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+          {working && mode === "Dry run" ? "Running…" : "Dry run"}
+        </button>
+        <button onClick={() => call(false)} disabled={working || !result || !result.toCreate}
+          className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
+          title={!result ? "Dry-run first" : !result.toCreate ? "Nothing to create" : ""}>
+          {working && mode === "Apply" ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+          {working && mode === "Apply" ? "Applying…" : "Apply"}
+        </button>
+      </div>
+
+      {working && (
+        <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+          <div className="flex items-center justify-between text-sm font-semibold text-emerald-800">
+            <span className="inline-flex items-center gap-2">
+              <Loader2 size={16} className="animate-spin" />
+              {mode === "Apply" ? "Creating accounts" : "Scanning the roster"}…
+            </span>
+            <span className="font-mono text-emerald-700">
+              {progress ? `${progress.processed}/${progress.total} · ${progress.pct}%` : `${elapsed}s`}
+            </span>
+          </div>
+          <div className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-emerald-100">
+            {progress
+              ? <div className="h-full rounded-full bg-emerald-500 transition-all duration-200" style={{ width: `${progress.pct}%` }} />
+              : <div className="h-full w-1/3 animate-pulse rounded-full bg-emerald-500" />}
+          </div>
+          <div className="mt-1 text-[11px] text-emerald-700">
+            Matching every roster name against existing accounts. Please keep this tab open.
+          </div>
+        </div>
+      )}
+
+      {result && (
+        <div className="mt-4 space-y-3">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-700">
+            {isDry ? "Dry run" : "Applied"} — roster rows <b>{result.rosterRows}</b>, owners <b>{result.owners}</b>,
+            already exist <b>{result.exists}</b>{result.ambiguous ? <> (incl. <b className="text-amber-700">{result.ambiguous}</b> ambiguous)</> : null},{" "}
+            {isDry ? <>to create <b className={result.toCreate ? "text-emerald-700" : ""}>{result.toCreate}</b> ({result.metersToCreate} meters)</>
+              : <>created <b className="text-emerald-700">{result.created}</b> ({result.metersCreated} meters)</>}
+          </div>
+
+          {result.byArea && Object.keys(result.byArea).length > 0 && (
+            <div className="flex flex-wrap gap-2 text-[11px]">
+              {Object.entries(result.byArea).map(([a, v]) => (
+                <span key={a} className="rounded-full border border-slate-200 bg-white px-3 py-1">
+                  <b>{a}</b>: {v.exists || 0} exist · <span className="text-emerald-700">{v.create || 0} to create</span>
+                </span>
+              ))}
+            </div>
+          )}
+
+          {result.createList?.length > 0 && (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-2">
+              <div className="px-2 py-1 text-xs font-bold text-emerald-800">
+                {isDry ? "Would create" : "Created"} ({result.createList.length}{result.toCreate > result.createList.length ? ` of ${result.toCreate}` : ""})
+              </div>
+              <div className="max-h-60 overflow-auto text-xs">
+                {result.createList.map((c, i) => (
+                  <div key={i} className="px-2 py-1">
+                    <span className="font-semibold">{c.name}</span>{" "}
+                    <span className="text-slate-400">· {c.area}</span>{" "}
+                    <span className="text-slate-500">{c.classification}{c.meters > 1 ? ` · ${c.meters} meters` : ""}{c.senior ? " · senior" : ""}</span>
+                  </div>
+                ))}
+              </div>
+              {result.toCreate > result.createList.length && (
+                <div className="px-2 py-1 text-[11px] text-slate-400">Showing first {result.createList.length} of {result.toCreate}.</div>
+              )}
             </div>
           )}
         </div>

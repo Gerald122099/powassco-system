@@ -46,6 +46,19 @@ function loadData(area) {
   return DATA[led.file];
 }
 
+// Roster (master member-name list) — used by importWaterRoster to create the
+// accounts that exist on paper but aren't in the system yet.
+const ROSTER_FILE = "waterMemberRoster.json";
+// Roster area label (as written in the xlsx) → importer area key.
+const ROSTER_AREAS = {
+  loocSur: "Looc Sur", sanMiguel: "San Miguel", owakProper: "Owak Proper", baybay: "Baybay, Owak",
+};
+export const WATER_ROSTER_AREAS = [{ key: "all", label: "All areas" }, ...Object.entries(ROSTER_AREAS).map(([key, label]) => ({ key, label }))];
+function loadRoster() {
+  if (!DATA[ROSTER_FILE]) DATA[ROSTER_FILE] = JSON.parse(fs.readFileSync(path.join(__dirname, "../data/", ROSTER_FILE), "utf8"));
+  return DATA[ROSTER_FILE];
+}
+
 export function parseLedgerName(raw) {
   let s = String(raw || "").trim();
   let commercial = false, senior = false, meterNo = null, tenant = null;
@@ -346,6 +359,100 @@ export async function importLegacyWater({ area = "loocSur", dry = true, includeU
     }
     if (payDocs.length) r.paymentsInserted += await chunkInsert(WaterPayment, payDocs);
     for (const c of cbuPending) if (await postCbuCredit(c.member, c.amount)) r.cbuCredits++;
+  }
+
+  return r;
+}
+
+// ── Roster importer ───────────────────────────────────────────────────────
+// Creates the water-member ACCOUNTS that exist on the master name list
+// (waterMemberRoster.json) but aren't in the system yet. No bills/readings —
+// just the account + its meter(s). Matched names are left untouched.
+//
+// Multi-meter owners appear as several "Last, First # N" rows; these are
+// grouped into ONE account whose meter count = the number of roster lines for
+// that name. Idempotent: created owners resolve as existing on a re-run, so
+// re-applying creates nothing.
+export async function importWaterRoster({ area = "all", dry = true, onProgress = null } = {}) {
+  const roster = loadRoster();
+  const wantLabel = area && area !== "all" ? (ROSTER_AREAS[area] || area) : null;
+  const rows = wantLabel ? roster.members.filter((m) => m.area === wantLabel) : roster.members;
+
+  // Ledger footer/aggregate rows that leaked into the name column.
+  const SKIP = /^(sub-?\s*total|grand\s*total|abstract|total|names?)$/i;
+  // Group roster lines by AREA + parsed base name → one owner (each line = a
+  // meter). Area is in the key so same-named accounts in different barangays
+  // stay separate; an owner's "# N" lines are always under one barangay.
+  const groups = new Map();
+  let skipped = 0;
+  for (const row of rows) {
+    const parsed = parseLedgerName(row.name);
+    if (!parsed.target || SKIP.test(parsed.target.trim())) { skipped++; continue; }
+    const key = `${row.area}|${norm(parsed.target)}`;
+    let g = groups.get(key);
+    if (!g) { g = { target: parsed.target, area: row.area, commercial: false, senior: false, lines: 0, raw: [] }; groups.set(key, g); }
+    g.commercial = g.commercial || parsed.commercial;
+    g.senior = g.senior || parsed.senior;
+    g.lines++;
+    if (g.raw.length < 4) g.raw.push(row.name);
+  }
+
+  const idx = buildIndex(await WaterMember.find({}).select("pnNo accountName meters billing").lean());
+  // In-memory unique generators (we already hold every existing pn + meter).
+  const localPns = new Set(idx.byPn.keys());
+  const localMeters = new Set();
+  for (const m of idx.all) for (const mt of (m.meters || [])) localMeters.add(String(mt.meterNumber).toUpperCase());
+  const PN6 = () => { for (;;) { let s = ""; for (let i = 0; i < 6; i++) s += PN_CHARS[Math.floor(Math.random() * PN_CHARS.length)]; if (!localPns.has(s)) { localPns.add(s); return s; } } };
+  const METER5 = () => { for (;;) { const s = String(10000 + Math.floor(Math.random() * 90000)); if (!localMeters.has(s)) { localMeters.add(s); return s; } } };
+
+  const byArea = {};
+  const r = {
+    dry, area, rosterRows: rows.length, skipped, owners: groups.size,
+    exists: 0, ambiguous: 0, toCreate: 0, metersToCreate: 0, created: 0, metersCreated: 0,
+    byArea, sample: [], createList: [],
+  };
+  const bump = (a, k) => { (byArea[a] = byArea[a] || { exists: 0, create: 0 })[k]++; };
+
+  const docs = [];
+  const total = groups.size;
+  let processed = 0;
+  for (const g of groups.values()) {
+    processed++;
+    if (onProgress) { try { onProgress(processed, total); } catch { /* best-effort */ } }
+
+    const parsed = { last: "", first: "", target: g.target, commercial: g.commercial, senior: g.senior, tenant: null, meterNo: null };
+    const resolved = resolveInIndex(parsed, idx);
+    if (resolved.status !== "none") {
+      r.exists++; bump(g.area, "exists");
+      if (resolved.status === "ambiguous") r.ambiguous++;
+      continue;
+    }
+
+    const meterCount = Math.max(1, g.lines);
+    const classification = g.commercial ? "commercial" : "residential";
+    r.toCreate++; r.metersToCreate += meterCount; bump(g.area, "create");
+    if (r.createList.length < 300) r.createList.push({ name: g.target, area: g.area, classification, meters: meterCount, senior: g.senior, raw: g.raw });
+    if (r.sample.length < 12) r.sample.push({ name: g.target, area: g.area, classification, meters: meterCount, senior: g.senior });
+    if (dry) continue;
+
+    const meters = [];
+    for (let i = 0; i < meterCount; i++) meters.push({ meterNumber: METER5(), meterStatus: "active", isBillingActive: true, lastReading: 0, meterReaderNotes: "Added from member roster" });
+    docs.push({
+      pnNo: PN6(), accountName: g.target, personal: { fullName: g.target }, contact: {},
+      address: { barangay: g.area || "" }, billing: { classification },
+      meters, accountStatus: "active", statusReason: "Imported from member roster", createdBy: "legacy-import",
+    });
+  }
+
+  if (!dry && docs.length) {
+    let inserted = 0;
+    for (let i = 0; i < docs.length; i += 500) {
+      const slice = docs.slice(i, i + 500);
+      try { const res = await WaterMember.insertMany(slice, { ordered: false }); inserted += res.length; }
+      catch (e) { if (Array.isArray(e?.insertedDocs)) inserted += e.insertedDocs.length; else console.error("roster insertMany:", e.message); }
+    }
+    r.created = inserted;
+    r.metersCreated = docs.reduce((s, d) => s + d.meters.length, 0);
   }
 
   return r;
