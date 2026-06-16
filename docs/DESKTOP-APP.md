@@ -46,6 +46,31 @@ block of `desktop/package.json`; optional.)
 
 ---
 
+## In-app download button (staff sidebars)
+Every office dashboard (admin, manager, loan, cashier, bookkeeper, audit,
+water officer, meter reader) shows a **"Desktop App"** button in the
+sidebar footer (just above Logout) — it's rendered once in
+`client/src/components/DashboardLayout.jsx`, so all roles get it.
+
+The button links to **`VITE_DESKTOP_APP_URL`** (falls back to
+`/downloads/POWASSCO-Staff-Setup.exe`). The 98 MB installer is **not** in
+the repo — host it on a **GitHub Release** and point the button at it:
+
+1. Build the installer (`cd desktop && npm run build:win`). A clean-named
+   copy is at `desktop/dist/POWASSCO-Staff-Setup.exe`.
+2. GitHub → **Releases → Draft a new release** → tag e.g. `desktop-v1.0.1`
+   → **attach** `POWASSCO-Staff-Setup.exe` → Publish.
+3. In **Vercel → Project → Settings → Environment Variables**, set:
+   ```
+   VITE_DESKTOP_APP_URL = https://github.com/Gerald122099/powassco-system/releases/download/desktop-v1.0.1/POWASSCO-Staff-Setup.exe
+   ```
+   Redeploy. The sidebar button now downloads the signed installer.
+
+> To cut a new version later: rebuild, attach the new `.exe` to a new
+> release, and update `VITE_DESKTOP_APP_URL` — no code change needed.
+
+---
+
 ## How the "no browser / login-only" behavior works
 - **`desktop/main.js`** creates the window and loads `${APP_URL}/employee-login`.
   External-origin links/navigations are sent to the system browser so the

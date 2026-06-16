@@ -2,9 +2,15 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import { apiFetch } from "../lib/api";
 import logo from "../assets/logo.png";
-import { LogOut, Eye, CalendarClock, X } from "lucide-react";
+import { LogOut, Eye, CalendarClock, X, MonitorDown } from "lucide-react";
 import StaffChat from "./StaffChat";
 import IdleLock from "./IdleLock";
+
+// Windows desktop installer. Defaults to the public download path; set
+// VITE_DESKTOP_APP_URL to point at a GitHub Release asset instead (so the
+// big .exe doesn't have to live in the repo).
+const DESKTOP_APP_URL =
+  import.meta.env.VITE_DESKTOP_APP_URL || "/downloads/POWASSCO-Staff-Setup.exe";
 
 function MeetingBanner() {
   const { token } = useAuth();
@@ -138,6 +144,16 @@ export default function DashboardLayout({
               </div>
             </div>
           </div>
+          {/* Download the Windows desktop app (opens to /employee-login). */}
+          <a
+            href={DESKTOP_APP_URL}
+            download
+            title="Download the POWASSCO Staff desktop app (Windows)"
+            className="mb-2 flex w-full items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100"
+          >
+            <MonitorDown size={16} className="shrink-0" />
+            <span className={reveal}>Desktop App</span>
+          </a>
           <button
             onClick={logout}
             title="Logout"
