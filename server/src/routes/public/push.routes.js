@@ -6,7 +6,9 @@
 
 import express from "express";
 import PushSubscription from "../../models/PushSubscription.js";
+import FcmToken from "../../models/FcmToken.js";
 import { pushEnabled } from "../../utils/push.js";
+import { registerFcmToken, fcmEnabled } from "../../utils/fcm.js";
 
 const router = express.Router();
 
@@ -77,6 +79,41 @@ router.post("/unsubscribe", async (req, res) => {
 // Status (for the client to know if pushes are enabled on this server).
 router.get("/status", (req, res) => {
   res.json({ enabled: pushEnabled() });
+});
+
+// ── Native app (FCM) ──────────────────────────────────────────────────
+// The Capacitor member app registers its FCM device token + saved handles
+// here. Idempotent (upsert by token). No-op fan-out until the server has
+// firebase-admin + FIREBASE_SERVICE_ACCOUNT configured.
+router.post("/fcm-subscribe", async (req, res) => {
+  try {
+    const { token, items = [], platform = "android" } = req.body || {};
+    if (!token) return res.status(400).json({ message: "token required." });
+    const r = await registerFcmToken({ token, items, platform });
+    res.status(201).json(r);
+  } catch (e) {
+    console.error("fcm-subscribe error:", e);
+    res.status(500).json({ message: "Could not register device." });
+  }
+});
+
+// Update the saved handles for an existing FCM token.
+router.post("/fcm-update-items", async (req, res) => {
+  const { token, items = [] } = req.body || {};
+  if (!token) return res.status(400).json({ message: "token required." });
+  const r = await registerFcmToken({ token, items });
+  res.json(r);
+});
+
+router.post("/fcm-unsubscribe", async (req, res) => {
+  const { token } = req.body || {};
+  if (!token) return res.status(400).json({ message: "token required." });
+  await FcmToken.deleteOne({ token });
+  res.json({ ok: true });
+});
+
+router.get("/fcm-status", async (req, res) => {
+  res.json({ enabled: await fcmEnabled() });
 });
 
 export default router;

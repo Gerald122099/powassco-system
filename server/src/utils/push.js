@@ -11,6 +11,9 @@
 // the rest of the app keeps working — pushes are non-critical.
 import webpush from "web-push";
 import PushSubscription from "../models/PushSubscription.js";
+// Native-app FCM channel. These are safe no-ops until firebase-admin +
+// FIREBASE_SERVICE_ACCOUNT are configured, so importing is harmless.
+import { fcmToHandles, fcmToAll } from "./fcm.js";
 
 let initialized = false;
 function init() {
@@ -67,11 +70,12 @@ async function sendOne(subDoc, payload) {
 //     url: '/inquiry?meter=00012345',
 //   });
 export async function pushToHandle({ kind, value }, payload) {
-  if (!init()) return { ok: false, reason: "push_disabled" };
   if (!kind || !value) return { ok: false, reason: "bad_handle" };
+  // Native FCM devices (no-op until configured) — independent of Web Push.
+  const fcm = await fcmToHandles([{ kind, value }], payload);
+  if (!init()) return { ok: false, reason: "push_disabled", sent: 0, fcm };
   const v = String(value).toUpperCase();
   const subs = await PushSubscription.find({ "items.kind": kind, "items.value": v });
-  if (subs.length === 0) return { ok: true, sent: 0 };
 
   let sent = 0;
   let removed = 0;
@@ -80,7 +84,7 @@ export async function pushToHandle({ kind, value }, payload) {
     if (r.ok) sent += 1;
     if (r.removed) removed += 1;
   }
-  return { ok: true, sent, removed, total: subs.length };
+  return { ok: true, sent, removed, total: subs.length, fcm };
 }
 
 // Fire-and-forget wrapper — the caller usually doesn't want pushes to
@@ -97,11 +101,13 @@ export function pushAsync(handle, payload) {
 // Used by the bill-reminder job. handles: [{ kind, value }, ...].
 // Returns { ok, sent, removed, devices }.
 export async function pushToHandles(handles, payload) {
-  if (!init()) return { ok: false, reason: "push_disabled", sent: 0 };
+  // Native FCM devices (no-op until configured) — independent of Web Push.
+  const fcm = await fcmToHandles(handles, payload);
+  if (!init()) return { ok: false, reason: "push_disabled", sent: 0, fcm };
   const clauses = (handles || [])
     .filter((h) => h && h.kind && h.value)
     .map((h) => ({ "items.kind": h.kind, "items.value": String(h.value).toUpperCase() }));
-  if (clauses.length === 0) return { ok: true, sent: 0, devices: 0 };
+  if (clauses.length === 0) return { ok: true, sent: 0, devices: 0, fcm };
 
   const subs = await PushSubscription.find({ $or: clauses });
   // De-dupe by endpoint (a device may match on more than one handle).
@@ -112,7 +118,7 @@ export async function pushToHandles(handles, payload) {
     seen.add(s.endpoint);
     unique.push(s);
   }
-  if (unique.length === 0) return { ok: true, sent: 0, devices: 0 };
+  if (unique.length === 0) return { ok: true, sent: 0, devices: 0, fcm };
 
   let sent = 0;
   let removed = 0;
@@ -121,14 +127,16 @@ export async function pushToHandles(handles, payload) {
     if (r.ok) sent += 1;
     if (r.removed) removed += 1;
   }
-  return { ok: true, sent, removed, devices: unique.length };
+  return { ok: true, sent, removed, devices: unique.length, fcm };
 }
 
 // Broadcast ONE payload to EVERY subscribed device (each subscription is
 // one device). Used for cooperative-wide announcements. Dead channels are
 // pruned as usual. Returns { ok, sent, removed, total }.
 export async function pushToAll(payload) {
-  if (!init()) return { ok: false, reason: "push_disabled", sent: 0 };
+  // Native FCM broadcast (no-op until configured) — independent of Web Push.
+  const fcm = await fcmToAll(payload);
+  if (!init()) return { ok: false, reason: "push_disabled", sent: 0, fcm };
   const subs = await PushSubscription.find({});
   let sent = 0;
   let removed = 0;
@@ -137,7 +145,7 @@ export async function pushToAll(payload) {
     if (r.ok) sent += 1;
     if (r.removed) removed += 1;
   }
-  return { ok: true, sent, removed, total: subs.length };
+  return { ok: true, sent, removed, total: subs.length, fcm };
 }
 
 // Fire-and-forget broadcast — callers (e.g. announcement create) don't

@@ -94,19 +94,33 @@ upload the signed **App Bundle** (`.aab`) in Play Console.
 
 ---
 
-## D. Native push (optional upgrade)
-The app already receives **web push** (the same reminders + announcements
-as the website) because it runs the web code. To use **native FCM** instead
-(more reliable background delivery on Android):
+## D. Native push (FCM) — scaffolded, needs Firebase to activate
+Native FCM push is **fully wired in code** and inert until you add a
+Firebase project. What's already done:
 
-1. `npm i @capacitor/push-notifications`
-2. Create a Firebase project, add the Android app (`site.powassco.member`),
-   download `google-services.json` into `android/app/`.
-3. Register the device token on launch and POST it to a small
-   `/api/public/push/fcm-subscribe` endpoint (ask and I'll add it), then
-   send via FCM alongside the existing web-push fan-out.
+- **Client**: `@capacitor/push-notifications` is installed; `lib/nativePush.js`
+  registers the device's FCM token and uploads the saved handles. The
+  existing reminder toggle (`lib/pushClient.js`) automatically routes to
+  FCM on the native app and Web Push on the website — no caller changes.
+- **Server**: `models/FcmToken.js` + `utils/fcm.js` (lazy-loads
+  `firebase-admin`, safe no-op until configured) + public endpoints
+  `POST /api/public/push/fcm-subscribe` / `fcm-update-items` /
+  `fcm-unsubscribe`. The reminder + announcement fan-out (`utils/push.js`)
+  already calls the FCM channel alongside Web Push.
 
-This is optional — reminders/announcements already work through web push.
+**To turn it on (one time):**
+1. **Firebase** → create a project → add an Android app with package
+   `site.powassco.member` → download **`google-services.json`** into
+   `client/android/app/` (after `npm run app:add-android`).
+2. **Server SDK**: in `server/`, `npm i firebase-admin`.
+3. **Server creds** (Render → Environment): set **`FIREBASE_SERVICE_ACCOUNT`**
+   to the service-account JSON (Project Settings → Service accounts →
+   Generate new private key), as a single-line string. Redeploy.
+4. Rebuild the APK (`npm run app:sync` → Android Studio). Done — native
+   devices now get the same reminders/announcements as the web.
+
+Until step 1–3 are complete, `fcmEnabled()` is false and the FCM fan-out
+is a no-op; **Web Push keeps working** the whole time.
 
 ---
 
