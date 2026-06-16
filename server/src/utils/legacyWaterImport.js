@@ -214,22 +214,30 @@ export async function importLegacyWater({ area = "loocSur", dry = true, includeU
     // Duplicate-name accounts: pick the candidate whose meter's last reading
     // matches the ledger row's STARTING reading (so the meter lands on the
     // right account automatically — no manual override needed).
+    let ambigDiag = null;
     if (resolved.status === "ambiguous") {
-      const ledgerPrev = acct.months.find((m) => m.prev != null)?.prev;
-      if (ledgerPrev != null) {
-        let best = null, bestMeter = null, bestDiff = Infinity;
-        for (const cand of resolved.candidates) {
-          const cm = idx.byPn.get(cand.pnNo);
-          for (const mt of (cm?.meters || [])) {
-            const d = Math.abs((Number(mt.lastReading) || 0) - Number(ledgerPrev));
-            if (d < bestDiff) { bestDiff = d; best = cm; bestMeter = mt; }
-          }
-        }
-        if (best && bestMeter && bestDiff <= 5) {
-          resolved = { status: "single", member: best };
-          forcedMeter = String(bestMeter.meterNumber).toUpperCase();
-          r.disambiguated.push({ name: acct.name, pnNo: best.pnNo, meter: forcedMeter, meterReading: bestMeter.lastReading || 0, ledgerPrev, diff: round2(bestDiff) });
-        }
+      // Compare each candidate meter's last reading against ALL of this
+      // row's ledger readings (Jan prev + every month's present), since the
+      // system reading could sit at any point in the period.
+      const ledgerReadings = [acct.months[0]?.prev, ...acct.months.map((m) => m.present)].filter((v) => v != null).map(Number);
+      let best = null, bestMeter = null, bestDiff = Infinity;
+      const candInfo = [];
+      for (const cand of resolved.candidates) {
+        const cm = idx.byPn.get(cand.pnNo);
+        const meters = (cm?.meters || []).map((mt) => {
+          const lr = Number(mt.lastReading) || 0;
+          const d = ledgerReadings.length ? Math.min(...ledgerReadings.map((x) => Math.abs(lr - x))) : Infinity;
+          if (d < bestDiff) { bestDiff = d; best = cm; bestMeter = mt; }
+          return { meter: mt.meterNumber, reading: lr, status: mt.meterStatus, diff: Number.isFinite(d) ? round2(d) : null };
+        });
+        candInfo.push({ pnNo: cand.pnNo, accountName: cand.accountName, meters });
+      }
+      if (best && bestMeter && bestDiff <= 5) {
+        resolved = { status: "single", member: best };
+        forcedMeter = String(bestMeter.meterNumber).toUpperCase();
+        r.disambiguated.push({ name: acct.name, pnNo: best.pnNo, meter: forcedMeter, meterReading: bestMeter.lastReading || 0, ledgerPrev: ledgerReadings[0] ?? null, diff: round2(bestDiff) });
+      } else {
+        ambigDiag = { ledgerReadings, candidates: candInfo, bestDiff: Number.isFinite(bestDiff) ? round2(bestDiff) : null };
       }
     }
     let member = resolved.member || null;
@@ -242,7 +250,7 @@ export async function importLegacyWater({ area = "loocSur", dry = true, includeU
       member = await createMember(parsed, lastReading, idx); createdNow = true; r.created++;
     } else if (kind === "ambiguous") {
       r.ambiguous++;
-      if (!includeUnmatched) { r.unmatched.push({ name: acct.name, target: parsed.target, reason: "ambiguous", candidates: resolved.candidates }); continue; }
+      if (!includeUnmatched) { r.unmatched.push({ name: acct.name, target: parsed.target, reason: "ambiguous", candidates: resolved.candidates, diag: ambigDiag }); continue; }
     }
     if (kind === "single") r.matched++;
 

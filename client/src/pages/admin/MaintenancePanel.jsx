@@ -446,6 +446,14 @@ function LegacyWaterImportCard() {
                     <span className={u.reason === "ambiguous" ? "text-amber-700" : "text-red-600"}>[{u.reason}]</span>
                     {u.action && <span className="text-emerald-700"> — {u.action}</span>}
                     {u.candidates?.length > 0 && <span className="text-slate-500"> candidates: {u.candidates.map((c) => `${c.accountName} (${c.pnNo})`).join("; ")}</span>}
+                    {u.diag && (
+                      <div className="ml-3 mt-0.5 text-[11px] text-slate-500">
+                        <div>ledger readings: [{(u.diag.ledgerReadings || []).join(", ")}]</div>
+                        {(u.diag.candidates || []).map((c, j) => (
+                          <div key={j}><span className="font-mono">{c.pnNo}</span>: {(c.meters || []).map((m) => `meter ${m.meter} r=${m.reading}${m.diff != null ? ` (Δ${m.diff})` : ""}`).join(", ") || "(no meters)"}</div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
