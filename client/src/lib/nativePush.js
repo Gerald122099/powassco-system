@@ -34,6 +34,18 @@ export async function registerNativeFcm(items = []) {
     if (perm.receive !== "granted") perm = await PushNotifications.requestPermissions();
     if (perm.receive !== "granted") return { ok: false, reason: "permission_denied" };
 
+    // Android 8+ needs a channel for notifications to display; the FCM
+    // payload targets channelId "powassco". No-op on iOS/older Android.
+    try {
+      await PushNotifications.createChannel({
+        id: "powassco",
+        name: "POWASSCO Alerts",
+        description: "Bill reminders and announcements",
+        importance: 4, // HIGH — heads-up + sound
+        visibility: 1, // public on the lock screen
+      });
+    } catch { /* not supported on this platform */ }
+
     if (!listenersBound) {
       listenersBound = true;
       await PushNotifications.addListener("registration", async (token) => {

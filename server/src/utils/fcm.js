@@ -75,7 +75,8 @@ function toMessage(tokens, payload) {
     },
     android: {
       priority: "high",
-      notification: { channelId: "powassco", clickAction: "FLUTTER_NOTIFICATION_CLICK" },
+      // Channel created on-device by lib/nativePush.js (createChannel).
+      notification: { channelId: "powassco" },
     },
     webpush: { fcmOptions: { link: String(url) } },
   };
