@@ -22,6 +22,7 @@ function createWindow() {
     minWidth: 1024,
     minHeight: 640,
     title: "POWASSCO Staff",
+    icon: path.join(__dirname, "build", "icon.png"),
     autoHideMenuBar: true,
     backgroundColor: "#0f172a",
     webPreferences: {

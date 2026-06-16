@@ -1,6 +1,6 @@
 {
   "name": "powassco-desktop",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "POWASSCO Staff desktop app — Electron shell that opens the staff web app at /employee-login.",
   "main": "main.js",
@@ -24,10 +24,20 @@
     "files": [
       "main.js",
       "preload.js",
-      "package.json"
+      "package.json",
+      "build/icon.png"
     ],
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "POWASSCO Staff"
     },
     "mac": {
       "target": "dmg"

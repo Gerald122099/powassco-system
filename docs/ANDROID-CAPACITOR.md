@@ -7,10 +7,21 @@ no separate UI to maintain. The app opens straight to the member home
 (`/app`) and talks to the production API.
 
 > The repo already has Capacitor wired up (deps, `capacitor.config.json`,
-> native boot that lands on `/app`, CORS origins for the app). What's left
-> is generating the Android project and building the `.apk` — that part
-> needs **Android Studio** on your machine (it can't be built from the web
-> code alone).
+> native boot that lands on `/app`, CORS origins for the app). **The
+> production API base (`client/.env.capacitor`) and the app icon + splash
+> sources (`client/resources/icon.png`, `splash.png`) are already committed**
+> — so steps A.1 and B below are pre-done. What's left is generating the
+> Android project and building the `.apk` on **Android Studio** (it can't be
+> built from the web code alone — needs the Android SDK + JDK).
+>
+> **Turnkey build (everything pre-staged):**
+> ```bash
+> cd client
+> npm run app:add-android                   # first time only
+> npx @capacitor/assets generate --android  # brands icon + splash from resources/
+> npm run app:sync                          # build web (prod API) + copy in
+> npm run app:open                          # → Android Studio → Build APK
+> ```
 
 ---
 
@@ -28,14 +39,15 @@ All commands run inside `client/`.
 cd client
 
 # 1. Point the app at the PRODUCTION API (baked into the build).
-#    Put this in client/.env.production (create if missing):
-#    VITE_API_BASE=https://<your-render-api-host>/api
+#    DONE — client/.env.capacitor (a dedicated build mode) already holds:
+#    VITE_API_BASE=https://powassco-system.onrender.com/api
+#    (separate from the website build, which is unaffected.)
 
 # 2. Create the native Android project (first time only).
 npm run app:add-android      # = npx cap add android
 
-# 3. Build the web app and copy it into the native project.
-npm run app:sync             # = vite build && npx cap sync android
+# 3. Build the web app (capacitor mode → prod API) and copy it in.
+npm run app:sync             # = vite build --mode capacitor && npx cap sync android
 
 # 4. Open it in Android Studio.
 npm run app:open             # = npx cap open android
@@ -55,12 +67,15 @@ in Android Studio — no code changes needed.
 ## B. App identity (icon, name, colors)
 - **App ID / name**: already set in `capacitor.config.json`
   (`site.powassco.member` / "POWASSCO Member").
-- **Icon + splash**: drop a 1024×1024 `icon.png` (and optional
-  `splash.png`) in `client/resources/`, then:
+- **Icon + splash**: already provided — `client/resources/icon.png`
+  (1024×1024) and `splash.png` (2732×2732), the POWASSCO logo centered on
+  brand green with adaptive-icon safe-zone padding. After `app:add-android`,
+  generate the Android densities from them:
   ```bash
   npx @capacitor/assets generate --android
   npm run app:sync
   ```
+  (To restyle, replace those two PNGs and re-run the generate command.)
 - **Theme color** is POWASSCO green (`#166534`), set in the config.
 
 ---

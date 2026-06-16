@@ -36,10 +36,13 @@ cd desktop
 npm run build:win      # Windows installer (NSIS) → desktop/dist/
 # or: npm run build    # current platform (mac = .dmg, linux = .AppImage)
 ```
-The signed/packaged installer lands in `desktop/dist/`. Distribute that
-`.exe` to staff PCs. (For code-signing the Windows installer, add a cert in
-the `build.win` block of `desktop/package.json` — optional but removes the
-SmartScreen "unknown publisher" warning.)
+The packaged installer lands in `desktop/dist/` (e.g.
+`POWASSCO Staff Setup 1.0.1.exe`, ~98 MB). It's branded with the POWASSCO
+logo (`desktop/build/icon.png`) and is a normal NSIS installer: the user
+picks an install folder and it creates Desktop + Start-menu shortcuts.
+Distribute that `.exe` to staff PCs. (For code-signing — to remove the
+SmartScreen "unknown publisher" warning — add a cert in the `build.win`
+block of `desktop/package.json`; optional.)
 
 ---
 
