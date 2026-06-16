@@ -12,6 +12,12 @@ dist
 dist-ssr
 *.local
 
+# Capacitor native project — generated on the build machine (regenerable
+# via `npm run app:add-android`). The signed .apk is published separately
+# to public/downloads/.
+android
+ios
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
