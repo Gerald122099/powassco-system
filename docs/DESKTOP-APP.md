@@ -52,22 +52,25 @@ water officer, meter reader) shows a **"Desktop App"** button in the
 sidebar footer (just above Logout) — it's rendered once in
 `client/src/components/DashboardLayout.jsx`, so all roles get it.
 
-The button links to **`VITE_DESKTOP_APP_URL`** (falls back to
-`/downloads/POWASSCO-Staff-Setup.exe`). The 98 MB installer is **not** in
-the repo — host it on a **GitHub Release** and point the button at it:
+The 98 MB installer is **not** in the repo — it's hosted on **Google Drive**
+and the button links to the **direct-download** URL (baked into
+`DashboardLayout.jsx`, overridable via `VITE_DESKTOP_APP_URL`).
 
-1. Build the installer (`cd desktop && npm run build:win`). A clean-named
-   copy is at `desktop/dist/POWASSCO-Staff-Setup.exe`.
-2. GitHub → **Releases → Draft a new release** → tag e.g. `desktop-v1.0.1`
-   → **attach** `POWASSCO-Staff-Setup.exe` → Publish.
-3. In **Vercel → Project → Settings → Environment Variables**, set:
+**To update the installer (new version):**
+1. Build it (`cd desktop && npm run build:win`) → `desktop/dist/POWASSCO-Staff-Setup.exe`.
+2. Upload it to Google Drive; set sharing to **Anyone with the link**.
+3. Take the file id from the share link
+   (`https://drive.google.com/file/d/<FILE_ID>/view`) and use the
+   **direct-download** form:
    ```
-   VITE_DESKTOP_APP_URL = https://github.com/Gerald122099/powassco-system/releases/download/desktop-v1.0.1/POWASSCO-Staff-Setup.exe
+   https://drive.usercontent.google.com/download?id=<FILE_ID>&export=download&confirm=t
    ```
-   Redeploy. The sidebar button now downloads the signed installer.
-
-> To cut a new version later: rebuild, attach the new `.exe` to a new
-> release, and update `VITE_DESKTOP_APP_URL` — no code change needed.
+   ⚠️ The plain `/view` link and `uc?export=download` return Drive's HTML
+   "can't scan for viruses" page (a corrupt download). Only the
+   `drive.usercontent.google.com/download?...&confirm=t` form serves the
+   `.exe` directly.
+4. Put that URL in `DESKTOP_APP_URL` in `DashboardLayout.jsx` (or set
+   `VITE_DESKTOP_APP_URL` in Vercel and redeploy).
 
 ---
 

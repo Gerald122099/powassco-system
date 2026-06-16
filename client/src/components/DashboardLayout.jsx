@@ -6,14 +6,15 @@ import { LogOut, Eye, CalendarClock, X, MonitorDown } from "lucide-react";
 import StaffChat from "./StaffChat";
 import IdleLock from "./IdleLock";
 
-// Windows desktop installer. The 98 MB .exe is hosted on a GitHub Release
-// (not in the repo). Default points at the expected release asset; override
-// with VITE_DESKTOP_APP_URL if you host it elsewhere. To make this live:
-// create a release tagged `desktop-v1.0.1` and attach an asset named
-// exactly `POWASSCO-Staff-Setup.exe`.
+// Windows desktop installer. Hosted on Google Drive (not in the repo).
+// This is the DIRECT-download form (drive.usercontent.google.com +
+// confirm=t) which serves the .exe straight as an attachment — the plain
+// /view or uc?export=download links return Drive's HTML scan-warning page
+// instead. Override with VITE_DESKTOP_APP_URL to host elsewhere; to swap
+// the file, re-upload to Drive and put the new file id below.
 const DESKTOP_APP_URL =
   import.meta.env.VITE_DESKTOP_APP_URL ||
-  "https://github.com/Gerald122099/powassco-system/releases/download/desktop-v1.0.1/POWASSCO-Staff-Setup.exe";
+  "https://drive.usercontent.google.com/download?id=1CKk5s8MZciNSXsWpYYG-Zq6IbiAc8-C2&export=download&confirm=t";
 
 function MeetingBanner() {
   const { token } = useAuth();
