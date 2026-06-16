@@ -26,17 +26,19 @@ async function getMessaging() {
     console.warn("⚠️  FIREBASE_SERVICE_ACCOUNT not set — native FCM push disabled.");
     return null;
   }
-  let admin;
+  let appMod, msgMod;
   try {
-    admin = (await import("firebase-admin")).default;
+    // firebase-admin v12+ modular API (firebase-admin/app + /messaging).
+    appMod = await import("firebase-admin/app");
+    msgMod = await import("firebase-admin/messaging");
   } catch {
     console.warn("⚠️  firebase-admin not installed — native FCM push disabled (run `npm i firebase-admin`).");
     return null;
   }
   try {
-    const cred = raw ? admin.credential.cert(JSON.parse(raw)) : admin.credential.applicationDefault();
-    const app = admin.apps?.length ? admin.apps[0] : admin.initializeApp({ credential: cred });
-    messaging = app.messaging();
+    const cred = raw ? appMod.cert(JSON.parse(raw)) : appMod.applicationDefault();
+    const app = appMod.getApps().length ? appMod.getApp() : appMod.initializeApp({ credential: cred });
+    messaging = msgMod.getMessaging(app);
     return messaging;
   } catch (e) {
     console.error("FCM init failed:", e?.message || e);
