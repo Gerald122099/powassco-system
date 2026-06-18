@@ -5,7 +5,7 @@ import { useEffect, useState, useCallback } from "react";
 import Card from "./Card";
 import Modal from "./Modal";
 import { apiFetch } from "../lib/api";
-import { buildAuditRemarks } from "../lib/auditRemarks";
+import { buildAuditRemarks, buildAuditRecommendations } from "../lib/auditRemarks";
 import { useAuth } from "../context/AuthContext";
 import { Archive, RefreshCw, Printer, CheckCircle2 } from "lucide-react";
 
@@ -79,9 +79,13 @@ export default function AuditedReportsPanel() {
         ${(dis.expenses?.byCategory || []).map((e) => row("Expense — " + e.category, peso(e.total))).join("")}
         ${row("<b>TOTAL DISBURSED</b>", "<b>" + peso(dis.grandTotal) + "</b>")}
         ${row("Member fees collected (inflow)", peso(dis.memberFees?.total))}</table>
-      <h3>System Remarks & Recommendations</h3>
+      <h3>System Remarks</h3>
       <div style="font-size:11px">
         ${buildAuditRemarks(s).map((rm) => `<div style="margin:3px 0;padding:4px 8px;border-left:3px solid ${rm.level === "alert" ? "#e11d48" : rm.level === "watch" ? "#f59e0b" : "#10b981"};background:#f8fafc"><b>${rm.title}.</b> ${rm.text}</div>`).join("")}
+      </div>
+      <h3>Recommendations &amp; Suggestions</h3>
+      <div style="font-size:11px">
+        ${buildAuditRecommendations(s).map((rc) => `<div style="margin:3px 0;padding:4px 8px;border-left:3px solid ${rc.priority === "high" ? "#e11d48" : rc.priority === "medium" ? "#f59e0b" : "#0ea5e9"};background:#faf5ff"><b>[${rc.priority.toUpperCase()}] ${rc.title}.</b> ${rc.text}</div>`).join("")}
       </div>
       ${r.findings ? `<div class="findings"><b>Committee findings / remarks:</b><br/>${r.findings}</div>` : ""}
       <div class="sign">
@@ -142,8 +146,33 @@ export default function AuditedReportsPanel() {
       <Modal open={!!open} title={open?.label || "Audit report"} subtitle={open ? `${fmt(open.periodFrom)} – ${fmt(open.periodTo)} • signed by ${open.signedBy}` : ""} onClose={() => setOpen(null)} size="lg">
         {open && (
           <div className="space-y-3 text-sm">
-            {open.findings && <div className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-xs"><b>Findings:</b> {open.findings}</div>}
-            <pre className="max-h-[55vh] overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-3 text-[11px] leading-relaxed">{JSON.stringify(open.snapshot, null, 2)}</pre>
+            {open.findings && <div className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-xs"><b>Committee findings:</b> {open.findings}</div>}
+            {(() => {
+              const remarks = buildAuditRemarks(open.snapshot);
+              const recs = buildAuditRecommendations(open.snapshot);
+              const tone = { ok: "border-emerald-200 bg-emerald-50 text-emerald-800", watch: "border-amber-200 bg-amber-50 text-amber-900", alert: "border-rose-200 bg-rose-50 text-rose-900" };
+              const prTone = { high: "border-rose-200 bg-rose-50 text-rose-900", medium: "border-amber-200 bg-amber-50 text-amber-900", low: "border-sky-200 bg-sky-50 text-sky-900" };
+              return (
+                <>
+                  <div className="rounded-xl border border-slate-200">
+                    <div className="border-b border-slate-100 bg-slate-50 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-600">System Remarks</div>
+                    <div className="space-y-1 p-2">
+                      {remarks.map((rm, i) => <div key={i} className={`rounded-lg border px-2 py-1 text-[11px] ${tone[rm.level]}`}><b>{rm.title}.</b> {rm.text}</div>)}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-violet-200">
+                    <div className="border-b border-violet-100 bg-violet-50 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-violet-800">Recommendations &amp; Suggestions</div>
+                    <div className="space-y-1 p-2">
+                      {recs.map((rc, i) => <div key={i} className={`rounded-lg border px-2 py-1 text-[11px] ${prTone[rc.priority]}`}><b>[{rc.priority.toUpperCase()}] {rc.title}.</b> {rc.text}</div>)}
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
+            <details>
+              <summary className="cursor-pointer text-xs font-semibold text-slate-500">Raw figures (snapshot)</summary>
+              <pre className="mt-1 max-h-[40vh] overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-3 text-[11px] leading-relaxed">{JSON.stringify(open.snapshot, null, 2)}</pre>
+            </details>
             <div className="flex justify-end">
               <button onClick={() => printReport(open)} className="inline-flex items-center gap-1.5 rounded-xl bg-violet-600 px-4 py-2 text-sm font-bold text-white hover:bg-violet-700"><Printer size={14} /> Print formatted report</button>
             </div>

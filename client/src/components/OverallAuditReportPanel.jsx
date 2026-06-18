@@ -8,13 +8,13 @@ import { useEffect, useState, useCallback } from "react";
 import Card from "./Card";
 import Modal from "./Modal";
 import { apiFetch } from "../lib/api";
-import { buildAuditRemarks } from "../lib/auditRemarks";
+import { buildAuditRemarks, buildAuditRecommendations } from "../lib/auditRemarks";
 import { useAuth } from "../context/AuthContext";
 import { toast } from "./Toast";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Legend,
 } from "recharts";
-import { ClipboardCheck, RefreshCw, Calendar, PenLine } from "lucide-react";
+import { ClipboardCheck, RefreshCw, Calendar, PenLine, Lightbulb } from "lucide-react";
 
 const peso = (n) =>
   "₱" + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -368,12 +368,16 @@ export default function OverallAuditReportPanel() {
       {/* System remarks — automated findings from the figures above */}
       {data && (() => {
         const remarks = buildAuditRemarks(data);
+        const recs = buildAuditRecommendations(data);
         const tone = { ok: "border-emerald-200 bg-emerald-50 text-emerald-800", watch: "border-amber-200 bg-amber-50 text-amber-900", alert: "border-rose-200 bg-rose-50 text-rose-900" };
         const dot = { ok: "bg-emerald-500", watch: "bg-amber-500", alert: "bg-rose-500" };
+        const prTone = { high: "border-rose-200 bg-rose-50 text-rose-900", medium: "border-amber-200 bg-amber-50 text-amber-900", low: "border-sky-200 bg-sky-50 text-sky-900" };
+        const prChip = { high: "bg-rose-500 text-white", medium: "bg-amber-500 text-white", low: "bg-sky-500 text-white" };
         return (
+          <>
           <div className="mt-4 rounded-2xl border border-slate-200">
             <div className="border-b border-slate-100 bg-slate-50 px-4 py-2 text-xs font-bold uppercase tracking-wide text-slate-700">
-              System Remarks & Recommendations <span className="font-normal normal-case text-slate-400">— auto-generated for {data.range?.from || "all"} → {data.range?.to || "all"}</span>
+              System Remarks <span className="font-normal normal-case text-slate-400">— auto-generated for {data.range?.from || "all"} → {data.range?.to || "all"}</span>
             </div>
             <div className="space-y-2 p-3">
               {remarks.map((r, i) => (
@@ -386,10 +390,30 @@ export default function OverallAuditReportPanel() {
                 </div>
               ))}
               <div className="pt-1 text-[10px] text-slate-400">
-                These are automated indicators based on the selected period's figures — guidance for the committee, not a substitute for review.
+                Automated indicators based on the selected period's figures — guidance for the committee, not a substitute for review.
               </div>
             </div>
           </div>
+
+          {/* Recommendations — actionable suggestions from the analytics */}
+          <div className="mt-4 rounded-2xl border border-violet-200">
+            <div className="flex items-center gap-2 border-b border-violet-100 bg-violet-50 px-4 py-2 text-xs font-bold uppercase tracking-wide text-violet-800">
+              <Lightbulb size={14} /> Recommendations &amp; Suggestions
+              <span className="font-normal normal-case text-violet-400">— prioritised, based on inflows / outflows &amp; all transactions</span>
+            </div>
+            <div className="space-y-2 p-3">
+              {recs.map((r, i) => (
+                <div key={i} className={`flex items-start gap-2 rounded-xl border px-3 py-2 ${prTone[r.priority]}`}>
+                  <span className={`mt-0.5 shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-extrabold uppercase ${prChip[r.priority]}`}>{r.priority}</span>
+                  <div>
+                    <div className="text-sm font-bold">{r.title}</div>
+                    <div className="text-xs opacity-90">{r.text}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          </>
         );
       })()}
 
