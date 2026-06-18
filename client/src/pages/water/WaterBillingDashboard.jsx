@@ -11,6 +11,7 @@ import OnlinePaymentsPanel from "../../components/OnlinePaymentsPanel";
 import DisconnectionsPanel from "../../components/DisconnectionsPanel";
 import CollectionTodayPanel from "../../components/CollectionTodayPanel";
 import ProductLoansPanel from "../bookkeeper/ProductLoansPanel";
+import ProductAnalyticsPanel from "../../components/ProductAnalyticsPanel";
 import { Users, ReceiptText, CreditCard, BarChart3, Smartphone, AlertTriangle, Wallet, Boxes, ClipboardList, MapPin, Package } from "lucide-react";
 
 const items = [
@@ -21,6 +22,7 @@ const items = [
   { key: "payments", label: "Payments", icon: CreditCard, desc: "Record and track payments" },
   { key: "batches", label: "Batch Assignment", icon: Boxes, desc: "Assign meters to plumbers / field readers • delete with password + 2FA" },
   { key: "products", label: "Product Loans", icon: Package, desc: "Catalogue of products (meter, rice, …) + applications, sale vs loan" },
+  { key: "product-analytics", label: "Product Analytics", icon: BarChart3, desc: "Capital + profit per product, sale vs loan, paid/unpaid" },
   { key: "collections", label: "Today's Collection", icon: Wallet, desc: "Daily water collection — cash, online, total" },
   { key: "disconnections", label: "Disconnections", icon: AlertTriangle, desc: "Accounts pending disconnection" },
   { key: "analytics", label: "Analytics", icon: BarChart3, desc: "Billing analytics and summaries" },
@@ -37,6 +39,7 @@ export default function WaterBillingDashboard() {
       {tab === "payments" && <PaymentsPanel />}
       {tab === "batches" && <BatchManagementPanel />}
       {tab === "products" && <ProductLoansPanel />}
+      {tab === "product-analytics" && <ProductAnalyticsPanel />}
       {tab === "collections" && <CollectionTodayPanel module="water" defaultMine />}
       {tab === "disconnections" && <DisconnectionsPanel />}
       {tab === "analytics" && <AnalyticsPanel />}
