@@ -34,6 +34,12 @@ const guard = [requireAuth, requireRole(["admin", "manager", "bookkeeper"])];
 // rental returns) — they're at the counter when those happen. The
 // read-only audit endpoints + catalog mutations stay bookkeeper-only.
 const cashierGuard = [requireAuth, requireRole(["admin", "manager", "bookkeeper", "cashier"])];
+// Product Loans were moved to the WATER OFFICER (they handle the meter /
+// rice / appliance product loans). These dedicated guards add
+// water_bill_officer to the product-* routes ONLY, without widening the
+// broad bookkeeper `guard`/`cashierGuard` used by every other endpoint.
+const productManageGuard = [requireAuth, requireRole(["admin", "manager", "bookkeeper", "water_bill_officer"])];
+const productTxnGuard = [requireAuth, requireRole(["admin", "manager", "bookkeeper", "cashier", "water_bill_officer"])];
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
 function dateRange(fromStr, toStr) {
@@ -446,12 +452,12 @@ router.get("/analytics", ...guard, async (req, res) => {
 });
 
 // ----- Product loan catalogue -----
-router.get("/product-catalog", ...guard, async (req, res) => {
+router.get("/product-catalog", ...productManageGuard, async (req, res) => {
   const items = await ProductLoanCatalog.find().sort({ isActive: -1, name: 1 }).lean();
   res.json(items);
 });
 
-router.post("/product-catalog", ...guard, async (req, res) => {
+router.post("/product-catalog", ...productManageGuard, async (req, res) => {
   try {
     const b = req.body || {};
     if (!b.name || !(Number(b.unitPrice) >= 0)) return res.status(400).json({ message: "name and unitPrice are required." });
@@ -483,7 +489,7 @@ router.post("/product-catalog", ...guard, async (req, res) => {
   } catch (e) { res.status(500).json({ message: e.message || "Failed to create product." }); }
 });
 
-router.put("/product-catalog/:id", ...guard, async (req, res) => {
+router.put("/product-catalog/:id", ...productManageGuard, async (req, res) => {
   const allow = ["name", "category", "unitPrice", "capital", "profit", "stock", "description", "imageBase64", "minCbuRequired", "isRental", "rentFee", "isActive"];
   const patch = {};
   for (const k of allow) if (k in req.body) patch[k] = req.body[k];
@@ -495,13 +501,13 @@ router.put("/product-catalog/:id", ...guard, async (req, res) => {
   res.json(doc);
 });
 
-router.delete("/product-catalog/:id", ...guard, async (req, res) => {
+router.delete("/product-catalog/:id", ...productManageGuard, async (req, res) => {
   await ProductLoanCatalog.findByIdAndDelete(req.params.id);
   res.json({ ok: true });
 });
 
 // ----- Product loan applications -----
-router.get("/product-applications", ...guard, async (req, res) => {
+router.get("/product-applications", ...productManageGuard, async (req, res) => {
   const status = String(req.query.status || "").trim();
   const filter = status ? { status } : {};
   const apps = await ProductLoanApplication.find(filter).sort({ createdAt: -1 }).limit(500).lean();
@@ -522,7 +528,7 @@ router.get("/product-applications", ...guard, async (req, res) => {
 //                               POST /:id/return.
 // Product analytics (Phase 6): per-product + overall capital, profit,
 // sale-vs-loan split, paid/unpaid balances.
-router.get("/product-analytics", requireAuth, requireRole(["admin", "manager", "audit_committee", "bookkeeper"]), async (req, res) => {
+router.get("/product-analytics", requireAuth, requireRole(["admin", "manager", "audit_committee", "bookkeeper", "water_bill_officer"]), async (req, res) => {
   try {
     const rows = await ProductLoanApplication.aggregate([
       { $match: { status: { $nin: ["cancelled", "rejected"] } } },
@@ -581,7 +587,7 @@ router.get("/product-analytics", requireAuth, requireRole(["admin", "manager", "
   }
 });
 
-router.post("/product-applications", ...cashierGuard, async (req, res) => {
+router.post("/product-applications", ...productTxnGuard, async (req, res) => {
   try {
     const b = req.body || {};
     const transactionType = ["sale", "loan", "rental"].includes(b.transactionType) ? b.transactionType : "loan";
@@ -730,7 +736,7 @@ router.post("/product-applications", ...cashierGuard, async (req, res) => {
 // Record a payment against a product LOAN. Cashier-accessible so the
 // counter can post catch-up payments without going through the
 // bookkeeper screen.
-router.post("/product-applications/:id/pay", ...cashierGuard, async (req, res) => {
+router.post("/product-applications/:id/pay", ...productTxnGuard, async (req, res) => {
   try {
     const amount = round2(Number(req.body?.amount || 0));
     if (!(amount > 0)) return res.status(400).json({ message: "Amount must be > 0." });
@@ -771,7 +777,7 @@ router.post("/product-applications/:id/pay", ...cashierGuard, async (req, res) =
 // Mark a rental returned. Computes any late-return penalty and adds
 // it to the balance; cashier then posts a payment for the full
 // (rentFee + penalty − already_paid) amount via /pay.
-router.post("/product-applications/:id/return", ...cashierGuard, async (req, res) => {
+router.post("/product-applications/:id/return", ...productTxnGuard, async (req, res) => {
   try {
     const app = await ProductLoanApplication.findById(req.params.id);
     if (!app) return res.status(404).json({ message: "Transaction not found." });
@@ -810,7 +816,7 @@ router.post("/product-applications/:id/return", ...cashierGuard, async (req, res
 });
 
 // Release a product loan — optionally apply CBU as down/full payment.
-router.post("/product-applications/:id/release", ...guard, async (req, res) => {
+router.post("/product-applications/:id/release", ...productManageGuard, async (req, res) => {
   try {
     const useCbu = Math.max(0, Number(req.body?.useCbu) || 0);
     const app = await ProductLoanApplication.findById(req.params.id);

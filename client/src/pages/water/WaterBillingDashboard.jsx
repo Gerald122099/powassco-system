@@ -10,7 +10,8 @@ import MeterReadingsPanel from "../meter/panels/MeterReadingsPanel";
 import OnlinePaymentsPanel from "../../components/OnlinePaymentsPanel";
 import DisconnectionsPanel from "../../components/DisconnectionsPanel";
 import CollectionTodayPanel from "../../components/CollectionTodayPanel";
-import { Users, ReceiptText, CreditCard, BarChart3, Smartphone, AlertTriangle, Wallet, Boxes, ClipboardList, MapPin } from "lucide-react";
+import ProductLoansPanel from "../bookkeeper/ProductLoansPanel";
+import { Users, ReceiptText, CreditCard, BarChart3, Smartphone, AlertTriangle, Wallet, Boxes, ClipboardList, MapPin, Package } from "lucide-react";
 
 const items = [
   { key: "members", label: "Members", icon: Users, desc: "Manage water members and meters" },
@@ -19,6 +20,7 @@ const items = [
   { key: "bills", label: "Bills", icon: ReceiptText, desc: "Generate and manage water bills" },
   { key: "payments", label: "Payments", icon: CreditCard, desc: "Record and track payments" },
   { key: "batches", label: "Batch Assignment", icon: Boxes, desc: "Assign meters to plumbers / field readers • delete with password + 2FA" },
+  { key: "products", label: "Product Loans", icon: Package, desc: "Catalogue of products (meter, rice, …) + applications, sale vs loan" },
   { key: "collections", label: "Today's Collection", icon: Wallet, desc: "Daily water collection — cash, online, total" },
   { key: "disconnections", label: "Disconnections", icon: AlertTriangle, desc: "Accounts pending disconnection" },
   { key: "analytics", label: "Analytics", icon: BarChart3, desc: "Billing analytics and summaries" },
@@ -34,6 +36,7 @@ export default function WaterBillingDashboard() {
       {tab === "bills" && <BillsPanel />}
       {tab === "payments" && <PaymentsPanel />}
       {tab === "batches" && <BatchManagementPanel />}
+      {tab === "products" && <ProductLoansPanel />}
       {tab === "collections" && <CollectionTodayPanel module="water" defaultMine />}
       {tab === "disconnections" && <DisconnectionsPanel />}
       {tab === "analytics" && <AnalyticsPanel />}

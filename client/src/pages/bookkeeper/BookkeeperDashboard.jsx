@@ -4,7 +4,6 @@ import { useAuth } from "../../context/AuthContext";
 import { bookkeeperBadges } from "../../lib/requestBadges";
 import TransactionsPanel from "./TransactionsPanel";
 import MembersCbuPanel from "./MembersCbuPanel";
-import ProductLoansPanel from "./ProductLoansPanel";
 import BookkeeperAnalyticsPanel from "./BookkeeperAnalyticsPanel";
 import ReportsPanel from "../../components/ReportsPanel";
 import AdjustmentsPanel from "../../components/AdjustmentsPanel";
@@ -25,8 +24,7 @@ const items = [
   { key: "drawer", label: "Cash Drawer", icon: Wallet, desc: "Today's drawer inflow / outflow reconciliation" },
   { key: "pettycash", label: "Petty Cash", icon: Coins, desc: "Imprest fund balance + voucher ledger (view-only)" },
   { key: "loan-approvals", label: "Loan Approvals", icon: Landmark, desc: "Second signature on loans the manager approved" },
-  { key: "products", label: "Product Loans", icon: Package, desc: "Catalogue of available products + applications (meter, rice, …)" },
-  { key: "product-analytics", label: "Product Analytics", icon: Package, desc: "Capital + profit per product, sale vs loan, paid/unpaid" },
+  { key: "product-analytics", label: "Product Analytics", icon: Package, desc: "Capital + profit per product, sale vs loan, paid/unpaid (managed by Water Officer)" },
   { key: "reports", label: "Reports", icon: FileDown, desc: "Treasurer's Report — PDF/Excel by day, week, month, or custom range" },
   { key: "payroll", label: "Payroll", icon: Coins, desc: "Payslips with SSS, PhilHealth, Pag-IBIG, and withholding tax" },
   { key: "loanperiod", label: "Loan Collections", icon: BarChart3, desc: "Loan capital, interest, paid/unpaid by period" },
@@ -53,7 +51,6 @@ export default function BookkeeperDashboard() {
       {tab === "drawer" && <CashDrawerPanel />}
       {tab === "pettycash" && <PettyCashPanel />}
       {tab === "loan-approvals" && <LoanApprovalsPanel />}
-      {tab === "products" && <ProductLoansPanel />}
       {tab === "product-analytics" && <ProductAnalyticsPanel />}
       {tab === "reports" && <ReportsPanel />}
       {tab === "payroll" && <PayrollPanel />}
