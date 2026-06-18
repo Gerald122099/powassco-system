@@ -1,183 +1,302 @@
-// Report export helpers — PDF (jsPDF + autotable) and CSV (file-saver).
-// Used by the cashier + bookkeeper Reports panels.
+// Report export helpers — a polished PDF (jsPDF + autotable) and a real,
+// styled Excel workbook (.xlsx via ExcelJS). Used by the cashier +
+// bookkeeper Reports panels (Treasurer's Report, Petty Cash, …).
 //
-// Header format mimics the cooperative's Treasurer's Report layout:
-//   POWASSCO MULTIPURPOSE COOPERATIVE
-//   Owak, Asturias, Cebu • C.D.A Reg. No. 9520-07014753
-//   [Report Title]
-//   For the period: <from> – <to>
+// Letterhead format:
+//   [logo]  POWASSCO MULTIPURPOSE COOPERATIVE
+//           Owak, Asturias, Cebu • C.D.A Reg. No. 9520-07014753
+//           [Report Title]
+//           For the period: <from> – <to>
 //
-// followed by a single landscape table and signature blocks at the bottom.
+// PDF: branded header + logo, zebra rows, repeating column headers across
+// pages, a bordered totals box, signature blocks, and a "Page X of Y"
+// footer on every page.
+// Excel: merged title block, frozen green header, auto-fit columns, and
+// numeric cells kept as REAL numbers (₱ format) so they sum/pivot natively.
 
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
 import { saveAs } from "file-saver";
+import logoUrl from "../assets/logo.png";
+
+// jsPDF + autotable + exceljs are heavy (~1 MB combined) and only needed
+// when the user actually exports, so they're lazy-loaded on demand —
+// keeping the dashboard bundles that import this module lean.
+
+const GREEN = [22, 101, 52];      // #166534
+const SLATE = [71, 85, 105];      // slate-600
+const INK = [15, 23, 42];         // slate-900
+const ZEBRA = [248, 250, 252];    // slate-50
 
 const peso = (n) =>
   "₱" + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "2-digit" }) : "—");
 const fmtDateTime = (d) => (d ? new Date(d).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" }) : "—");
 
+const ORG = "POWASSCO MULTIPURPOSE COOPERATIVE";
+const ADDR = "Owak, Asturias, Cebu • C.D.A Reg. No. 9520-07014753";
+
+// A right-aligned column is treated as numeric for Excel (real number + ₱).
+const isNumericCol = (c) => c.align === "right";
+const cellValue = (c, r) => {
+  const raw = r[c.key];
+  return c.format ? c.format(raw, r) : (raw ?? "—");
+};
+
+// ─── logo (loaded once, as a dataURL for jsPDF) ───────────────────────
+let _logoPromise = null;
+function getLogoDataUrl() {
+  if (!_logoPromise) {
+    _logoPromise = fetch(logoUrl)
+      .then((res) => res.blob())
+      .then((blob) => new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(blob);
+      }))
+      .catch(() => null);
+  }
+  return _logoPromise;
+}
+
 // ─── PDF ──────────────────────────────────────────────────────────────
 
-export function exportPdf({
+export async function exportPdf({
   title,
+  subtitle,     // optional small line under the title
   fromDate,
   toDate,
   preparedBy,
-  columns,    // [{ header, key, align?, format?(v) }]
-  rows,       // raw row objects
-  totals,     // { label, value } pairs
+  columns,      // [{ header, key, align?, format?(v, row) }]
+  rows,         // raw row objects
+  totals,       // [{ label, value }]
   filename,
 }) {
-  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+    import("jspdf"),
+    import("jspdf-autotable"),
+  ]);
+  // Narrow reports look better in portrait; wide ones need landscape.
+  const landscape = columns.length > 6;
+  const doc = new jsPDF({ orientation: landscape ? "landscape" : "portrait", unit: "mm", format: "a4" });
   const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
 
-  // Header
+  // Letterhead (page 1)
+  const logo = await getLogoDataUrl();
+  if (logo) { try { doc.addImage(logo, "PNG", 14, 9, 17, 17); } catch { /* skip logo */ } }
+
+  doc.setFont("helvetica", "bold");
   doc.setFontSize(14);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(22, 101, 52); // green-800
-  doc.text("POWASSCO MULTIPURPOSE COOPERATIVE", pageW / 2, 15, { align: "center" });
-
-  doc.setFontSize(9);
+  doc.setTextColor(...GREEN);
+  doc.text(ORG, pageW / 2, 16, { align: "center" });
   doc.setFont("helvetica", "normal");
-  doc.setTextColor(71, 85, 105);
-  doc.text("Owak, Asturias, Cebu • C.D.A Reg. No. 9520-07014753", pageW / 2, 21, { align: "center" });
+  doc.setFontSize(9);
+  doc.setTextColor(...SLATE);
+  doc.text(ADDR, pageW / 2, 21, { align: "center" });
 
-  doc.setDrawColor(22, 101, 52);
+  doc.setDrawColor(...GREEN);
   doc.setLineWidth(0.6);
-  doc.line(14, 24, pageW - 14, 24);
+  doc.line(14, 25, pageW - 14, 25);
 
-  doc.setFontSize(12);
   doc.setFont("helvetica", "bold");
-  doc.setTextColor(15, 23, 42);
-  doc.text(title, pageW / 2, 31, { align: "center" });
+  doc.setFontSize(12);
+  doc.setTextColor(...INK);
+  doc.text(title, pageW / 2, 32, { align: "center" });
 
-  doc.setFontSize(9);
   doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(...SLATE);
+  let hy = 37.5;
+  if (subtitle) { doc.text(subtitle, pageW / 2, hy, { align: "center" }); hy += 5; }
   const periodLabel = (fromDate || toDate)
-    ? `For the period: ${fmtDate(fromDate) || "—"} to ${fmtDate(toDate) || "—"}`
-    : "All transactions";
-  doc.text(periodLabel, pageW / 2, 37, { align: "center" });
-  doc.text(`Generated ${new Date().toLocaleString()}`, pageW / 2, 42, { align: "center" });
+    ? `For the period: ${fmtDate(fromDate)} to ${fmtDate(toDate)}`
+    : "All records";
+  doc.text(periodLabel, pageW / 2, hy, { align: "center" }); hy += 4.5;
+  doc.text(`${rows.length} row(s) • Generated ${new Date().toLocaleString()}`, pageW / 2, hy, { align: "center" });
 
-  // Body table
+  // Table
   const head = [columns.map((c) => c.header)];
-  const body = rows.map((r) =>
-    columns.map((c) => {
-      const raw = r[c.key];
-      return c.format ? c.format(raw, r) : (raw ?? "—");
-    })
-  );
+  const body = rows.map((r) => columns.map((c) => String(cellValue(c, r))));
 
   autoTable(doc, {
-    startY: 47,
+    startY: hy + 5,
     head,
     body,
-    styles: { fontSize: 8, cellPadding: 1.5 },
-    headStyles: { fillColor: [22, 101, 52], textColor: 255, fontStyle: "bold" },
-    alternateRowStyles: { fillColor: [248, 250, 252] },
+    theme: "grid",
+    styles: { fontSize: 8, cellPadding: 1.6, lineColor: [226, 232, 240], lineWidth: 0.1, textColor: INK },
+    headStyles: { fillColor: GREEN, textColor: 255, fontStyle: "bold", halign: "center", lineWidth: 0 },
+    alternateRowStyles: { fillColor: ZEBRA },
     columnStyles: columns.reduce((acc, c, i) => {
       if (c.align === "right") acc[i] = { halign: "right" };
       return acc;
     }, {}),
-    margin: { left: 10, right: 10 },
+    margin: { left: 10, right: 10, bottom: 16 },
+    rowPageBreak: "avoid",
   });
 
-  // Totals
-  let cursorY = doc.lastAutoTable.finalY + 6;
+  // Bordered totals box (bottom-right)
+  let cursorY = doc.lastAutoTable.finalY + 7;
   if (totals && totals.length) {
+    const boxW = landscape ? 95 : 80;
+    const boxX = pageW - 14 - boxW;
+    const lineH = 5.5;
+    const boxH = 7 + totals.length * lineH + 2;
+    if (cursorY + boxH > pageH - 30) { doc.addPage(); cursorY = 18; }
+    doc.setDrawColor(...GREEN);
+    doc.setLineWidth(0.4);
+    doc.setFillColor(...ZEBRA);
+    doc.roundedRect(boxX, cursorY, boxW, boxH, 1.5, 1.5, "FD");
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
-    for (const t of totals) {
-      doc.text(`${t.label}: ${t.value}`, pageW - 14, cursorY, { align: "right" });
-      cursorY += 5;
-    }
-    cursorY += 4;
+    doc.setFontSize(8.5);
+    doc.setTextColor(...GREEN);
+    doc.text("SUMMARY", boxX + 3, cursorY + 5);
+    let ty = cursorY + 5 + lineH;
+    doc.setFontSize(9);
+    doc.setTextColor(...INK);
+    totals.forEach((t, i) => {
+      const emphasize = i === totals.length - 1;
+      doc.setFont("helvetica", emphasize ? "bold" : "normal");
+      doc.text(String(t.label), boxX + 3, ty);
+      doc.text(String(t.value), boxX + boxW - 3, ty, { align: "right" });
+      ty += lineH;
+    });
+    cursorY += boxH + 8;
   }
 
   // Signature blocks
-  if (cursorY > doc.internal.pageSize.getHeight() - 35) {
-    doc.addPage();
-    cursorY = 20;
-  }
+  if (cursorY > pageH - 34) { doc.addPage(); cursorY = 20; }
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
-  const cols = 3;
-  const colW = (pageW - 28) / cols;
-  const labels = ["Prepared by:", "Verified by:", "Approved by:"];
-  const names  = [preparedBy || "", "", ""];
-  for (let i = 0; i < cols; i++) {
+  doc.setTextColor(...INK);
+  const sig = [["Prepared by:", preparedBy || ""], ["Verified by:", ""], ["Approved by:", ""]];
+  const colW = (pageW - 28) / sig.length;
+  sig.forEach(([label, name], i) => {
     const x = 14 + colW * i;
+    if (name) doc.text(name, x + (colW - 6) / 2, cursorY + 13, { align: "center" });
+    doc.setDrawColor(...INK);
+    doc.setLineWidth(0.2);
     doc.line(x, cursorY + 14, x + colW - 6, cursorY + 14);
-    if (names[i]) {
-      doc.setFont("helvetica", "bold");
-      doc.text(names[i], x + (colW - 6) / 2, cursorY + 13, { align: "center" });
-      doc.setFont("helvetica", "normal");
-    }
-    doc.text(labels[i], x, cursorY + 19);
+    doc.text(label, x, cursorY + 19);
+  });
+
+  // Footer "Page X of Y" on every page
+  const pages = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pages; i++) {
+    doc.setPage(i);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    doc.setTextColor(148, 163, 184);
+    doc.text(`${ORG} — confidential`, 14, pageH - 6);
+    doc.text(`Page ${i} of ${pages}`, pageW - 14, pageH - 6, { align: "right" });
   }
 
   doc.save(filename || `${title.replace(/\s+/g, "_")}.pdf`);
 }
 
-// ─── CSV (Excel-compatible) ───────────────────────────────────────────
+// ─── Excel (.xlsx, styled, with real numeric cells) ───────────────────
 
-function csvCell(v) {
-  if (v === null || v === undefined) return "";
-  const s = String(v);
-  if (s.includes(",") || s.includes("\"") || s.includes("\n")) {
-    return `"${s.replace(/"/g, '""')}"`;
-  }
-  return s;
-}
-
-export function exportCsv({
+export async function exportExcel({
   title,
+  subtitle,
   fromDate,
   toDate,
+  preparedBy,
   columns,
   rows,
   totals,
   filename,
 }) {
-  const lines = [];
-  lines.push(csvCell("POWASSCO MULTIPURPOSE COOPERATIVE"));
-  lines.push(csvCell("Owak, Asturias, Cebu — C.D.A Reg. No. 9520-07014753"));
-  lines.push(csvCell(title));
-  if (fromDate || toDate) {
-    lines.push(csvCell(`For the period: ${fmtDate(fromDate) || "all"} to ${fmtDate(toDate) || "all"}`));
+  const { default: ExcelJS } = await import("exceljs");
+  const wb = new ExcelJS.Workbook();
+  wb.creator = "POWASSCO";
+  wb.created = new Date();
+  const ws = wb.addWorksheet((title || "Report").slice(0, 28).replace(/[\\/?*[\]:]/g, " "), {
+    pageSetup: { orientation: columns.length > 6 ? "landscape" : "portrait", fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
+  });
+  const nCol = columns.length;
+  const colLetter = (n) => { let s = ""; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; };
+  const span = (rowNum) => `A${rowNum}:${colLetter(nCol)}${rowNum}`;
+
+  // Title block (merged, centered)
+  const titleLines = [
+    { t: ORG, font: { bold: true, size: 15, color: { argb: "FF166534" } } },
+    { t: ADDR, font: { size: 9, color: { argb: "FF475569" } } },
+    { t: title, font: { bold: true, size: 12, color: { argb: "FF0F172A" } } },
+  ];
+  if (subtitle) titleLines.push({ t: subtitle, font: { size: 9, italic: true, color: { argb: "FF475569" } } });
+  titleLines.push({ t: (fromDate || toDate) ? `For the period: ${fmtDate(fromDate)} to ${fmtDate(toDate)}` : "All records", font: { size: 9, color: { argb: "FF475569" } } });
+  titleLines.push({ t: `${rows.length} row(s) • Generated ${new Date().toLocaleString()}`, font: { size: 8, color: { argb: "FF94A3B8" } } });
+
+  for (const line of titleLines) {
+    const row = ws.addRow([line.t]);
+    ws.mergeCells(span(row.number));
+    const cell = row.getCell(1);
+    cell.font = line.font;
+    cell.alignment = { horizontal: "center", vertical: "middle" };
   }
-  lines.push(csvCell(`Generated: ${new Date().toLocaleString()}`));
-  lines.push(""); // blank row
+  ws.addRow([]); // spacer
 
   // Header row
-  lines.push(columns.map((c) => csvCell(c.header)).join(","));
-  // Body rows
+  const headerRow = ws.addRow(columns.map((c) => c.header));
+  headerRow.height = 18;
+  headerRow.eachCell((cell) => {
+    cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 10 };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF166534" } };
+    cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+  });
+  ws.views = [{ state: "frozen", ySplit: headerRow.number }];
+
+  // Body rows — keep numbers as numbers so they sum/pivot in Excel.
   for (const r of rows) {
-    lines.push(columns.map((c) => {
+    const values = columns.map((c) => {
       const raw = r[c.key];
-      const v = c.format ? c.format(raw, r) : raw;
-      return csvCell(v);
-    }).join(","));
+      if (isNumericCol(c) && typeof raw === "number" && Number.isFinite(raw)) return raw;
+      return String(cellValue(c, r));
+    });
+    const row = ws.addRow(values);
+    row.eachCell((cell, col) => {
+      const c = columns[col - 1];
+      cell.border = { top: { style: "hair", color: { argb: "FFE2E8F0" } } };
+      if (c.align === "right") cell.alignment = { horizontal: "right" };
+      if (typeof cell.value === "number") cell.numFmt = '"₱"#,##0.00';
+    });
   }
 
+  // Totals
   if (totals && totals.length) {
-    lines.push("");
-    for (const t of totals) {
-      lines.push(`${csvCell(t.label)},${csvCell(t.value)}`);
-    }
+    ws.addRow([]);
+    totals.forEach((t, i) => {
+      const row = ws.addRow([t.label, t.value]);
+      const emphasize = i === totals.length - 1;
+      row.getCell(1).font = { bold: true, color: emphasize ? { argb: "FF166534" } : undefined };
+      row.getCell(2).font = { bold: true };
+      row.getCell(2).alignment = { horizontal: "left" };
+    });
   }
 
-  const csv = "﻿" + lines.join("\r\n"); // BOM for Excel UTF-8
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-  saveAs(blob, filename || `${title.replace(/\s+/g, "_")}.csv`);
+  // Signature line
+  ws.addRow([]);
+  const sigRow = ws.addRow([`Prepared by: ${preparedBy || "______________"}`, "", "Verified by: ______________", "", "Approved by: ______________"]);
+  sigRow.eachCell((cell) => { cell.font = { size: 9, color: { argb: "FF475569" } }; });
+
+  // Auto-fit column widths from content
+  columns.forEach((c, i) => {
+    let max = String(c.header).length;
+    for (const r of rows) {
+      const v = cellValue(c, r);
+      const len = (typeof v === "number" ? peso(v) : String(v)).length;
+      if (len > max) max = len;
+    }
+    ws.getColumn(i + 1).width = Math.min(Math.max(max + 2, 10), 42);
+  });
+
+  const buf = await wb.xlsx.writeBuffer();
+  saveAs(
+    new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+    filename || `${title.replace(/\s+/g, "_")}.xlsx`
+  );
 }
 
 // ─── Shared helpers ───────────────────────────────────────────────────
 
-export const reportFormatters = {
-  peso,
-  date: fmtDate,
-  dateTime: fmtDateTime,
-};
+export const reportFormatters = { peso, date: fmtDate, dateTime: fmtDateTime };

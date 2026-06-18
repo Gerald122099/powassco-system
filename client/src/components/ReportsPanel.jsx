@@ -12,7 +12,7 @@ import { useEffect, useState, useCallback } from "react";
 import Card from "../components/Card";
 import { apiFetch } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
-import { exportPdf, exportCsv, reportFormatters } from "../lib/reportExport";
+import { exportPdf, exportExcel, reportFormatters } from "../lib/reportExport";
 import { FileDown, FileSpreadsheet, RefreshCw, Calendar } from "lucide-react";
 
 const { peso, dateTime } = reportFormatters;
@@ -182,30 +182,30 @@ export default function ReportsPanel({ defaultTitle = "Treasurer's Report — Ca
     : `${defaultTitle}${moduleFilter === "all" ? "" : ` — ${moduleFilter[0].toUpperCase()}${moduleFilter.slice(1)}`}`;
   const filenameSuffix = `${from || "all"}_${to || "all"}`.replace(/[^0-9A-Za-z_-]+/g, "_");
 
-  function doExportPdf() {
-    if (!allRows.length) return;
-    exportPdf({
-      title: reportTitle,
-      fromDate: from,
-      toDate: to,
-      preparedBy: user?.fullName || user?.employeeId || "",
-      columns: exportColumns,
-      rows: allRows,
-      totals: exportTotals,
-      filename: `${isPetty ? "Petty_Cash_Report" : "Treasurers_Report"}_${filenameSuffix}.pdf`,
-    });
+  const [exporting, setExporting] = useState("");
+  const baseName = isPetty ? "Petty_Cash_Report" : "Treasurers_Report";
+  const exportPayload = () => ({
+    title: reportTitle,
+    fromDate: from,
+    toDate: to,
+    preparedBy: user?.fullName || user?.employeeId || "",
+    columns: exportColumns,
+    rows: allRows,
+    totals: exportTotals,
+  });
+  async function doExportPdf() {
+    if (!allRows.length || exporting) return;
+    setExporting("pdf"); setErr("");
+    try { await exportPdf({ ...exportPayload(), filename: `${baseName}_${filenameSuffix}.pdf` }); }
+    catch (e) { setErr(`PDF export failed: ${e.message}`); }
+    finally { setExporting(""); }
   }
-  function doExportCsv() {
-    if (!allRows.length) return;
-    exportCsv({
-      title: reportTitle,
-      fromDate: from,
-      toDate: to,
-      columns: exportColumns,
-      rows: allRows,
-      totals: exportTotals,
-      filename: `${isPetty ? "Petty_Cash_Report" : "Treasurers_Report"}_${filenameSuffix}.csv`,
-    });
+  async function doExportExcel() {
+    if (!allRows.length || exporting) return;
+    setExporting("xlsx"); setErr("");
+    try { await exportExcel({ ...exportPayload(), filename: `${baseName}_${filenameSuffix}.xlsx` }); }
+    catch (e) { setErr(`Excel export failed: ${e.message}`); }
+    finally { setExporting(""); }
   }
 
   return (
@@ -221,18 +221,18 @@ export default function ReportsPanel({ defaultTitle = "Treasurer's Report — Ca
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={doExportCsv}
-            disabled={!allRows.length}
+            onClick={doExportExcel}
+            disabled={!allRows.length || !!exporting}
             className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
           >
-            <FileSpreadsheet size={14} /> Excel (.csv)
+            <FileSpreadsheet size={14} /> {exporting === "xlsx" ? "Exporting…" : "Excel (.xlsx)"}
           </button>
           <button
             onClick={doExportPdf}
-            disabled={!allRows.length}
+            disabled={!allRows.length || !!exporting}
             className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
           >
-            <FileDown size={14} /> PDF
+            <FileDown size={14} /> {exporting === "pdf" ? "Exporting…" : "PDF"}
           </button>
         </div>
       </div>
