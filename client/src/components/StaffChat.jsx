@@ -11,7 +11,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { apiFetch } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
-import { MessageCircle, X, Send, Pencil, Trash2, Check, Camera, SmilePlus, Monitor } from "lucide-react";
+import { MessageCircle, X, Send, Pencil, Trash2, Check, Camera, SmilePlus, Monitor, AtSign, BellRing } from "lucide-react";
 
 const CHAT_ROLES = new Set(["admin", "manager", "cashier", "loan_officer", "water_bill_officer", "bookkeeper"]);
 const LAST_SEEN_KEY = "pow_chat_last_seen";
@@ -38,6 +38,55 @@ const ROLE_TONE = {
 const fmtTime = (d) =>
   new Date(d).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 
+const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+// Short two-tone chime for an incoming @mention (WebAudio, no asset).
+function playPing() {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    const beep = (freq, start, dur) => {
+      const o = ctx.createOscillator(); const g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination); o.type = "sine"; o.frequency.value = freq;
+      g.gain.setValueAtTime(0.0001, ctx.currentTime + start);
+      g.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + start + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + start + dur);
+      o.start(ctx.currentTime + start); o.stop(ctx.currentTime + start + dur + 0.02);
+    };
+    beep(740, 0, 0.16); beep(988, 0.14, 0.22);
+    setTimeout(() => { try { ctx.close(); } catch { /* */ } }, 700);
+  } catch { /* audio blocked until a user gesture — fine */ }
+}
+
+// Render message text with @mentions highlighted. A mention of the
+// viewer themselves is emphasized in amber.
+function ChatText({ text, members, myName, mine }) {
+  if (!text) return null;
+  const names = members.map((m) => m.name).filter(Boolean).sort((a, b) => b.length - a.length);
+  if (!names.length) return <span className="whitespace-pre-wrap">{text}</span>;
+  const re = new RegExp("@(" + names.map(esc).join("|") + ")", "g");
+  const parts = [];
+  let last = 0; let mm;
+  while ((mm = re.exec(text)) !== null) {
+    if (mm.index > last) parts.push(text.slice(last, mm.index));
+    const isMe = myName && mm[1] === myName;
+    parts.push(
+      <span
+        key={mm.index}
+        className={isMe
+          ? `rounded px-1 font-bold ${mine ? "bg-amber-300/40 text-white" : "bg-amber-200 text-amber-900"}`
+          : `font-semibold ${mine ? "text-emerald-100" : "text-emerald-700"}`}
+      >
+        @{mm[1]}
+      </span>
+    );
+    last = mm.index + mm[0].length;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return <span className="whitespace-pre-wrap">{parts}</span>;
+}
+
 export default function StaffChat() {
   const { token, user } = useAuth();
   const [open, setOpen] = useState(false);
@@ -52,13 +101,41 @@ export default function StaffChat() {
   // Popup preview of the newest incoming message while the panel is
   // closed. Auto-dismisses; click opens the chat.
   const [preview, setPreview] = useState(null); // { name, text }
+  // Special @mention alert (amber popup + chime), separate from preview.
+  const [mentionPopup, setMentionPopup] = useState(null); // { name, text }
+  const [members, setMembers] = useState([]); // roster for the @ picker
   const previewTimer = useRef(null);
+  const mentionTimer = useRef(null);
   const lastNotifiedId = useRef("");
+  const lastMentionNotified = useRef("");
   const listRef = useRef(null);
+  const inputRef = useRef(null);
   const openRef = useRef(false);
   openRef.current = open;
 
   const allowed = user && CHAT_ROLES.has(user.role);
+  const myId = String(user?.id || user?._id || "");
+
+  // Load the staff roster once for the @mention autocomplete.
+  useEffect(() => {
+    if (!allowed) return;
+    apiFetch("/chat/members", { token }).then((r) => Array.isArray(r) && setMembers(r)).catch(() => {});
+  }, [allowed, token]);
+
+  // Which member ids are @mentioned in a given text (by exact name match).
+  const deriveMentions = useCallback(
+    (t) => members.filter((mb) => mb.id !== myId && t.includes(`@${mb.name}`)).map((mb) => mb.id),
+    [members, myId]
+  );
+
+  // Ask for OS notification permission on a real user gesture (chat open).
+  const ensureNotifyPermission = useCallback(() => {
+    try {
+      if (typeof Notification !== "undefined" && Notification.permission === "default") {
+        Notification.requestPermission().catch(() => {});
+      }
+    } catch { /* unsupported */ }
+  }, []);
 
   const recomputeUnread = useCallback((msgs) => {
     const lastSeen = localStorage.getItem(LAST_SEEN_KEY) || "";
@@ -75,8 +152,6 @@ export default function StaffChat() {
     setUnread(0);
   }, [token]);
 
-  const myId = String(user?.id || user?._id || "");
-
   const poll = useCallback(async () => {
     if (!allowed) return;
     try {
@@ -88,15 +163,33 @@ export default function StaffChat() {
         markSeen(msgs);
       } else {
         setUnread(recomputeUnread(msgs));
-        // Popup preview for the newest message from someone else that
-        // we haven't already previewed and is newer than last-seen.
         const lastSeen = localStorage.getItem(LAST_SEEN_KEY) || "";
-        const newest = [...msgs].reverse().find((m) => !m.deleted && m.fromId !== myId);
-        if (newest && newest._id > lastSeen && newest._id !== lastNotifiedId.current) {
-          lastNotifiedId.current = newest._id;
-          setPreview({ name: newest.fromName, text: newest.text });
-          clearTimeout(previewTimer.current);
-          previewTimer.current = setTimeout(() => setPreview(null), 6000);
+        // An @mention of me takes priority — amber popup + chime + (if
+        // permitted) an OS notification.
+        const mention = [...msgs].reverse().find(
+          (m) => !m.deleted && m.fromId !== myId && (m.mentions || []).includes(myId) && m._id > lastSeen
+        );
+        if (mention && mention._id !== lastMentionNotified.current) {
+          lastMentionNotified.current = mention._id;
+          setPreview(null);
+          setMentionPopup({ name: mention.fromName, text: mention.text || "(screenshot)" });
+          playPing();
+          try {
+            if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+              new Notification(`${mention.fromName} mentioned you`, { body: mention.text || "(screenshot)", icon: "/icon-192.png", tag: "pow-chat-mention" });
+            }
+          } catch { /* ignore */ }
+          clearTimeout(mentionTimer.current);
+          mentionTimer.current = setTimeout(() => setMentionPopup(null), 9000);
+        } else {
+          // Otherwise, a normal preview for the newest message from someone else.
+          const newest = [...msgs].reverse().find((m) => !m.deleted && m.fromId !== myId);
+          if (newest && newest._id > lastSeen && newest._id !== lastNotifiedId.current) {
+            lastNotifiedId.current = newest._id;
+            setPreview({ name: newest.fromName, text: newest.text });
+            clearTimeout(previewTimer.current);
+            previewTimer.current = setTimeout(() => setPreview(null), 6000);
+          }
         }
       }
     } catch {
@@ -119,6 +212,12 @@ export default function StaffChat() {
     }
   }, [open, messages.length]);
 
+  // Screenshot tool state (hooks must stay above the early return).
+  const [shot, setShot] = useState(null);          // full-frame data URL
+  const [cropRect, setCropRect] = useState(null);  // {x,y,w,h} in displayed px
+  const shotImgRef = useRef(null);
+  const dragRef = useRef(null);
+
   if (!allowed) return null;
 
   async function send(e) {
@@ -127,7 +226,7 @@ export default function StaffChat() {
     if (!t || sending) return;
     setSending(true);
     try {
-      const msg = await apiFetch("/chat", { method: "POST", token, body: { text: t } });
+      const msg = await apiFetch("/chat", { method: "POST", token, body: { text: t, mentions: deriveMentions(t) } });
       setText("");
       setMessages((prev) => {
         const next = [...prev, msg];
@@ -143,11 +242,6 @@ export default function StaffChat() {
 
   // Screenshot tool (Phase 12): capture the screen, drag to crop,
   // send straight into the chat for support reports.
-  const [shot, setShot] = useState(null);        // full-frame data URL
-  const [cropRect, setCropRect] = useState(null); // {x,y,w,h} in displayed px
-  const shotImgRef = useRef(null);
-  const dragRef = useRef(null);
-
   async function captureScreen() {
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
@@ -213,7 +307,7 @@ export default function StaffChat() {
       dataUrl = canvas.toDataURL("image/jpeg", quality);
     }
     try {
-      const msg = await apiFetch("/chat", { method: "POST", token, body: { text: text.trim(), imageData: dataUrl } });
+      const msg = await apiFetch("/chat", { method: "POST", token, body: { text: text.trim(), imageData: dataUrl, mentions: deriveMentions(text.trim()) } });
       setText("");
       setShot(null);
       setMessages((prev) => {
@@ -245,8 +339,33 @@ export default function StaffChat() {
     } catch (err) { alert(err.message); }
   }
 
+  // Replace the trailing "@query" the user is typing with the picked name.
+  function pickMention(mb) {
+    setText((t) => t.replace(/@([^\s@]{0,40})$/, `@${mb.name} `));
+    setTimeout(() => inputRef.current?.focus(), 0);
+  }
+  // Active "@query" at the end of the draft → matching members for the menu.
+  const mentionQ = text.match(/@([^\s@]{0,40})$/);
+  const mentionMatches = mentionQ
+    ? members.filter((mb) => mb.id !== myId && mb.name.toLowerCase().includes(mentionQ[1].toLowerCase())).slice(0, 6)
+    : [];
+
   return (
     <>
+      {/* @mention alert (closed state) — louder than a normal preview */}
+      {!open && mentionPopup && (
+        <button
+          onClick={() => { setMentionPopup(null); setOpen(true); ensureNotifyPermission(); markSeen(messages); }}
+          className="fixed bottom-24 right-5 z-50 max-w-[19rem] rounded-2xl border-2 border-amber-400 bg-amber-50 p-3 text-left shadow-2xl animate-[fadeIn_.2s_ease-out] ring-2 ring-amber-300/50"
+        >
+          <div className="flex items-center gap-1.5 text-[11px] font-extrabold text-amber-700">
+            <BellRing size={13} className="animate-pulse" /> {mentionPopup.name} mentioned you
+          </div>
+          <div className="mt-1 line-clamp-3 text-xs text-amber-900">{mentionPopup.text}</div>
+          <div className="mt-1 text-[10px] text-amber-600">Tap to open chat</div>
+        </button>
+      )}
+
       {/* Incoming-message preview popup (closed state only) */}
       {!open && preview && (
         <button
@@ -264,7 +383,7 @@ export default function StaffChat() {
       {/* Launcher */}
       {!open && (
         <button
-          onClick={() => { setOpen(true); setPreview(null); markSeen(messages); }}
+          onClick={() => { setOpen(true); setPreview(null); setMentionPopup(null); ensureNotifyPermission(); markSeen(messages); }}
           className="fixed bottom-5 right-5 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-600 text-white shadow-xl transition hover:bg-emerald-700"
           title="Team chat"
         >
@@ -300,6 +419,7 @@ export default function StaffChat() {
               <div className="py-10 text-center text-xs text-slate-400">No messages yet — say hi!</div>
             ) : messages.map((m) => {
               const mine = m.fromId === myId;
+              const mentionsMe = !mine && (m.mentions || []).includes(myId);
               const canModerate = mine || user?.role === "admin";
               if (m.deleted) {
                 return (
@@ -329,7 +449,7 @@ export default function StaffChat() {
                             const t = editDraft.trim();
                             if (!t) return;
                             try {
-                              const updated = await apiFetch(`/chat/${m._id}`, { method: "PATCH", token, body: { text: t } });
+                              const updated = await apiFetch(`/chat/${m._id}`, { method: "PATCH", token, body: { text: t, mentions: deriveMentions(t) } });
                               setMessages((prev) => prev.map((x) => (x._id === m._id ? updated : x)));
                               setEditingId(null);
                             } catch (err) { alert(err.message); }
@@ -350,7 +470,7 @@ export default function StaffChat() {
                       ? <img src={m.fromAvatar} alt="" className="h-7 w-7 shrink-0 rounded-full object-cover border border-slate-200" />
                       : <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-300 text-[10px] font-bold text-white">{(m.fromName || "?").slice(0, 2).toUpperCase()}</div>
                   )}
-                  <div className={`relative max-w-[80%] rounded-2xl px-3 py-2 shadow-sm ${mine ? "bg-emerald-600 text-white" : "bg-white border border-slate-200"}`}>
+                  <div className={`relative max-w-[80%] rounded-2xl px-3 py-2 shadow-sm ${mine ? "bg-emerald-600 text-white" : "bg-white border border-slate-200"} ${mentionsMe ? "ring-2 ring-amber-400" : ""}`}>
                     <div className="mb-0.5 flex items-center gap-1.5">
                       <span className={`text-[11px] font-bold ${mine ? "text-emerald-100" : m.fromRole === "admin" ? "text-amber-600" : "text-slate-800"}`}>
                         {mine ? "You" : m.fromName}
@@ -358,13 +478,22 @@ export default function StaffChat() {
                       <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold ${mine ? "bg-emerald-700 text-emerald-100" : ROLE_TONE[m.fromRole] || "bg-slate-100 text-slate-600"}`}>
                         {ROLE_LABEL[m.fromRole] || m.fromRole}
                       </span>
+                      {mentionsMe && (
+                        <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold text-amber-700">
+                          <AtSign size={8} /> you
+                        </span>
+                      )}
                     </div>
                     {m.imageData && (
                       <a href={m.imageData} target="_blank" rel="noopener noreferrer" title="Open full size">
                         <img src={m.imageData} alt="screenshot" className="mb-1 max-h-48 rounded-lg border border-black/10" />
                       </a>
                     )}
-                    {m.text && <div className={`whitespace-pre-wrap text-sm ${mine ? "" : "text-slate-800"}`}>{m.text}</div>}
+                    {m.text && (
+                      <div className={`text-sm ${mine ? "" : "text-slate-800"}`}>
+                        <ChatText text={m.text} members={members} myName={user?.fullName} mine={mine} />
+                      </div>
+                    )}
                     <div className={`mt-0.5 flex items-center justify-end gap-1 text-[9px] ${mine ? "text-emerald-100" : "text-slate-400"}`}>
                       {m.editedAt && <span className="italic">edited</span>}
                       <span>{fmtTime(m.createdAt)}</span>
@@ -432,6 +561,28 @@ export default function StaffChat() {
               </div>
             );
           })()}
+          {/* @mention autocomplete */}
+          {mentionMatches.length > 0 && (
+            <div className="mx-2 mb-1 overflow-hidden rounded-xl border border-emerald-200 bg-white shadow-lg">
+              <div className="flex items-center gap-1 bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700">
+                <AtSign size={11} /> Mention someone
+              </div>
+              {mentionMatches.map((mb) => (
+                <button
+                  key={mb.id}
+                  type="button"
+                  onClick={() => pickMention(mb)}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-emerald-50"
+                >
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-200 text-[10px] font-bold text-slate-600">
+                    {(mb.name || "?").slice(0, 2).toUpperCase()}
+                  </span>
+                  <span className="font-semibold text-slate-800">{mb.name}</span>
+                  <span className="ml-auto text-[10px] text-slate-400">{ROLE_LABEL[mb.role] || mb.role}</span>
+                </button>
+              ))}
+            </div>
+          )}
           <form onSubmit={send} className="flex items-center gap-2 border-t border-slate-200 bg-white p-2">
             <button
               type="button"
@@ -442,9 +593,14 @@ export default function StaffChat() {
               <Monitor size={15} />
             </button>
             <input
+              ref={inputRef}
               value={text}
               onChange={(e) => setText(e.target.value)}
-              placeholder="Message the team…"
+              onKeyDown={(e) => {
+                // Enter picks the top mention match instead of sending.
+                if (e.key === "Enter" && mentionMatches.length > 0) { e.preventDefault(); pickMention(mentionMatches[0]); }
+              }}
+              placeholder="Message the team…  (type @ to mention)"
               maxLength={1000}
               className="flex-1 rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
             />

@@ -27,6 +27,9 @@ const ChatMessageSchema = new mongoose.Schema(
     // the widget's screenshot-and-crop tool for support reports.
     imageData: { type: String, default: "" },
     fromAvatar: { type: String, default: "" }, // data-URL snapshot at send time
+    // userIds the message @mentions — drives the recipient's "mentioned
+    // you" popup + the highlighted bubble client-side.
+    mentions: { type: [String], default: [] },
     // One reaction per user; admin reactions render specially client-side.
     reactions: { type: [{ emoji: String, by: String, byId: String, byRole: String }], default: [] },
     editedAt: { type: Date, default: null },
@@ -58,6 +61,20 @@ const ChatSeen = mongoose.model("ChatSeen", ChatSeenSchema);
 const router = express.Router();
 const CHAT_ROLES = ["admin", "manager", "cashier", "loan_officer", "water_bill_officer", "bookkeeper"];
 const guard = [requireAuth, requireRole(CHAT_ROLES)];
+
+const cleanMentions = (m) =>
+  (Array.isArray(m) ? m : []).map((x) => String(x)).filter((x) => /^[a-f0-9]{24}$/i.test(x)).slice(0, 30);
+
+// Roster for the @mention picker — every staff member who can use chat.
+router.get("/members", ...guard, async (req, res) => {
+  try {
+    const users = await User.find({ role: { $in: CHAT_ROLES } })
+      .select("fullName employeeId role").sort({ fullName: 1 }).lean();
+    res.json(users.map((u) => ({ id: String(u._id), name: u.fullName || u.employeeId || "Staff", role: u.role })));
+  } catch (e) {
+    res.status(500).json({ message: "Failed to load members." });
+  }
+});
 
 router.get("/", ...guard, async (req, res) => {
   try {
@@ -114,6 +131,7 @@ router.post("/", ...guard, async (req, res) => {
       fromAvatar: sender?.avatar || "",
       text,
       imageData,
+      mentions: cleanMentions(req.body?.mentions),
     });
     res.status(201).json(msg.toObject());
   } catch (e) {
@@ -135,6 +153,7 @@ router.patch("/:id", ...guard, async (req, res) => {
       return res.status(403).json({ message: "You can only edit your own messages." });
     }
     msg.text = text;
+    if (req.body?.mentions !== undefined) msg.mentions = cleanMentions(req.body.mentions);
     msg.editedAt = new Date();
     await msg.save();
     res.json(msg.toObject());
