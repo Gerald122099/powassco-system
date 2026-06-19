@@ -31,6 +31,34 @@ Contact: facebook.com/gerald.durano.16
 
 ---
 
+## Plain-Language Summary (Read This First)
+
+**In one sentence:** POWASSCO now runs on **one secure online system** that does all the cooperative's record-keeping and money-handling, and it can be used from **any phone or computer**.
+
+A simple way to picture it:
+- The old **paper ledgers and notebooks** are replaced by **one shared, always-updated record** everyone looks at together — so the numbers never disagree between offices.
+- The **computer does the math** (water bills, penalties, loan interest, payroll) the exact same way every time — no more hand-computation differences.
+- **No single person can move money alone.** Anything sensitive — releasing a loan, moving cash, payroll — needs **two or three people to approve**, and **every action is permanently recorded** with the name of who did it.
+
+The system has **two sides**:
+
+**1. The Member Side — for the public and co-op members**
+- Check their **water bill** and their **savings + share capital balance** from home, using their account number and a private PIN.
+- Receive **automatic reminders** before a bill is due and when it becomes overdue.
+- **Pay online** (GCash / QR) or get an **accurate printed bill on the spot** from the plumber.
+- Install the free **"POWASSCO Member" app** on an Android phone — a simple home screen for bills, balance, and reminders.
+
+**2. The Staff Side — for employees and officers**
+- Each employee has a **role** (cashier, bookkeeper, water officer, loan officer, manager, admin, audit committee) that shows only the screens for their job.
+- The **cashier** collects and pays out; the **bookkeeper** keeps the records; the **manager + bookkeeper** approve loans and money movements; the **audit committee** sees everything but changes nothing.
+- Staff use it in any browser or install the **Windows desktop app**; plumbers use a **field app that works with no internet signal**.
+
+**Is the money and data safe?** Yes. Passwords and PINs are **scrambled (never readable)**, sensitive logins need a **second one-time code (2FA)**, the system is **protected against common online attacks**, financial records can be **added but never quietly erased**, and everything is **backed up automatically** on professional cloud services. (Full detail in Sections 14–18 and 20.)
+
+> The rest of this document explains each part in plain language. The Board can read just this summary and the Executive Summary (Section 6) for the complete picture; the remaining sections are there for depth and for the record.
+
+---
+
 ## Table of Contents
 
 **Part I — Introduction**
@@ -57,8 +85,8 @@ Contact: facebook.com/gerald.durano.16
 17. Deployment, Backup, and Maintenance
 18. Standards and Good-Practice Compliance
 
-**Part IV — Field Operations and Trust**
-19. The Plumber Mobile App
+**Part IV — The Apps, Field Operations, and Trust**
+19. The Apps — Member, Field, and Desktop
 20. System Integrity — Why the Numbers Can Be Trusted
 
 **Part V — Direction and Guidance**
@@ -254,11 +282,19 @@ The system gives each staff member a **role** that decides which screens they se
 
 **Savings & CBU** — voluntary savings with PIN, public balance check, interest accrual, Share Capital ledger.
 
-**Online payments** — accepts verified online payments (QR PH / e-wallet) with secure provider confirmation.
+**Member Self-Service & Mobile App** — members check their water bills and their savings + Share Capital balance themselves (account number + private PIN), and can install the **"POWASSCO Member" Android app** — a simple "My POWASSCO" home with **My Bills**, **My Balance**, reminders on/off, and an optional 4-digit app PIN. No member passwords are stored; access is by the member's own saved account + PIN.
 
-**Team Chat** — internal staff chat (office roles) with reactions, read receipts, screenshots, and profile photos.
+**Automatic Bill Reminders & Announcements** — the system automatically notifies members on their phones: a **new-bill** notice, a **due-soon** reminder before the due date, and a **daily overdue** reminder until paid (it stops once the meter is disconnected or the bill is settled). The cooperative can also **broadcast announcements** to all subscribed members.
 
-**Everywhere** — two-factor login, 30-minute idle lock with PIN, full audit logging, role-based access.
+**Online payments** — accepts verified online payments (QR PH / e-wallet) with secure provider confirmation; the amount is always computed by the system, and duplicate payments are blocked.
+
+**Petty Cash Fund** — the cashier runs a small **imprest fund**: top it up (cash in), record **vouchers** for minor expenses (cash out), and the system keeps a **running balance** and blocks overspending. Bookkeeper, manager, and audit see it read-only, and it exports in the Reports.
+
+**Reports (PDF & Excel)** — the Treasurer's Report, Petty Cash, and others export as a **branded PDF** (cooperative letterhead, totals, signature blocks, page numbers) and a **real Excel (.xlsx) workbook** whose amounts stay as true numbers that sum and pivot.
+
+**Team Chat** — internal staff chat (office roles) with **@mentions** (type @ to tag a teammate, who gets a special "mentioned you" alert + chime), reactions, read receipts, screenshots, and profile photos.
+
+**Everywhere** — two-factor login, 30-minute idle lock with a tap-in PIN keypad, full audit logging, and role-based access on every screen.
 
 ---
 ---
@@ -377,13 +413,26 @@ The system follows widely accepted practices for handling money and personal dat
 ---
 ---
 
-# PART IV — FIELD OPERATIONS AND TRUST
+# PART IV — THE APPS, FIELD OPERATIONS, AND TRUST
 
-# 19. The Plumber Mobile App (Field Operations)
+# 19. The Apps — Member, Field, and Desktop
 
-Plumbers and meter readers carry the system into the field as an **installable mobile app** (a Progressive Web App — it installs from the browser, with no app store needed).
+The system is one web application, but it is also packaged as **three purpose-built apps** so each audience gets the simplest possible experience.
 
-**What makes it special: it works without internet.**
+## 19.1 The Member Mobile App (POWASSCO Member — Android)
+
+Members can install a **real Android app** on their phone — built from the same system, signed, and downloadable from the cooperative's website (no Play Store needed). It opens to a simple **"My POWASSCO"** home:
+
+- **My Bills** — view current and past water bills and what's due.
+- **My Balance** — check savings and Share Capital (CBU), protected by the member's PIN.
+- **Reminders on/off** — choose to receive bill notifications.
+- **Optional app PIN** — lock the app on the device for privacy.
+
+The app needs **no member password** — a member simply saves their account/meter on the device. Once installed, it **receives the automatic bill reminders and announcements** directly as phone notifications. Members who prefer not to install anything can do all the same things on the **website** (the "Check Balance" and bill-inquiry pages), or simply receive an **accurate printed bill** from the plumber.
+
+## 19.2 The Plumber Field App (works offline)
+
+Plumbers and meter readers carry the system into the field as an **installable app that works without internet** — essential for remote sitios with no signal.
 
 1. Before heading out, the plumber downloads their assigned route — the members, previous readings, and current tariffs — onto the phone.
 2. In the field, **with no signal**, they:
@@ -394,7 +443,11 @@ Plumbers and meter readers carry the system into the field as an **installable m
 3. When signal returns, the phone **syncs automatically**. The sync is safe against duplicates — re-syncing the same reading never double-bills.
 4. The field app has its own **re-entry PIN**, so a misplaced phone cannot expose member data.
 
-This means billing continues in remote sitios with no cell coverage, and members receive an accurate printed bill immediately.
+This means billing continues even with no cell coverage, and members receive an accurate printed bill immediately.
+
+## 19.3 The Staff Desktop App (Windows)
+
+Office staff can install a **Windows desktop app** that opens the system in its **own window** (not a browser tab) and lands directly on the staff login. It always shows the **current live system** — so it never needs reinstalling when the system is updated — and it's downloadable straight from each staff dashboard. This gives the office a clean, dedicated "POWASSCO" program on the desktop, while still allowing any staff member to use a plain browser if they prefer.
 
 ---
 
@@ -416,14 +469,18 @@ This means billing continues in remote sitios with no cell coverage, and members
 
 **Delivered and in use**
 - Water billing, loans, savings & CBU, product sales/loans
-- Cashier counter, bookkeeping, treasury (banks + cash vault) with approvals
+- Cashier counter (incl. **petty-cash imprest fund**), bookkeeping, treasury (banks + cash vault) with approvals
 - Manager operations, payroll with approvals & cash advance
-- Audit Committee dashboard with overall audit report, ratios, and sign-off
-- Plumber field mobile app (offline readings, on-site printing, disconnect/reconnect)
-- Online payments, team chat, full security suite, audit log, system monitor
+- Audit Committee dashboard with overall audit report, ratios, sign-off, **plus automatic remarks and prioritised recommendations** drawn from inflows/outflows and all transactions
+- **Member mobile app (Android)** — bills, balance, reminders; and **automatic bill reminders + announcements** delivered to members' phones
+- **Plumber field app** (offline readings, on-site printing, disconnect/reconnect)
+- **Staff Windows desktop app**
+- **Branded PDF + Excel (.xlsx) report exports**
+- Online payments, team chat **with @mentions**, full security suite, audit log, system monitor
 
 **Underway / planned**
-- Importing the historical paper loan ledgers (Jan–May 2026) into the system, verified line by line
+- Importing the historical paper **loan and water ledgers** into the system, verified line by line
+- Optional **native push (FCM)** for even more reliable phone notifications (groundwork in place)
 - Refinements to dashboards and reports as the committee uses them
 - Ongoing tuning of automatic financial-health thresholds to the cooperative's norms
 
@@ -470,12 +527,15 @@ It is built around a principle the Board can rely on: **no important action happ
 | Treasury | Bank accounts + cash vault, approved transfers | Bookkeeper, Manager, Cashier, Admin |
 | Payroll | Salaries + cash advances, with approval | Bookkeeper, Manager, Cashier |
 | Expenses | Purchase/disbursement of funds, with approval | Manager, Cashier |
-| Cashiering | Single point of collection and payout | Cashier |
-| Bookkeeping | Records, receivables, reconciliation, reports | Bookkeeper |
-| Audit | Independent oversight + signed audit reports | Audit Committee |
+| Cashiering | Single point of collection and payout, incl. petty-cash fund | Cashier |
+| Bookkeeping | Records, receivables, reconciliation, PDF/Excel reports | Bookkeeper |
+| Audit | Independent oversight, signed reports, auto remarks + recommendations | Audit Committee |
 | Administration | Users, settings, security, monitoring | Admin |
+| Member App (Android) | Bills, savings/CBU balance, reminders, app PIN | Members |
 | Field App | Offline readings + on-site bill printing | Plumber, Meter Reader |
+| Desktop App (Windows) | Dedicated staff window, opens to login | Office staff |
+| Bill Reminders & Announcements | Auto phone notices: new bill, due-soon, overdue; broadcasts | Members |
 | Online Payments | Accept verified e-wallet/QR payments | Members, Officers |
-| Security & Audit | 2FA, idle lock, audit log, error monitor | All |
+| Security & Audit | 2FA, idle-lock PIN keypad, audit log, error monitor | All |
 
 *— End of document —*
