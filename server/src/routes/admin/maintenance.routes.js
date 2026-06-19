@@ -22,6 +22,7 @@ import { importLegacyLoans, LEGACY_LOAN_BATCHES } from "../../utils/legacyLoanIm
 import { recomputeWaterBills } from "../../scripts/recomputeWaterBills.js";
 import { importLegacyWater, LEGACY_WATER_AREAS, importWaterRoster, WATER_ROSTER_AREAS, importMemberPuroks, purokImportAreas } from "../../utils/legacyWaterImport.js";
 import { emitJobProgress } from "../../realtime.js";
+import WaterMember from "../../models/WaterMember.js";
 
 const router = express.Router();
 const guard = [requireAuth, requireRole(["admin"])];
@@ -142,6 +143,36 @@ router.get("/water-roster/areas", guard, (req, res) => res.json(WATER_ROSTER_ARE
 // purok-divided roster (waterMemberPuroks.json). Dry-run by default —
 // reports puroks to create + members matched/assigned/unmatched.
 router.get("/member-puroks/areas", guard, (req, res) => res.json(purokImportAreas()));
+
+// Find water members that share the same (case/space-insensitive) account
+// name — surfaces duplicates from imports or manual entry so the office can
+// merge/clean them. includeInactive=1 also scans archived accounts.
+router.get("/duplicate-members", guard, async (req, res) => {
+  try {
+    const match = (req.query.includeInactive === "1") ? {} : { accountStatus: "active" };
+    const groups = await WaterMember.aggregate([
+      { $match: match },
+      { $group: {
+        _id: { $trim: { input: { $toLower: { $ifNull: ["$accountName", ""] } } } },
+        count: { $sum: 1 },
+        accounts: { $push: {
+          pnNo: "$pnNo", accountName: "$accountName",
+          purok: { $ifNull: ["$purok", ""] },
+          barangay: { $ifNull: ["$address.barangay", ""] },
+          status: "$accountStatus",
+          meters: { $size: { $ifNull: ["$meters", []] } },
+        } },
+      } },
+      { $match: { count: { $gt: 1 }, _id: { $ne: "" } } },
+      { $sort: { count: -1, _id: 1 } },
+      { $limit: 1000 },
+    ]);
+    const totalDupAccounts = groups.reduce((s, g) => s + g.count, 0);
+    res.json({ groups, groupCount: groups.length, totalDupAccounts });
+  } catch (e) {
+    res.status(500).json({ error: e.message || "Failed to scan duplicates." });
+  }
+});
 
 router.post("/import-member-puroks", guard, async (req, res) => {
   const { confirm, area = "all", dry = true } = req.body || {};

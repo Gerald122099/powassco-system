@@ -15,7 +15,7 @@ import { apiFetch } from "../../lib/api";
 import { getSocket } from "../../lib/realtime";
 import { useAuth } from "../../context/AuthContext";
 import { toast } from "../../components/Toast";
-import { Wrench, Play, CheckCircle2, AlertCircle, Receipt, Upload, Droplets, FileSpreadsheet, Loader2, UserPlus } from "lucide-react";
+import { Wrench, Play, CheckCircle2, AlertCircle, Receipt, Upload, Droplets, FileSpreadsheet, Loader2, UserPlus, Users } from "lucide-react";
 
 const peso = (n) =>
   "₱" + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -245,7 +245,85 @@ export default function MaintenancePanel() {
       <LegacyRosterImportCard />
 
       <PurokImportCard />
+
+      <DuplicateMembersCard />
     </div>
+  );
+}
+
+// Read-only audit: water members sharing the same account name.
+function DuplicateMembersCard() {
+  const { token } = useAuth();
+  const [data, setData] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [inactive, setInactive] = useState(false);
+
+  async function check() {
+    setBusy(true);
+    try {
+      const r = await apiFetch(`/admin/maintenance/duplicate-members${inactive ? "?includeInactive=1" : ""}`, { token });
+      setData(r);
+      toast.success(`${r.groupCount} duplicate name(s) across ${r.totalDupAccounts} account(s).`);
+    } catch (e) { toast.error(e.message); } finally { setBusy(false); }
+  }
+
+  return (
+    <Card>
+      <div className="flex items-center gap-2 text-lg font-bold tracking-tight text-slate-900">
+        <Users size={20} className="text-rose-600" /> Maintenance — Duplicate Account Names
+      </div>
+      <div className="mt-0.5 text-sm text-slate-600">
+        Lists water members that share the same account name (case/space-insensitive) so you can review and merge/clean them. Read-only — nothing is changed.
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={inactive} onChange={(e) => setInactive(e.target.checked)} />
+          <span>Include inactive / archived accounts</span>
+        </label>
+        <div className="flex-1" />
+        <button onClick={check} disabled={busy} className="inline-flex items-center gap-2 rounded-xl bg-rose-600 px-5 py-2 text-sm font-bold text-white hover:bg-rose-700 disabled:opacity-50">
+          {busy ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+          {busy ? "Scanning…" : "Check duplicates"}
+        </button>
+      </div>
+
+      {data && (
+        <div className="mt-4 space-y-3">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-700">
+            {data.groupCount === 0
+              ? "✅ No duplicate account names found."
+              : <>Found <b className="text-rose-600">{data.groupCount}</b> duplicated name(s) across <b>{data.totalDupAccounts}</b> account(s).</>}
+          </div>
+          {data.groups?.length > 0 && (
+            <div className="space-y-2">
+              {data.groups.map((g, i) => (
+                <div key={i} className="rounded-xl border border-rose-200 bg-rose-50/40 p-2">
+                  <div className="px-2 py-1 text-xs font-bold text-rose-800">
+                    {g.accounts[0]?.accountName || g._id} <span className="font-normal text-slate-500">— {g.count} accounts</span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <tbody>
+                        {g.accounts.map((a, j) => (
+                          <tr key={j} className="border-t border-rose-100">
+                            <td className="px-2 py-1 font-mono">{a.pnNo}</td>
+                            <td className="px-2 py-1">{a.accountName}</td>
+                            <td className="px-2 py-1 text-slate-500">{a.barangay || "—"}{a.purok ? ` · ${a.purok}` : ""}</td>
+                            <td className="px-2 py-1 text-right text-slate-500">{a.meters} meter(s)</td>
+                            <td className="px-2 py-1 text-right">{a.status !== "active" ? <span className="text-amber-600">{a.status}</span> : ""}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
   );
 }
 
