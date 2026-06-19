@@ -247,7 +247,88 @@ export default function MaintenancePanel() {
       <PurokImportCard />
 
       <DuplicateMembersCard />
+
+      <FixWaterNamesCard />
     </div>
+  );
+}
+
+// Correct water-member name typos (loan reconciliation) so the legacy loan
+// import matches them. The other side (loan name is the typo) is handled by
+// an alias inside the loan importer — no action needed.
+function FixWaterNamesCard() {
+  const { token } = useAuth();
+  const [result, setResult] = useState(null);
+  const [working, setWorking] = useState(false);
+  const [mode, setMode] = useState("");
+
+  async function call(dry) {
+    if (!dry && !window.confirm("Rename these water members to the corrected (loan-register) spelling? Idempotent. Proceed?")) return;
+    setMode(dry ? "Dry run" : "Apply"); setResult(null); setWorking(true);
+    try {
+      const res = await apiFetch("/admin/maintenance/fix-water-names", { method: "POST", token, body: { confirm: "FIX WATER NAMES", dry } });
+      setResult(res);
+      toast.success(dry ? `Dry run: ${res.matched} to rename, ${res.notFound.length} not found.` : `Renamed ${res.renamed} member(s).`);
+    } catch (e) { toast.error(e.message); } finally { setWorking(false); }
+  }
+  const isDry = result?.dry !== false;
+
+  return (
+    <Card>
+      <div className="flex items-center gap-2 text-lg font-bold tracking-tight text-slate-900">
+        <Wrench size={20} className="text-blue-600" /> Maintenance — Fix Water Names (loan reconcile)
+      </div>
+      <div className="mt-0.5 text-sm text-slate-600">
+        Renames water members whose name is a typo vs the loan register (the rows you marked <b>"Loan Name"</b> as correct),
+        so the legacy loan import matches them. The <b>"Water Name"</b>-correct rows are handled automatically by an alias in
+        the loan importer — those just stop being "not found" with no rename.
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <div className="flex-1" />
+        <button onClick={() => call(true)} disabled={working} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50">
+          {working && mode === "Dry run" ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+          {working && mode === "Dry run" ? "Running…" : "Dry run"}
+        </button>
+        <button onClick={() => call(false)} disabled={working || !result} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50" title={!result ? "Dry-run first" : ""}>
+          {working && mode === "Apply" ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+          {working && mode === "Apply" ? "Applying…" : "Apply"}
+        </button>
+      </div>
+
+      {result && (
+        <div className="mt-4 space-y-3">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-700">
+            {isDry ? "Dry run" : "Applied"} — {isDry ? <>would rename <b>{result.matched}</b></> : <>renamed <b className="text-emerald-700">{result.renamed}</b></>} of {result.total},
+            not found <b className={result.notFound.length ? "text-amber-700" : ""}>{result.notFound.length}</b>
+          </div>
+          {result.items?.length > 0 && (
+            <div className="overflow-x-auto rounded-xl border border-slate-200">
+              <table className="w-full text-xs">
+                <thead className="bg-white text-left text-slate-500"><tr><th className="px-3 py-2">Account</th><th className="px-3 py-2">From (typo)</th><th className="px-3 py-2">To (corrected)</th></tr></thead>
+                <tbody>
+                  {result.items.map((it, i) => (
+                    <tr key={i} className="border-t border-slate-100">
+                      <td className="px-3 py-1.5 font-mono">{it.pnNo}</td>
+                      <td className="px-3 py-1.5 text-slate-500">{it.from}</td>
+                      <td className="px-3 py-1.5 font-semibold text-blue-700">{it.to}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {result.notFound?.length > 0 && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-2 text-xs">
+              <div className="px-2 py-1 font-bold text-amber-800">Not found ({result.notFound.length})</div>
+              {result.notFound.map((n, i) => (
+                <div key={i} className="px-2 py-0.5">{n.from} {n.alreadyRenamed ? <span className="text-emerald-600">(already renamed ✓)</span> : <span className="text-slate-500">(no such water account)</span>}</div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
   );
 }
 

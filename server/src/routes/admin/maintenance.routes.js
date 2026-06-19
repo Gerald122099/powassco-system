@@ -18,7 +18,7 @@ import express from "express";
 import { requireAuth, requireRole } from "../../middleware/auth.js";
 import { regenLoanAmortization } from "../../scripts/regenLoanAmortization.js";
 import { rebuildLoanCharges } from "../../scripts/rebuildLoanCharges.js";
-import { importLegacyLoans, LEGACY_LOAN_BATCHES } from "../../utils/legacyLoanImport.js";
+import { importLegacyLoans, LEGACY_LOAN_BATCHES, fixWaterMemberNames } from "../../utils/legacyLoanImport.js";
 import { recomputeWaterBills } from "../../scripts/recomputeWaterBills.js";
 import { importLegacyWater, LEGACY_WATER_AREAS, importWaterRoster, WATER_ROSTER_AREAS, importMemberPuroks, purokImportAreas } from "../../utils/legacyWaterImport.js";
 import { emitJobProgress } from "../../realtime.js";
@@ -143,6 +143,21 @@ router.get("/water-roster/areas", guard, (req, res) => res.json(WATER_ROSTER_ARE
 // purok-divided roster (waterMemberPuroks.json). Dry-run by default —
 // reports puroks to create + members matched/assigned/unmatched.
 router.get("/member-puroks/areas", guard, (req, res) => res.json(purokImportAreas()));
+
+// Correct water-member name typos so the legacy loan import matches them
+// (rows where the LOAN-register name is the correct spelling). Dry-run
+// by default; idempotent.
+router.post("/fix-water-names", guard, async (req, res) => {
+  const { confirm, dry = true } = req.body || {};
+  if (confirm !== "FIX WATER NAMES") {
+    return res.status(400).json({ error: 'Pass { confirm: "FIX WATER NAMES" } to proceed.' });
+  }
+  try {
+    res.json(await fixWaterMemberNames({ dry: Boolean(dry) }));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 // Find water members that share the same (case/space-insensitive) account
 // name — surfaces duplicates from imports or manual entry so the office can

@@ -285,6 +285,66 @@ const NAME_TO_PN = {
   "Bocales, Teodoro": "PT4ZK6",
 };
 
+// Loan-register name → the existing WATER member name, when the two ledgers
+// spell the same person differently (from Gerald's reconciliation sheet).
+// Used as a fallback so the loan import finds the account by the water name.
+// For rows where the LOAN name is the correct one, the water member is
+// renamed instead (WATER_NAME_FIXES) and matches exactly — these aliases
+// still cover the period before that rename is applied.
+const LOAN_NAME_ALIAS = {
+  "Uypala, Analiza": "Uypala, Annaliza",
+  "Gemarino, Vivincia": "Gemarino, Vivencia",
+  "Aliviado, Marinel": "Aliviado, Mareniel",
+  "Lanza, Carine": "Lanza, Carin",
+  "Banate, Ma. Chuchie": "Banate, Ma. Chuchi",
+  "Reyes, Ma. Concepcion": "Reyes, Maria Concepcion",
+  "Maglasang, Edilbert Jr.": "Maglasang Jr., Edilberto",
+  "Torion, Diejepete": "Torion, Diejpete",
+  "Gabor, Angilie": "Gabor, Angelie",
+  "Moncano, Junnel": "Moncano, Junel",
+  "Casas, Mercedita": "Casas, Mercidetha",
+  "Canada, Melanie": "Cañada, Melanie",
+  "Del Rosario, Griselda": "Del Rosario, Greselda",
+  "Songkip, April Christie": "Songkip, April Christine",
+  "Tugahan, Shirley": "Tugahan, Sherlita",
+  "Toong, Merceline": "Toong, Margeline",
+  "Baliguat, Violeta": "Baliguat, Violita",
+  "Legaspino, Meryjess": "Legaspino, Mery Jess",
+  "Sario, Richel": "Sario, Ritchel",
+  "Vicada, Baby Jean": "Vicada, Babyjen",
+  "Datchusa, Emilie": "Datchusa, Emily",
+  "Bayona, Jeo-Ann": "Bayona, Joean",
+  "Pardillo, Maribel": "Pardillo, Marivel",
+  "Cristoria, Rosemarie": "Cristoria, Rose Marie",
+  "Sadora, Jocelyn": "Sadura, Jocelyn",
+  "Catian, Salvacion": "Cati-an, Salvacion",
+  "Azarcon, Elizabeth": "Asarcon, Elizabeth",
+  "Asupra, Michelle": "Asupra, Mischelle",
+  "Canada, Anecito Jr": "Cañada, Anecito Jr.",
+};
+
+// Water members to RENAME (typo on the WATER side; the loan-register name is
+// the correct one per the sheet). Applied via /maintenance/fix-water-names.
+export const WATER_NAME_FIXES = [
+  { from: "Aliviado, Mareniel", to: "Aliviado, Marinel" },
+  { from: "Lanza, Carin", to: "Lanza, Carine" },
+  { from: "Banate, Ma. Chuchi", to: "Banate, Ma. Chuchie" },
+  { from: "Maglasang Jr., Edilberto", to: "Maglasang, Edilbert Jr." },
+  { from: "Torion, Diejpete", to: "Torion, Diejepete" },
+  { from: "Moncano, Junel", to: "Moncano, Junnel" },
+  { from: "Casas, Mercidetha", to: "Casas, Mercedita" },
+  { from: "Del Rosario, Greselda", to: "Del Rosario, Griselda" },
+  { from: "Tugahan, Sherlita", to: "Tugahan, Shirley" },
+  { from: "Toong, Margeline", to: "Toong, Merceline" },
+  { from: "Baliguat, Violita", to: "Baliguat, Violeta" },
+  { from: "Vicada, Babyjen", to: "Vicada, Baby Jean" },
+  { from: "Bayona, Joean", to: "Bayona, Jeo-Ann" },
+  { from: "Pardillo, Marivel", to: "Pardillo, Maribel" },
+  { from: "Cati-an, Salvacion", to: "Catian, Salvacion" },
+  { from: "Asarcon, Elizabeth", to: "Azarcon, Elizabeth" },
+  { from: "Asupra, Mischelle", to: "Asupra, Michelle" },
+];
+
 const fold = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "");
 const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const norm = (s) => String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
@@ -324,15 +384,46 @@ function buildLoanIndex(members) {
   for (const x of members) { byPn.set(x.pnNo, x); add(exact, norm(x.accountName), x); add(folded, norm(fold(x.accountName)), x); }
   return { exact, folded, byPn, all: members };
 }
+// Resolve one name against the index: exact → accent-folded → loose regex.
+function hitsForName(name, idx) {
+  let hits = idx.exact.get(norm(name)) || [];
+  if (!hits.length) hits = idx.folded.get(norm(fold(name))) || [];
+  if (!hits.length) {
+    const ci = name.indexOf(",");
+    const last = ci >= 0 ? name.slice(0, ci).trim() : name.trim();
+    const first = ci >= 0 ? name.slice(ci + 1).trim() : "";
+    if (first) { const re = new RegExp(`${esc(last)}.*${esc(first)}`, "i"); hits = idx.all.filter((m) => re.test(m.accountName)); }
+  }
+  return hits;
+}
 function resolveMemberInIndex(last, first, idx) {
   const target = `${String(last).trim()}, ${String(first).trim()}`;
   if (NAME_TO_PN[target]) { const m = idx.byPn.get(NAME_TO_PN[target]); if (m) return { ok: true, member: m }; }
-  let hits = idx.exact.get(norm(target)) || [];
-  if (!hits.length) hits = idx.folded.get(norm(fold(target))) || [];
-  if (!hits.length) { const re = new RegExp(`${esc(String(last).trim())}.*${esc(String(first).trim())}`, "i"); hits = idx.all.filter((m) => re.test(m.accountName)); }
+  let hits = hitsForName(target, idx);
+  // Typo reconcile: fall back to the matched water name from the sheet.
+  if (!hits.length && LOAN_NAME_ALIAS[target]) hits = hitsForName(LOAN_NAME_ALIAS[target], idx);
   if (!hits.length) return { ok: false, reason: "no_match", candidates: [] };
   if (hits.length > 1) return { ok: false, reason: "ambiguous", candidates: hits.map((h) => ({ pnNo: h.pnNo, accountName: h.accountName })) };
   return { ok: true, member: hits[0] };
+}
+
+// Rename water members whose name is a typo (loan-register name is correct).
+// Dry-run-first + idempotent (skips ones already renamed). Matches by exact
+// (case/space-insensitive) accountName.
+export async function fixWaterMemberNames({ dry = true } = {}) {
+  const r = { dry, total: WATER_NAME_FIXES.length, matched: 0, renamed: 0, items: [], notFound: [] };
+  for (const f of WATER_NAME_FIXES) {
+    const m = await WaterMember.findOne({ accountName: new RegExp(`^\\s*${esc(f.from)}\\s*$`, "i") }).select("pnNo accountName").lean();
+    if (!m) {
+      const already = await WaterMember.findOne({ accountName: new RegExp(`^\\s*${esc(f.to)}\\s*$`, "i") }).select("_id").lean();
+      r.notFound.push({ from: f.from, to: f.to, alreadyRenamed: !!already });
+      continue;
+    }
+    r.matched++;
+    r.items.push({ pnNo: m.pnNo, from: m.accountName, to: f.to });
+    if (!dry) { await WaterMember.updateOne({ pnNo: m.pnNo }, { $set: { accountName: f.to, "personal.fullName": f.to } }); r.renamed++; }
+  }
+  return r;
 }
 
 // months: array like ["2026-01","2026-02","2026-03"] (or all if empty).
