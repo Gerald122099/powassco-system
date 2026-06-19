@@ -4,6 +4,7 @@ import WaterReading from "../../models/WaterReading.js";
 import WaterMember from "../../models/WaterMember.js";
 import WaterBill from "../../models/WaterBill.js";
 import WaterBatch from "../../models/WaterBatch.js";
+import Purok from "../../models/Purok.js";
 import { requireAuth, requireRole } from "../../middleware/auth.js";
 import { upsertWaterBill } from "../../utils/waterBillUpsert.js";
 import { calculateWaterBill } from "../../utils/waterBilling.js";
@@ -424,8 +425,14 @@ router.get("/field-all", ...guard, async (req, res) => {
       .sort({ pnNo: 1 })
       .lean();
 
-    const items = await enrichMembersForPeriod(members, periodKey);
-    res.json({ items, periodKey, count: items.length });
+    const [items, puroks] = await Promise.all([
+      enrichMembersForPeriod(members, periodKey),
+      // The purok registry (name + group) so the field app can group meters
+      // by group → purok. Plumbers can't call /water/puroks, so it rides
+      // along here.
+      Purok.find(barangay ? { barangay: String(barangay) } : {}).sort({ barangay: 1, order: 1, name: 1 }).select("barangay name group order").lean(),
+    ]);
+    res.json({ items, puroks, periodKey, count: items.length });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Failed to load meters" });

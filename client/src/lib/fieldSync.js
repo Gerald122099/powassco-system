@@ -41,6 +41,29 @@ export async function downloadBatch({ token, periodKey = currentPeriodKey() }) {
   return { ok: true, count: items.length, periodKey, batches: batches.length };
 }
 
+// OPEN POOL: download EVERY active meter/account (optionally one area)
+// for offline field reading — any plumber gets all meters, divided by
+// purok. Whoever reads a meter first claims it; the cached read flags +
+// `readBy` are refreshed on every (re-)download so a meter already read by
+// another plumber shows "Read by X". Re-running is safe (idempotent cache).
+export async function downloadAllMeters({ token, periodKey = currentPeriodKey(), barangay = "" } = {}) {
+  const qs = new URLSearchParams({ periodKey });
+  if (barangay) qs.set("barangay", barangay);
+  const [res, settingsRes] = await Promise.all([
+    apiFetch(`/water/readings/field-all?${qs}`, { token }),
+    apiFetch("/water/settings", { token }).catch(() => null),
+  ]);
+  const items = res.items || [];
+  if (settingsRes) await odb.setMeta("settings", settingsRes);
+  await odb.saveMembers(items);
+  await odb.setMeta("periodKey", periodKey);
+  await odb.setMeta("puroks", res.puroks || []);
+  await odb.setMeta("openPool", true);
+  await odb.setMeta("batchInfo", [{ batchName: barangay || "All meters", area: barangay || "" }]);
+  await odb.setMeta("downloadedAt", Date.now());
+  return { ok: true, count: items.length, periodKey };
+}
+
 // Save a reading locally (works fully offline). `forceUpdate` is true
 // when the plumber explicitly edited an already-synced row after
 // password step-up — the server will overwrite the existing reading.

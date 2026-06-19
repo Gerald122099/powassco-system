@@ -3,9 +3,11 @@ import Card from "../../../components/Card";
 import Modal from "../../../components/Modal";
 const QRScannerView = lazy(() => import("../../../components/QRScannerView"));
 import { useAuth } from "../../../context/AuthContext";
+import { apiFetch } from "../../../lib/api";
 import { parseMeterQR } from "../../../lib/meterQr";
 import * as odb from "../../../lib/offlineDb";
-import { downloadBatch, saveReadingOffline, syncQueue, currentPeriodKey, getCurrentLocation } from "../../../lib/fieldSync";
+import { downloadAllMeters, saveReadingOffline, syncQueue, currentPeriodKey, getCurrentLocation } from "../../../lib/fieldSync";
+import { getSocket } from "../../../lib/realtime";
 import { connectPrinter, printerConnected, printWaterReceipt, thermalSupported } from "../../../lib/thermalPrint";
 import { calculateWaterBillLocal } from "../../../lib/waterBillingLocal";
 import { printRouteSheet } from "../../../lib/routeSheet";
@@ -39,6 +41,8 @@ export default function FieldModePanel() {
   const [q, setQ] = useState("");
   // filter: "all" | "unread" | "blocked"
   const [filter, setFilter] = useState("all");
+  const [purokFilter, setPurokFilter] = useState(""); // "" = all puroks
+  const [puroks, setPuroks] = useState([]); // registry: [{ name, group, ... }]
   const [inputs, setInputs] = useState({});
   // First-time previous reading inputs — only used when a meter on an
   // existing-member (migrated) account has no prior reading anywhere.
@@ -80,7 +84,7 @@ export default function FieldModePanel() {
   }, []);
 
   const refreshLocal = useCallback(async () => {
-    const [m, queue, pk, dAt, sAt, bi, st] = await Promise.all([
+    const [m, queue, pk, dAt, sAt, bi, st, pks] = await Promise.all([
       odb.getMembers(),
       odb.getQueue(),
       odb.getMeta("periodKey"),
@@ -88,8 +92,10 @@ export default function FieldModePanel() {
       odb.getMeta("lastSyncAt"),
       odb.getMeta("batchInfo"),
       odb.getMeta("settings"),
+      odb.getMeta("puroks"),
     ]);
     setMembers(m || []);
+    setPuroks(pks || []);
     setQueueKeys(new Set((queue || []).map((x) => x.id)));
     // Map each queued reading by its key so the UI can show "encoded
     // X m³" instead of an empty input on already-read meters.
@@ -166,22 +172,41 @@ export default function FieldModePanel() {
     };
   }, [online, pending, doSync, busy]);
 
-  async function handleDownload() {
-    if (!navigator.onLine) return flash("You are offline. Connect to download your assigned meters.", "error");
-    setBusy("download");
-    setProgress({ phase: "download", label: "Downloading your assigned meters…", current: 0, total: 0 });
+  async function handleDownload(silent = false) {
+    if (!navigator.onLine) { if (!silent) flash("You are offline. Connect to download meters.", "error"); return; }
+    if (!silent) { setBusy("download"); setProgress({ phase: "download", label: "Downloading all meters…", current: 0, total: 0 }); }
     try {
-      const res = await downloadBatch({ token, user, periodKey: currentPeriodKey() });
-      if (!res.ok) flash(res.message || "Nothing to download.", "error");
-      else flash(`✓ Downloaded ${res.count} account(s) for ${res.periodKey}.`, "success");
+      // Open pool: every plumber downloads ALL active meters, grouped by
+      // purok. Whoever reads a meter first claims it.
+      const res = await downloadAllMeters({ token, periodKey: currentPeriodKey() });
+      if (!silent) flash(`✓ Downloaded ${res.count} meter(s) for ${res.periodKey}.`, "success");
       await refreshLocal();
     } catch (e) {
-      flash("Download failed: " + e.message, "error");
+      if (!silent) flash("Download failed: " + e.message, "error");
     } finally {
-      setBusy("");
-      setProgress({ phase: "", label: "", current: 0, total: 0 });
+      if (!silent) { setBusy(""); setProgress({ phase: "", label: "", current: 0, total: 0 }); }
     }
   }
+
+  // Realtime: when another plumber syncs a reading, the server's "readings"
+  // collection changes → a debounced background re-download refreshes our
+  // cached read flags / "Read by X" without the plumber doing anything.
+  // Also auto-downloads once on first online load if the cache is empty.
+  const autoDlTimer = useRef(null);
+  useEffect(() => {
+    const s = getSocket();
+    if (!s) return undefined;
+    s.emit("subscribe", ["readings"]);
+    const onChange = (msg) => {
+      if (msg?.topic !== "readings") return;
+      if (!navigator.onLine || busy) return;
+      clearTimeout(autoDlTimer.current);
+      autoDlTimer.current = setTimeout(() => handleDownload(true), 2500);
+    };
+    s.on("data:changed", onChange);
+    return () => { s.off("data:changed", onChange); clearTimeout(autoDlTimer.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busy, token]);
 
   function prevReadingFor(member, meterNo) {
     const la = member.lastActualReadings?.[mnorm(meterNo)];
@@ -432,16 +457,42 @@ export default function FieldModePanel() {
   const filtered = useMemo(() => {
     const t = q.trim().toLowerCase();
     return members.filter((m) => {
+      if (purokFilter === "__unassigned" ? (m.purok || "") !== "" : purokFilter && (m.purok || "") !== purokFilter) return false;
       const meters = m.activeBillingMeters || [];
       const allRead = meters.length > 0 && meters.every((mt) => isRead(m, mt.meterNumber));
       const isBlocked = (m.priorUnsettledPeriods || []).length > 0;
       if (filter === "unread" && allRead) return false;
       if (filter === "blocked" && !isBlocked) return false;
       if (!t) return true;
-      const hay = [m.pnNo, m.accountName, m.addressText, ...meters.map((x) => x.meterNumber)].join(" ").toLowerCase();
+      const hay = [m.pnNo, m.accountName, m.addressText, m.purok, ...meters.map((x) => x.meterNumber)].join(" ").toLowerCase();
       return hay.includes(t);
     });
-  }, [members, q, filter, isRead]);
+  }, [members, q, filter, purokFilter, isRead]);
+
+  // Per-purok progress (read / total), grouped by the registry's group so
+  // the field reader sees which purok is done and which is still open.
+  const purokGroups = useMemo(() => {
+    const stat = new Map(); // purok name -> { total, read }
+    let unassignedTotal = 0, unassignedRead = 0;
+    for (const m of members) {
+      const meters = m.activeBillingMeters || [];
+      const allRead = meters.length > 0 && meters.every((mt) => isRead(m, mt.meterNumber));
+      const p = m.purok || "";
+      if (!p) { unassignedTotal++; if (allRead) unassignedRead++; continue; }
+      if (!stat.has(p)) stat.set(p, { total: 0, read: 0 });
+      const s = stat.get(p); s.total++; if (allRead) s.read++;
+    }
+    const groupOf = new Map((puroks || []).map((p) => [p.name, p.group || ""]));
+    const orderOf = new Map((puroks || []).map((p, i) => [p.name, p.order ?? i]));
+    const byGroup = new Map(); // group -> [{ name, total, read }]
+    for (const [name, s] of stat) {
+      const g = groupOf.get(name) || "";
+      if (!byGroup.has(g)) byGroup.set(g, []);
+      byGroup.get(g).push({ name, ...s });
+    }
+    for (const arr of byGroup.values()) arr.sort((a, b) => (orderOf.get(a.name) ?? 0) - (orderOf.get(b.name) ?? 0) || a.name.localeCompare(b.name));
+    return { byGroup: [...byGroup.entries()].sort((a, b) => String(a[0]).localeCompare(String(b[0]))), unassignedTotal, unassignedRead };
+  }, [members, puroks, isRead]);
 
   const total = counts.total;
   const readCount = counts.read;
@@ -499,11 +550,11 @@ export default function FieldModePanel() {
              <><CheckCircle size={20} /> All synced</>}
           </button>
           <button
-            onClick={handleDownload}
+            onClick={() => handleDownload()}
             disabled={busy === "download" || !online}
             className="inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm active:scale-95 disabled:opacity-50"
-            aria-label="Download batch"
-            title="Download my batch"
+            aria-label="Download all meters"
+            title="Download all meters (by purok)"
           >
             <Download size={20} className={busy === "download" ? "animate-pulse text-purple-600" : ""} />
           </button>
@@ -627,6 +678,39 @@ export default function FieldModePanel() {
       {/* Controls — mobile-first sticky search header. The Scan button
           is intentionally a fixed FAB at the bottom-right (see end of
           this component) so it's always reachable while scrolling. */}
+      {/* Purok selector — pick a purok (grouped by its reading group) and
+          see its read/total progress. "✓" = that purok is fully done. */}
+      {(purokGroups.byGroup.length > 0 || purokGroups.unassignedTotal > 0) && (
+        <div className="mt-4 -mx-1 overflow-x-auto px-1 pb-1">
+          <div className="flex items-center gap-2">
+            <button onClick={() => setPurokFilter("")} className={`shrink-0 rounded-xl border px-3 py-2 text-sm font-bold ${purokFilter === "" ? "border-purple-300 bg-purple-600 text-white" : "border-slate-200 text-slate-700"}`}>
+              All <span className="opacity-70">{readCount}/{total}</span>
+            </button>
+            {purokGroups.byGroup.map(([g, list]) => (
+              <div key={g || "ungrouped"} className="flex shrink-0 items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-2 py-1">
+                {g ? <span className="px-0.5 text-[10px] font-extrabold uppercase tracking-wide text-slate-400">{g}</span> : null}
+                {list.map((p) => {
+                  const done = p.total > 0 && p.read === p.total;
+                  const on = purokFilter === p.name;
+                  return (
+                    <button key={p.name} onClick={() => setPurokFilter(p.name)}
+                      className={`shrink-0 rounded-lg border px-2.5 py-1.5 text-xs font-semibold ${on ? "border-purple-300 bg-purple-600 text-white" : done ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-white text-slate-700"}`}>
+                      {p.name} <span className="opacity-70">{p.read}/{p.total}</span>{done ? " ✓" : ""}
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+            {purokGroups.unassignedTotal > 0 && (
+              <button onClick={() => setPurokFilter("__unassigned")}
+                className={`shrink-0 rounded-xl border px-3 py-2 text-sm font-semibold ${purokFilter === "__unassigned" ? "border-amber-300 bg-amber-500 text-white" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
+                Unassigned <span className="opacity-70">{purokGroups.unassignedRead}/{purokGroups.unassignedTotal}</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="mt-4 sticky top-0 z-20 -mx-1 px-1 py-2 bg-white/85 backdrop-blur supports-[backdrop-filter]:bg-white/70 flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-[180px]">
           <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
@@ -660,7 +744,7 @@ export default function FieldModePanel() {
       <div className="mt-4 space-y-3 pb-32">
         {total === 0 ? (
           <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">
-            No meters assigned yet. {online ? "Tap “Download Batch” to load only YOUR assigned meters for offline reading." : "Connect to the internet and download your batch."}
+            No meters downloaded yet. {online ? "Tap “Download” to load ALL meters (grouped by purok) for offline reading." : "Connect to the internet and download."}
           </div>
         ) : filtered.length === 0 ? (
           <div className="p-6 text-center text-sm text-slate-500">No matching accounts.</div>
@@ -673,7 +757,15 @@ export default function FieldModePanel() {
               <div key={m.pnNo} id={`pn-row-${mnorm(m.pnNo)}`} className={`rounded-2xl border p-4 ${blocked ? "border-red-200 bg-red-50/30" : allRead ? "border-emerald-200 bg-emerald-50/40" : "border-slate-200"}`}>
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <div className="font-bold text-slate-900">{m.accountName}</div>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="font-bold text-slate-900">{m.accountName}</span>
+                      {m.purok && <span className="rounded-full bg-purple-100 px-1.5 py-0.5 text-[10px] font-bold text-purple-700">{m.purok}</span>}
+                      {/* Claimed by another reader (read on the server, but
+                          not in MY local queue) → show who read it. */}
+                      {allRead && m.readBy && !meters.some((mt) => queueKeys.has(`${mnorm(m.pnNo)}__${mnorm(mt.meterNumber)}`)) && (
+                        <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">Read by {m.readBy}</span>
+                      )}
+                    </div>
                     <div className="font-mono text-xs text-slate-500">{m.pnNo}</div>
                     {m.addressText && (
                       <div className="mt-1 flex items-start gap-1 text-xs text-slate-600">
