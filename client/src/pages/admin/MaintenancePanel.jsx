@@ -243,7 +243,109 @@ export default function MaintenancePanel() {
       <LegacyWaterImportCard />
 
       <LegacyRosterImportCard />
+
+      <PurokImportCard />
     </div>
+  );
+}
+
+// Populate the Purok registry + assign members to a purok from the
+// purok-divided roster (waterMemberPuroks.json). Dry-run first; idempotent.
+function PurokImportCard() {
+  const { token } = useAuth();
+  const [result, setResult] = useState(null);
+  const [working, setWorking] = useState(false);
+  const [mode, setMode] = useState("");
+  const [area, setArea] = useState("all");
+  const [areas, setAreas] = useState([{ key: "all", label: "All areas" }]);
+  useEffect(() => { apiFetch("/admin/maintenance/member-puroks/areas", { token }).then((a) => Array.isArray(a) && a.length && setAreas(a)).catch(() => {}); }, [token]);
+
+  async function call(dry) {
+    if (!dry && !window.confirm("Create puroks + assign members to their purok. Re-running is safe (idempotent). Proceed?")) return;
+    setMode(dry ? "Dry run" : "Apply"); setResult(null); setWorking(true);
+    try {
+      const res = await apiFetch("/admin/maintenance/import-member-puroks", {
+        method: "POST", token, body: { confirm: "IMPORT PUROKS", area, dry },
+      });
+      setResult(res);
+      toast.success(dry
+        ? `Dry run: ${res.matched}/${res.records} matched, ${res.puroksToCreate} puroks to create, ${res.unmatched.length} unmatched.`
+        : `Created ${res.puroksCreated} puroks, assigned ${res.assigned} members.`);
+    } catch (e) { toast.error(e.message); } finally { setWorking(false); }
+  }
+  const isDry = result?.dry !== false;
+
+  return (
+    <Card>
+      <div className="flex items-center gap-2 text-lg font-bold tracking-tight text-slate-900">
+        <Upload size={20} className="text-purple-600" /> Maintenance — Import Member Puroks
+      </div>
+      <div className="mt-0.5 text-sm text-slate-600">
+        Reads <span className="font-mono">watermember.xlsx</span> (each "Area: / Names" block = one purok →
+        Purok 1..N per area), creates the purok names, and assigns each matched member to their purok.
+        Run the water roster/legacy import FIRST so the members exist.
+      </div>
+
+      <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900 flex items-start gap-2">
+        <AlertCircle size={16} className="mt-0.5 shrink-0" />
+        <div><b>Always dry-run first.</b> Only matched accounts get a purok; unmatched names are reported (assign them later in the Meter Reader → Puroks tab). Idempotent; only <b>Apply</b> writes.</div>
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <label className="text-sm font-semibold text-slate-700">Area</label>
+        <select value={area} onChange={(e) => { setArea(e.target.value); setResult(null); }} disabled={working} className="rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white">
+          {areas.map((a) => <option key={a.key} value={a.key}>{a.label}</option>)}
+        </select>
+        <div className="flex-1" />
+        <button onClick={() => call(true)} disabled={working} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50">
+          {working && mode === "Dry run" ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+          {working && mode === "Dry run" ? "Running…" : "Dry run"}
+        </button>
+        <button onClick={() => call(false)} disabled={working || !result} className="inline-flex items-center gap-2 rounded-xl bg-purple-600 px-5 py-2 text-sm font-bold text-white hover:bg-purple-700 disabled:opacity-50" title={!result ? "Dry-run first" : ""}>
+          {working && mode === "Apply" ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+          {working && mode === "Apply" ? "Applying…" : "Apply"}
+        </button>
+      </div>
+
+      {result && (
+        <div className="mt-4 space-y-3">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-700">
+            {isDry ? "Dry run" : "Applied"} — records <b>{result.records}</b>, matched <b>{result.matched}</b>
+            {result.ambiguous ? <> (incl. <b className="text-amber-700">{result.ambiguous}</b> ambiguous)</> : null},
+            puroks {isDry ? "to create" : "created"} <b className="text-purple-700">{isDry ? result.puroksToCreate : result.puroksCreated}</b>,
+            {isDry ? <> would assign <b>{result.assigned}</b></> : <> assigned <b>{result.assigned}</b></>},
+            unmatched <b className={result.unmatched.length ? "text-red-600" : ""}>{result.unmatched.length}</b>
+          </div>
+          {result.sample?.length > 0 && (
+            <div className="overflow-x-auto rounded-xl border border-slate-200">
+              <table className="w-full text-xs">
+                <thead className="bg-white text-left text-slate-500"><tr><th className="px-3 py-2">Name</th><th className="px-3 py-2">Account</th><th className="px-3 py-2">Area</th><th className="px-3 py-2">Purok</th></tr></thead>
+                <tbody>
+                  {result.sample.map((s, i) => (
+                    <tr key={i} className="border-t border-slate-100">
+                      <td className="px-3 py-1.5">{s.name}{s.kind === "ambiguous" ? <span className="text-amber-600"> (ambig)</span> : ""}</td>
+                      <td className="px-3 py-1.5"><span className="font-mono">{s.pnNo}</span> <span className="text-slate-400">{s.accountName}</span></td>
+                      <td className="px-3 py-1.5">{s.area}</td>
+                      <td className="px-3 py-1.5 font-semibold text-purple-700">{s.purok}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {result.unmatched?.length > 0 && (
+            <div className="rounded-xl border border-red-200 bg-red-50/60 p-2">
+              <div className="px-2 py-1 text-xs font-bold text-red-700">Unmatched ({result.unmatched.length}) — assign these in Meter Reader → Puroks, or apply the roster import first</div>
+              <div className="max-h-44 overflow-auto text-xs">
+                {result.unmatched.slice(0, 200).map((u, i) => (
+                  <div key={i} className="px-2 py-0.5"><span className="font-semibold">{u.name}</span> <span className="text-slate-400">· {u.area} · {u.purok}</span></div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
   );
 }
 

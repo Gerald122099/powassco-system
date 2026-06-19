@@ -20,7 +20,7 @@ import { regenLoanAmortization } from "../../scripts/regenLoanAmortization.js";
 import { rebuildLoanCharges } from "../../scripts/rebuildLoanCharges.js";
 import { importLegacyLoans, LEGACY_LOAN_BATCHES } from "../../utils/legacyLoanImport.js";
 import { recomputeWaterBills } from "../../scripts/recomputeWaterBills.js";
-import { importLegacyWater, LEGACY_WATER_AREAS, importWaterRoster, WATER_ROSTER_AREAS } from "../../utils/legacyWaterImport.js";
+import { importLegacyWater, LEGACY_WATER_AREAS, importWaterRoster, WATER_ROSTER_AREAS, importMemberPuroks, purokImportAreas } from "../../utils/legacyWaterImport.js";
 import { emitJobProgress } from "../../realtime.js";
 
 const router = express.Router();
@@ -137,6 +137,24 @@ router.post("/import-legacy-water", guard, async (req, res) => {
 // a per-owner create list so the admin verifies before applying. Idempotent:
 // created owners resolve as existing on a re-run.
 router.get("/water-roster/areas", guard, (req, res) => res.json(WATER_ROSTER_AREAS));
+
+// Populate the Purok registry + assign each member to a purok from the
+// purok-divided roster (waterMemberPuroks.json). Dry-run by default —
+// reports puroks to create + members matched/assigned/unmatched.
+router.get("/member-puroks/areas", guard, (req, res) => res.json(purokImportAreas()));
+
+router.post("/import-member-puroks", guard, async (req, res) => {
+  const { confirm, area = "all", dry = true } = req.body || {};
+  if (confirm !== "IMPORT PUROKS") {
+    return res.status(400).json({ error: 'Pass { confirm: "IMPORT PUROKS" } to proceed.' });
+  }
+  try {
+    const summary = await importMemberPuroks({ area: String(area || "all"), dry: Boolean(dry) });
+    res.json(summary);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 router.post("/import-water-roster", guard, async (req, res) => {
   const { confirm, area = "all", dry = true, jobId = "" } = req.body || {};

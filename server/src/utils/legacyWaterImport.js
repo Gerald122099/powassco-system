@@ -21,6 +21,7 @@ import WaterBill from "../models/WaterBill.js";
 import WaterPayment from "../models/WaterPayment.js";
 import WaterSettings from "../models/WaterSettings.js";
 import CbuTransaction from "../models/CbuTransaction.js";
+import Purok from "../models/Purok.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
@@ -454,6 +455,69 @@ export async function importWaterRoster({ area = "all", dry = true, onProgress =
     r.created = inserted;
     r.metersCreated = docs.reduce((s, d) => s + d.meters.length, 0);
   }
+
+  return r;
+}
+
+// ── Purok importer ─────────────────────────────────────────────────────
+// Populates the Purok registry + assigns each member to a purok from the
+// purok-divided roster (waterMemberPuroks.json — each "Area: / Names" block
+// in watermember.xlsx is one purok, numbered Purok 1..N per area). Matches
+// names to existing accounts in memory; dry-run-first + idempotent.
+const PUROK_FILE = "waterMemberPuroks.json";
+function loadPurokData() {
+  if (!DATA[PUROK_FILE]) DATA[PUROK_FILE] = JSON.parse(fs.readFileSync(path.join(__dirname, "../data/", PUROK_FILE), "utf8"));
+  return DATA[PUROK_FILE];
+}
+export function purokImportAreas() {
+  const recs = loadPurokData().records || [];
+  const m = new Map();
+  for (const r of recs) m.set(r.area, (m.get(r.area) || 0) + 1);
+  return [{ key: "all", label: "All areas" }, ...[...m.keys()].map((a) => ({ key: a, label: a }))];
+}
+
+export async function importMemberPuroks({ area = "all", dry = true } = {}) {
+  const records = (loadPurokData().records || []).filter((r) => area === "all" || r.area === area);
+  const idx = buildIndex(await WaterMember.find({}).select("pnNo accountName meters billing address purok").lean());
+
+  const r = { dry, area, records: records.length, puroksToCreate: 0, puroksCreated: 0, matched: 0, ambiguous: 0, assigned: 0, unmatched: [], sample: [] };
+
+  // distinct (area, purok) → registry entries to ensure
+  const wantPuroks = new Map(); // `${area}__${purok}` -> { barangay, name, order }
+  for (const rec of records) {
+    const key = `${rec.area}__${rec.purok}`;
+    if (!wantPuroks.has(key)) wantPuroks.set(key, { barangay: rec.area, name: rec.purok, order: parseInt(String(rec.purok).replace(/\D/g, ""), 10) || 0 });
+  }
+  const existing = new Set((await Purok.find(area === "all" ? {} : { barangay: area }).select("barangay name").lean()).map((p) => `${p.barangay}__${p.name}`));
+  const newPuroks = [];
+  for (const p of wantPuroks.values()) {
+    if (existing.has(`${p.barangay}__${p.name}`)) continue;
+    r.puroksToCreate++;
+    if (!dry) newPuroks.push({ ...p, createdBy: "purok-import" });
+  }
+  if (!dry && newPuroks.length) {
+    try { const res = await Purok.insertMany(newPuroks, { ordered: false }); r.puroksCreated = res.length; }
+    catch (e) { r.puroksCreated = Array.isArray(e?.insertedDocs) ? e.insertedDocs.length : 0; }
+  }
+
+  // assign members
+  const bulk = [];
+  for (const rec of records) {
+    const parsed = parseLedgerName(rec.name);
+    const res = resolveInIndex(parsed, idx);
+    if (res.status === "none") { r.unmatched.push({ name: rec.name, area: rec.area, purok: rec.purok, reason: "no_match" }); continue; }
+    if (res.status === "ambiguous") r.ambiguous++;
+    r.matched++;
+    const m = res.member;
+    if (r.sample.length < 12) r.sample.push({ name: rec.name, pnNo: m.pnNo, accountName: m.accountName, area: rec.area, purok: rec.purok, kind: res.status });
+    if (!dry) bulk.push({ updateOne: { filter: { pnNo: m.pnNo }, update: { $set: { purok: rec.purok } } } });
+  }
+  if (!dry && bulk.length) {
+    for (let i = 0; i < bulk.length; i += 1000) {
+      const wr = await WaterMember.bulkWrite(bulk.slice(i, i + 1000), { ordered: false });
+      r.assigned += (wr.modifiedCount || 0);
+    }
+  } else if (dry) r.assigned = r.matched;
 
   return r;
 }
