@@ -6,7 +6,7 @@ import { useAuth } from "../../../context/AuthContext";
 import { apiFetch } from "../../../lib/api";
 import { parseMeterQR } from "../../../lib/meterQr";
 import * as odb from "../../../lib/offlineDb";
-import { downloadAllMeters, saveReadingOffline, syncQueue, currentPeriodKey, getCurrentLocation } from "../../../lib/fieldSync";
+import { downloadAllMeters, downloadUpdates, saveReadingOffline, syncQueue, currentPeriodKey, getCurrentLocation } from "../../../lib/fieldSync";
 import { getSocket } from "../../../lib/realtime";
 import { connectPrinter, printerConnected, printWaterReceipt, thermalSupported } from "../../../lib/thermalPrint";
 import { calculateWaterBillLocal } from "../../../lib/waterBillingLocal";
@@ -110,6 +110,18 @@ export default function FieldModePanel() {
     setSettings(st || null);
   }, []);
 
+  // Fast DELTA refresh: pull only the readings other plumbers created since
+  // our last sync and patch the cache (mark read + "Read by X"). Cheap, so
+  // it runs on the realtime ping, on a short interval, and on reconnect —
+  // keeping every plumber's offline copy current with no button.
+  const applyUpdates = useCallback(async () => {
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+    try {
+      const r = await downloadUpdates({ token, periodKey: currentPeriodKey() });
+      if (r.patched > 0) await refreshLocal();
+    } catch { /* transient — next tick retries */ }
+  }, [token, refreshLocal]);
+
   useEffect(() => {
     refreshLocal();
     const on = () => setOnline(true);
@@ -160,17 +172,23 @@ export default function FieldModePanel() {
     await refreshLocal();
   }, [token, user, refreshLocal, busy, flash]);
 
-  // Auto-sync when back online + periodic background check.
+  // Auto-sync pending + pull deltas when online, on reconnect, and every 20s.
   useEffect(() => {
-    if (online && pending > 0 && busy !== "sync") doSync();
+    if (online) {
+      if (pending > 0 && busy !== "sync") doSync();
+      applyUpdates();
+    }
     const id = setInterval(() => {
-      if (navigator.onLine && pending > 0) doSync();
-    }, 30000);
+      if (navigator.onLine) {
+        if (pending > 0) doSync();
+        applyUpdates(); // backup to the realtime ping
+      }
+    }, 20000);
     return () => {
       clearInterval(id);
       if (retryTimer.current) clearTimeout(retryTimer.current);
     };
-  }, [online, pending, doSync, busy]);
+  }, [online, pending, doSync, busy, applyUpdates]);
 
   async function handleDownload(silent = false) {
     if (!navigator.onLine) { if (!silent) flash("You are offline. Connect to download meters.", "error"); return; }
@@ -188,25 +206,31 @@ export default function FieldModePanel() {
     }
   }
 
-  // Realtime: when another plumber syncs a reading, the server's "readings"
-  // collection changes → a debounced background re-download refreshes our
-  // cached read flags / "Read by X" without the plumber doing anything.
-  // Also auto-downloads once on first online load if the cache is empty.
+  // Realtime: another plumber's sync changes the "readings" collection →
+  // a quick DELTA refresh patches our cache (read flags + "Read by X")
+  // automatically. No full re-download, no button.
   const autoDlTimer = useRef(null);
   useEffect(() => {
     const s = getSocket();
     if (!s) return undefined;
     s.emit("subscribe", ["readings"]);
     const onChange = (msg) => {
-      if (msg?.topic !== "readings") return;
-      if (!navigator.onLine || busy) return;
+      if (msg?.topic !== "readings" || !navigator.onLine) return;
       clearTimeout(autoDlTimer.current);
-      autoDlTimer.current = setTimeout(() => handleDownload(true), 2500);
+      autoDlTimer.current = setTimeout(() => applyUpdates(), 1200);
     };
     s.on("data:changed", onChange);
     return () => { s.off("data:changed", onChange); clearTimeout(autoDlTimer.current); };
+  }, [applyUpdates]);
+
+  // Auto full-download when online and the cache is EMPTY (first open, or
+  // opened offline then connected) OR STALE (new month). Otherwise the delta
+  // sync keeps it current. Replaces the manual Download button entirely.
+  useEffect(() => {
+    const stalePeriod = periodKey && periodKey !== currentPeriodKey();
+    if (online && busy !== "download" && (members.length === 0 || stalePeriod)) handleDownload(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [busy, token]);
+  }, [online, members.length, periodKey]);
 
   function prevReadingFor(member, meterNo) {
     const la = member.lastActualReadings?.[mnorm(meterNo)];
@@ -549,15 +573,6 @@ export default function FieldModePanel() {
              pending > 0 ? <><RefreshCw size={20} /> Sync {pending}</> :
              <><CheckCircle size={20} /> All synced</>}
           </button>
-          <button
-            onClick={() => handleDownload()}
-            disabled={busy === "download" || !online}
-            className="inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm active:scale-95 disabled:opacity-50"
-            aria-label="Download all meters"
-            title="Download all meters (by purok)"
-          >
-            <Download size={20} className={busy === "download" ? "animate-pulse text-purple-600" : ""} />
-          </button>
         </div>
       </div>
 
@@ -576,9 +591,10 @@ export default function FieldModePanel() {
                 onClick={() => { setMoreOpen(false); handleDownload(); }}
                 disabled={busy === "download" || !online}
                 className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-3 text-sm font-semibold text-slate-700 active:bg-slate-50 disabled:opacity-50"
+                title="Meters auto-download & auto-update; use this only to force a full refresh"
               >
                 <Download size={18} className="text-purple-600" />
-                {busy === "download" ? "Downloading…" : "Download batch"}
+                {busy === "download" ? "Downloading…" : "Re-download all"}
               </button>
               {thermalSupported() && (
                 <button
@@ -619,7 +635,7 @@ export default function FieldModePanel() {
         <div className="mt-3 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           <AlertTriangle size={18} className="mt-0.5 shrink-0" />
           <div>
-            Cached batch is for <b>{periodKey}</b>, but the current month is <b>{currentPeriodKey()}</b>. Connect and tap <b>Download Batch</b> to refresh before reading.
+            Cached meters are for <b>{periodKey}</b>, but the current month is <b>{currentPeriodKey()}</b>. They'll refresh automatically once you're online.
           </div>
         </div>
       )}

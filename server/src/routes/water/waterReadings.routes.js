@@ -432,10 +432,34 @@ router.get("/field-all", ...guard, async (req, res) => {
       // along here.
       Purok.find(barangay ? { barangay: String(barangay) } : {}).sort({ barangay: 1, order: 1, name: 1 }).select("barangay name group order").lean(),
     ]);
-    res.json({ items, puroks, periodKey, count: items.length });
+    res.json({ items, puroks, periodKey, count: items.length, now: new Date().toISOString() });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Failed to load meters" });
+  }
+});
+
+/**
+ * GET /water/readings/field-updates?periodKey=YYYY-MM&since=<ISO>
+ * DELTA sync for the field app: only the readings created/updated since
+ * `since` (i.e. meters another plumber just read). Tiny + fast payload —
+ * the client patches its offline cache instead of re-downloading everything.
+ */
+router.get("/field-updates", ...guard, async (req, res) => {
+  try {
+    const { periodKey, since } = req.query;
+    if (!periodKey) return res.status(400).json({ error: "Period key is required" });
+    const sinceDate = since ? new Date(since) : new Date(0);
+    const readings = await WaterReading.find({
+      periodKey,
+      $or: [{ updatedAt: { $gt: sinceDate } }, { createdAt: { $gt: sinceDate } }],
+    })
+      .select("pnNo meterNumber presentReading previousReading consumed readAt readBy")
+      .lean();
+    res.json({ readings, now: new Date().toISOString(), count: readings.length });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to load updates" });
   }
 });
 

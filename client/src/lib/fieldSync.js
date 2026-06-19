@@ -61,7 +61,41 @@ export async function downloadAllMeters({ token, periodKey = currentPeriodKey(),
   await odb.setMeta("openPool", true);
   await odb.setMeta("batchInfo", [{ batchName: barangay || "All meters", area: barangay || "" }]);
   await odb.setMeta("downloadedAt", Date.now());
+  // Baseline for delta sync — only readings newer than this are fetched next.
+  await odb.setMeta("lastUpdateAt", res.now || new Date().toISOString());
   return { ok: true, count: items.length, periodKey };
+}
+
+// DELTA sync: pull only the readings another plumber created/updated since
+// our last sync and patch the matching cached members (mark their meters
+// read + set "Read by X"). Tiny + fast; keeps every plumber's offline copy
+// current without re-downloading all meters. Returns { patched, changed }.
+export async function downloadUpdates({ token, periodKey = currentPeriodKey() } = {}) {
+  const sinceRaw = (await odb.getMeta("lastUpdateAt")) || (await odb.getMeta("downloadedAt")) || 0;
+  const since = typeof sinceRaw === "number" ? new Date(sinceRaw).toISOString() : sinceRaw;
+  const r = await apiFetch(`/water/readings/field-updates?periodKey=${periodKey}&since=${encodeURIComponent(since)}`, { token });
+  const readings = r.readings || [];
+  await odb.setMeta("lastUpdateAt", r.now || new Date().toISOString());
+  if (!readings.length) return { ok: true, patched: 0, changed: 0 };
+
+  const byPn = {};
+  for (const rd of readings) (byPn[rd.pnNo] ||= []).push(rd);
+  let patched = 0;
+  for (const [pn, rows] of Object.entries(byPn)) {
+    const member = await odb.getMember(pn);
+    if (!member) continue; // not in our cache (new account) → next full download picks it up
+    member.readMeters = Array.isArray(member.readMeters) ? [...member.readMeters] : [];
+    member.lastActualReadings = { ...(member.lastActualReadings || {}) };
+    for (const rd of rows) {
+      const mn = String(rd.meterNumber).toUpperCase().trim();
+      if (!member.readMeters.some((x) => String(x).toUpperCase().trim() === mn)) member.readMeters.push(rd.meterNumber);
+      member.lastActualReadings[mn] = { presentReading: rd.presentReading, previousReading: rd.previousReading, consumed: rd.consumed, readAt: rd.readAt };
+      if (rd.readBy) member.readBy = rd.readBy;
+    }
+    await odb.updateMember(member);
+    patched++;
+  }
+  return { ok: true, patched, changed: readings.length };
 }
 
 // Save a reading locally (works fully offline). `forceUpdate` is true
