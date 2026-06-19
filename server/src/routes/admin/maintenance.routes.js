@@ -20,7 +20,7 @@ import { regenLoanAmortization } from "../../scripts/regenLoanAmortization.js";
 import { rebuildLoanCharges } from "../../scripts/rebuildLoanCharges.js";
 import { importLegacyLoans, LEGACY_LOAN_BATCHES, fixWaterMemberNames } from "../../utils/legacyLoanImport.js";
 import { recomputeWaterBills } from "../../scripts/recomputeWaterBills.js";
-import { importLegacyWater, LEGACY_WATER_AREAS, importWaterRoster, WATER_ROSTER_AREAS, importMemberPuroks, purokImportAreas } from "../../utils/legacyWaterImport.js";
+import { importLegacyWater, LEGACY_WATER_AREAS, importWaterRoster, WATER_ROSTER_AREAS, importMemberPuroks, purokImportAreas, dedupeWaterMembers } from "../../utils/legacyWaterImport.js";
 import { emitJobProgress } from "../../realtime.js";
 import WaterMember from "../../models/WaterMember.js";
 
@@ -143,6 +143,20 @@ router.get("/water-roster/areas", guard, (req, res) => res.json(WATER_ROSTER_ARE
 // purok-divided roster (waterMemberPuroks.json). Dry-run by default —
 // reports puroks to create + members matched/assigned/unmatched.
 router.get("/member-puroks/areas", guard, (req, res) => res.json(purokImportAreas()));
+
+// Dedupe water members: archive empty duplicate accounts (no transactions),
+// keep the ones with history. Dry-run by default. Never hard-deletes.
+router.post("/dedupe-water-members", guard, async (req, res) => {
+  const { confirm, dry = true } = req.body || {};
+  if (confirm !== "DEDUPE WATER MEMBERS") {
+    return res.status(400).json({ error: 'Pass { confirm: "DEDUPE WATER MEMBERS" } to proceed.' });
+  }
+  try {
+    res.json(await dedupeWaterMembers({ dry: Boolean(dry) }));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 // Correct water-member name typos so the legacy loan import matches them
 // (rows where the LOAN-register name is the correct spelling). Dry-run

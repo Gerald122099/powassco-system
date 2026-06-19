@@ -22,6 +22,8 @@ import WaterPayment from "../models/WaterPayment.js";
 import WaterSettings from "../models/WaterSettings.js";
 import CbuTransaction from "../models/CbuTransaction.js";
 import Purok from "../models/Purok.js";
+import WaterReading from "../models/WaterReading.js";
+import LoanApplication from "../models/LoanApplication.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
@@ -524,5 +526,68 @@ export async function importMemberPuroks({ area = "all", dry = true } = {}) {
     }
   } else if (dry) r.assigned = r.matched;
 
+  return r;
+}
+
+// ── Dedupe water members ───────────────────────────────────────────────
+// The legacy imports created duplicate accounts (same name, different pn).
+// This keeps every account that has ANY transaction history and ARCHIVES
+// (accountStatus="inactive") the EMPTY duplicates. For a name where no copy
+// has history, it keeps one (prefers a purok-assigned, then oldest) and
+// archives the rest. NEVER hard-deletes; groups where 2+ copies both have
+// history are left for manual review. Dry-run-first.
+export async function dedupeWaterMembers({ dry = true } = {}) {
+  const all = await WaterMember.find({ accountStatus: "active" })
+    .select("pnNo accountName purok address.barangay meters createdAt").lean();
+
+  const groups = new Map();
+  for (const m of all) {
+    const k = norm(m.accountName);
+    if (!k) continue;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(m);
+  }
+  const dupGroups = [...groups.values()].filter((g) => g.length > 1);
+  const dupPns = dupGroups.flatMap((g) => g.map((m) => m.pnNo));
+
+  const r = { dry, dupGroups: dupGroups.length, dupAccounts: dupPns.length, kept: 0, archived: 0, review: [], sample: [] };
+  if (!dupPns.length) return r;
+
+  const [billPns, payPns, readPns, cbuPns, loanPns] = await Promise.all([
+    WaterBill.distinct("pnNo", { pnNo: { $in: dupPns } }),
+    WaterPayment.distinct("pnNo", { pnNo: { $in: dupPns } }),
+    WaterReading.distinct("pnNo", { pnNo: { $in: dupPns } }),
+    CbuTransaction.distinct("pnNo", { pnNo: { $in: dupPns } }),
+    LoanApplication.distinct("borrowerPnNo", { borrowerPnNo: { $in: dupPns } }),
+  ]);
+  const hasActivity = new Set([...billPns, ...payPns, ...readPns, ...cbuPns, ...loanPns].map(String));
+
+  const archivePns = [];
+  for (const g of dupGroups) {
+    const withAct = g.filter((m) => hasActivity.has(m.pnNo));
+    let keep, drop;
+    if (withAct.length >= 1) {
+      keep = withAct;
+      drop = g.filter((m) => !hasActivity.has(m.pnNo));
+      if (withAct.length > 1) r.review.push({ name: g[0].accountName, pnNos: withAct.map((m) => m.pnNo) });
+    } else {
+      const sorted = [...g].sort((a, b) => (b.purok ? 1 : 0) - (a.purok ? 1 : 0) || new Date(a.createdAt) - new Date(b.createdAt));
+      keep = [sorted[0]];
+      drop = sorted.slice(1);
+    }
+    r.kept += keep.length;
+    for (const d of drop) archivePns.push(d.pnNo);
+    if (r.sample.length < 15) r.sample.push({ name: g[0].accountName, total: g.length, keep: keep.map((m) => `${m.pnNo}${hasActivity.has(m.pnNo) ? "*" : ""}`), archive: drop.map((m) => m.pnNo) });
+  }
+  r.archived = archivePns.length;
+
+  if (!dry && archivePns.length) {
+    for (let i = 0; i < archivePns.length; i += 1000) {
+      await WaterMember.updateMany(
+        { pnNo: { $in: archivePns.slice(i, i + 1000) } },
+        { $set: { accountStatus: "inactive", statusReason: "Duplicate with no transactions — archived during dedupe", statusDate: new Date() } }
+      );
+    }
+  }
   return r;
 }

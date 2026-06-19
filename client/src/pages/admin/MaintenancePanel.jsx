@@ -248,8 +248,97 @@ export default function MaintenancePanel() {
 
       <DuplicateMembersCard />
 
+      <DedupeWaterMembersCard />
+
       <FixWaterNamesCard />
     </div>
+  );
+}
+
+// Dedupe water members — archive the EMPTY duplicate accounts (no
+// transactions), keep the ones with history. Conservative + reversible.
+function DedupeWaterMembersCard() {
+  const { token } = useAuth();
+  const [result, setResult] = useState(null);
+  const [working, setWorking] = useState(false);
+  const [mode, setMode] = useState("");
+
+  async function call(dry) {
+    if (!dry && !window.confirm(`Archive ${result?.archived ?? "the"} empty duplicate account(s)? They become INACTIVE (reversible) — accounts with any transactions are never touched. Proceed?`)) return;
+    setMode(dry ? "Dry run" : "Apply"); setResult(null); setWorking(true);
+    try {
+      const res = await apiFetch("/admin/maintenance/dedupe-water-members", { method: "POST", token, body: { confirm: "DEDUPE WATER MEMBERS", dry } });
+      setResult(res);
+      toast.success(dry
+        ? `Dry run: ${res.dupGroups} duplicate name(s); would archive ${res.archived}, keep ${res.kept}.`
+        : `Archived ${res.archived} empty duplicate(s).`);
+    } catch (e) { toast.error(e.message); } finally { setWorking(false); }
+  }
+  const isDry = result?.dry !== false;
+
+  return (
+    <Card>
+      <div className="flex items-center gap-2 text-lg font-bold tracking-tight text-slate-900">
+        <Wrench size={20} className="text-rose-600" /> Maintenance — Dedupe Water Members
+      </div>
+      <div className="mt-0.5 text-sm text-slate-600">
+        Archives <b>empty duplicate</b> accounts (same name, <b>no</b> bills / payments / readings / CBU / loans),
+        keeping the copy that has history. Accounts with any transactions are never touched; nothing is deleted —
+        duplicates are set <b>inactive</b> (reversible).
+      </div>
+
+      <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900 flex items-start gap-2">
+        <AlertCircle size={16} className="mt-0.5 shrink-0" />
+        <div><b>Always dry-run first.</b> Names where 2+ copies BOTH have history are left for manual review (listed below). Run the Purok import first so the kept copy prefers a purok-assigned account.</div>
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <div className="flex-1" />
+        <button onClick={() => call(true)} disabled={working} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50">
+          {working && mode === "Dry run" ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+          {working && mode === "Dry run" ? "Running…" : "Dry run"}
+        </button>
+        <button onClick={() => call(false)} disabled={working || !result || !result.archived} className="inline-flex items-center gap-2 rounded-xl bg-rose-600 px-5 py-2 text-sm font-bold text-white hover:bg-rose-700 disabled:opacity-50" title={!result ? "Dry-run first" : !result.archived ? "Nothing to archive" : ""}>
+          {working && mode === "Apply" ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+          {working && mode === "Apply" ? "Applying…" : "Apply"}
+        </button>
+      </div>
+
+      {result && (
+        <div className="mt-4 space-y-3">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-700">
+            {isDry ? "Dry run" : "Applied"} — duplicate names <b>{result.dupGroups}</b> ({result.dupAccounts} accounts),
+            keep <b className="text-emerald-700">{result.kept}</b>, {isDry ? "would archive" : "archived"} <b className="text-rose-600">{result.archived}</b>,
+            needs review <b className={result.review.length ? "text-amber-700" : ""}>{result.review.length}</b>
+          </div>
+          {result.sample?.length > 0 && (
+            <div className="overflow-x-auto rounded-xl border border-slate-200">
+              <table className="w-full text-xs">
+                <thead className="bg-white text-left text-slate-500"><tr><th className="px-3 py-2">Name</th><th className="px-3 py-2">#</th><th className="px-3 py-2">Keep (*=has history)</th><th className="px-3 py-2">Archive</th></tr></thead>
+                <tbody>
+                  {result.sample.map((s, i) => (
+                    <tr key={i} className="border-t border-slate-100">
+                      <td className="px-3 py-1.5">{s.name}</td>
+                      <td className="px-3 py-1.5">{s.total}</td>
+                      <td className="px-3 py-1.5 font-mono text-emerald-700">{s.keep.join(", ")}</td>
+                      <td className="px-3 py-1.5 font-mono text-rose-600">{s.archive.join(", ") || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {result.review?.length > 0 && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-2 text-xs">
+              <div className="px-2 py-1 font-bold text-amber-800">Manual review — 2+ copies have history ({result.review.length})</div>
+              {result.review.slice(0, 100).map((rv, i) => (
+                <div key={i} className="px-2 py-0.5"><b>{rv.name}</b> <span className="font-mono text-slate-500">{rv.pnNos.join(", ")}</span></div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
   );
 }
 
