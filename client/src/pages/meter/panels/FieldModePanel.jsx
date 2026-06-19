@@ -37,6 +37,9 @@ export default function FieldModePanel() {
   const [downloadedAt, setDownloadedAt] = useState(null);
   const [lastSyncAt, setLastSyncAt] = useState(null);
   const [batchInfo, setBatchInfo] = useState([]);
+  const [syncedAt, setSyncedAt] = useState(null); // last successful auto check/sync
+  const [, forceTick] = useState(0); // re-render so "Xs ago" stays fresh
+  useEffect(() => { const id = setInterval(() => forceTick((t) => t + 1), 12000); return () => clearInterval(id); }, []);
 
   const [q, setQ] = useState("");
   // filter: "all" | "unread" | "blocked"
@@ -119,6 +122,7 @@ export default function FieldModePanel() {
     try {
       const r = await downloadUpdates({ token, periodKey: currentPeriodKey() });
       if (r.patched > 0) await refreshLocal();
+      setSyncedAt(Date.now());
     } catch { /* transient — next tick retries */ }
   }, [token, refreshLocal]);
 
@@ -199,6 +203,7 @@ export default function FieldModePanel() {
       const res = await downloadAllMeters({ token, periodKey: currentPeriodKey() });
       if (!silent) flash(`✓ Downloaded ${res.count} meter(s) for ${res.periodKey}.`, "success");
       await refreshLocal();
+      setSyncedAt(Date.now());
     } catch (e) {
       if (!silent) flash("Download failed: " + e.message, "error");
     } finally {
@@ -557,8 +562,21 @@ export default function FieldModePanel() {
             <MoreVertical size={20} />
           </button>
         </div>
-        <div className="mt-1 text-xs text-slate-500 leading-tight">
-          {user?.fullName ? <b>{user.fullName}</b> : "—"} • {periodKey} • {batchInfo.map((b) => b.batchName).join(", ") || "no batch"} • {ago(downloadedAt)}
+        <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-slate-500 leading-tight">
+          <span>{user?.fullName ? <b>{user.fullName}</b> : "—"} • {periodKey} • {batchInfo.map((b) => b.batchName).join(", ") || "all meters"}</span>
+          {online ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              </span>
+              Live{syncedAt ? ` · synced ${ago(syncedAt)}` : ""}
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">
+              <CloudOff size={10} /> Offline · cached {ago(downloadedAt)}
+            </span>
+          )}
         </div>
 
         {/* Primary action row — Sync is the only thing that needs to be one-tap reachable. */}
