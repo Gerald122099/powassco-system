@@ -16,6 +16,7 @@ import waterPaymentsRoutes from "./routes/water/waterPayments.routes.js";
 import waterSettingsRoutes from "./routes/water/waterSettings.routes.js";
 import waterAnalyticsRoutes from "./routes/water/waterAnalytics.routes.js";
 import waterReadingsRoutes from "./routes/water/waterReadings.routes.js";
+import puroksRoutes from "./routes/water/puroks.routes.js";
 import waterInquiryRoutes from "./routes/public/waterInquiry.routes.js";
 import waterBatchesRoutes from "./routes/water/waterBatches.routes.js";
 import loanRoutes from "./routes/loan/loans.routes.js";
@@ -172,6 +173,7 @@ app.use("/api/public/savings-inquiry", publicSavingsInquiryRoutes);
 app.use("/api/public/dev-feedback", devFeedbackRoutes);
 app.use("/api/public/push", publicPushRoutes);
 app.use("/api/water/batches", waterBatchesRoutes);
+app.use("/api/water/puroks", puroksRoutes);
 
 // ✅ LOAN MODULE
 app.use("/api/loan", loanRoutes);

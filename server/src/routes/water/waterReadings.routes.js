@@ -204,6 +204,12 @@ async function enrichMembersForPeriod(members, periodKey) {
         billWithoutReading: memberBills.size > 0 && readMeterSet.size === 0,
         lastActualReadings,
         priorUnsettledPeriods: [...(priorUnsettledByPn.get(m.pnNo) || [])].sort(),
+        // Open-pool field reading: which purok the account belongs to and,
+        // if already read this period, who claimed it ("Read by X").
+        purok: m.purok || "",
+        barangay: m.address?.barangay || "",
+        readBy: memberReadings[0]?.readBy || "",
+        readAt: memberReadings[0]?.readAt || null,
       };
     });
 }
@@ -387,7 +393,7 @@ router.get("/my-batch", ...guard, async (req, res) => {
     if (memberIds.length === 0) return res.json({ items: [], batches: batchInfo });
 
     const members = await WaterMember.find({ _id: { $in: memberIds }, accountStatus: "active" })
-      .select("pnNo accountName billing address meters personal")
+      .select("pnNo accountName billing address meters personal purok")
       .sort({ pnNo: 1 })
       .lean();
 
@@ -396,6 +402,33 @@ router.get("/my-batch", ...guard, async (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Failed to load batch" });
+  }
+});
+
+/**
+ * GET /water/readings/field-all?periodKey=YYYY-MM[&barangay=]
+ * OPEN POOL: every active account/meter for offline field reading, grouped
+ * client-side by purok. Any field reader (plumber / meter_reader) downloads
+ * all meters; whoever reads a meter first claims it (others then see
+ * "Read by X"). Optionally scoped to one area (barangay).
+ */
+router.get("/field-all", ...guard, async (req, res) => {
+  try {
+    const { periodKey, barangay } = req.query;
+    if (!periodKey) return res.status(400).json({ error: "Period key is required" });
+    const filter = { accountStatus: "active" };
+    if (barangay) filter["address.barangay"] = String(barangay);
+
+    const members = await WaterMember.find(filter)
+      .select("pnNo accountName billing address meters personal purok")
+      .sort({ pnNo: 1 })
+      .lean();
+
+    const items = await enrichMembersForPeriod(members, periodKey);
+    res.json({ items, periodKey, count: items.length });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to load meters" });
   }
 });
 

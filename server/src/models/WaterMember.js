@@ -343,6 +343,11 @@ const WaterMemberSchema = new mongoose.Schema(
     // Indexed so the filter dropdown query stays fast at scale.
     arCategory: { type: String, trim: true, default: "", index: true },
     
+    // Field-reading purok (sub-area) used to divide an area's meters for
+    // the open-pool field readers. Managed by the meter-reader office;
+    // "" = unassigned. Grouped under the member's address.barangay (area).
+    purok: { type: String, trim: true, default: "", index: true },
+
     // Nested Schemas
     personal: { type: PersonalSchema, required: true },
     address: { type: AddressSchema, default: {} },
