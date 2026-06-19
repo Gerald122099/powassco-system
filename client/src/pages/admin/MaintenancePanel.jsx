@@ -250,8 +250,97 @@ export default function MaintenancePanel() {
 
       <DedupeWaterMembersCard />
 
+      <MergeSplitMetersCard />
+
       <FixWaterNamesCard />
     </div>
+  );
+}
+
+// Merge split-meter duplicates — combine an owner's meters that got spread
+// across duplicate-name accounts into one account.
+function MergeSplitMetersCard() {
+  const { token } = useAuth();
+  const [result, setResult] = useState(null);
+  const [working, setWorking] = useState(false);
+  const [mode, setMode] = useState("");
+
+  async function call(dry) {
+    if (!dry && !window.confirm(`Merge ${result?.merged ?? "the"} split-meter group(s)? Meters combine onto one account, transactions re-point to it, and the emptied accounts go inactive (reversible). Proceed?`)) return;
+    setMode(dry ? "Dry run" : "Apply"); setResult(null); setWorking(true);
+    try {
+      const res = await apiFetch("/admin/maintenance/merge-split-meters", { method: "POST", token, body: { confirm: "MERGE SPLIT METERS", dry } });
+      setResult(res);
+      toast.success(dry
+        ? `Dry run: ${res.merged} mergeable, ${res.metersMoved} meters move, ${res.review.length} to review.`
+        : `Merged ${res.merged} group(s), moved ${res.metersMoved} meters, archived ${res.accountsArchived}.`);
+    } catch (e) { toast.error(e.message); } finally { setWorking(false); }
+  }
+  const isDry = result?.dry !== false;
+
+  return (
+    <Card>
+      <div className="flex items-center gap-2 text-lg font-bold tracking-tight text-slate-900">
+        <Wrench size={20} className="text-indigo-600" /> Maintenance — Merge Split-Meter Duplicates
+      </div>
+      <div className="mt-0.5 text-sm text-slate-600">
+        When an owner's meters got split across duplicate-name accounts (acct A = meter #1, acct B = meter #2), this
+        <b> combines all their meters onto one account</b>, re-points that account's bills/payments/readings/CBU, and archives
+        the emptied copies (inactive, reversible).
+      </div>
+
+      <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900 flex items-start gap-2">
+        <AlertCircle size={16} className="mt-0.5 shrink-0" />
+        <div><b>Always dry-run first.</b> Only merges when the meter numbers DON'T overlap (a clean split). Groups with the same meter on two accounts, or any account with a loan, are skipped / listed for review.</div>
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <div className="flex-1" />
+        <button onClick={() => call(true)} disabled={working} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50">
+          {working && mode === "Dry run" ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+          {working && mode === "Dry run" ? "Running…" : "Dry run"}
+        </button>
+        <button onClick={() => call(false)} disabled={working || !result || !result.merged} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2 text-sm font-bold text-white hover:bg-indigo-700 disabled:opacity-50" title={!result ? "Dry-run first" : !result.merged ? "Nothing to merge" : ""}>
+          {working && mode === "Apply" ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+          {working && mode === "Apply" ? "Applying…" : "Apply"}
+        </button>
+      </div>
+
+      {result && (
+        <div className="mt-4 space-y-3">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-700">
+            {isDry ? "Dry run" : "Applied"} — {isDry ? "mergeable" : "merged"} <b className="text-indigo-700">{result.merged}</b> group(s),
+            meters {isDry ? "to move" : "moved"} <b>{result.metersMoved}</b>, accounts {isDry ? "to archive" : "archived"} <b>{result.accountsArchived}</b>,
+            skipped (overlap) <b>{result.skippedOverlap}</b>, has-loan <b className={result.skippedLoan ? "text-amber-700" : ""}>{result.skippedLoan}</b>
+          </div>
+          {result.sample?.length > 0 && (
+            <div className="overflow-x-auto rounded-xl border border-slate-200">
+              <table className="w-full text-xs">
+                <thead className="bg-white text-left text-slate-500"><tr><th className="px-3 py-2">Name</th><th className="px-3 py-2">Keep (primary)</th><th className="px-3 py-2">Merge in</th><th className="px-3 py-2 text-right">Meters after</th></tr></thead>
+                <tbody>
+                  {result.sample.map((s, i) => (
+                    <tr key={i} className="border-t border-slate-100">
+                      <td className="px-3 py-1.5">{s.name}</td>
+                      <td className="px-3 py-1.5 font-mono text-emerald-700">{s.primary}</td>
+                      <td className="px-3 py-1.5 font-mono text-rose-600">{s.secondaries.join(", ")}</td>
+                      <td className="px-3 py-1.5 text-right font-bold">{s.totalMeters}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {result.review?.length > 0 && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-2 text-xs">
+              <div className="px-2 py-1 font-bold text-amber-800">Skipped — manual review ({result.review.length})</div>
+              {result.review.slice(0, 100).map((rv, i) => (
+                <div key={i} className="px-2 py-0.5"><b>{rv.name}</b> <span className="text-slate-500">— {rv.reason}</span> <span className="font-mono text-slate-400">{rv.pnNos?.join(", ")}</span></div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
   );
 }
 

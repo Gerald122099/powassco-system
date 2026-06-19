@@ -591,3 +591,68 @@ export async function dedupeWaterMembers({ dry = true } = {}) {
   }
   return r;
 }
+
+// ── Merge split-meter duplicates ───────────────────────────────────────
+// When one owner's meters got split across duplicate-name accounts (acct A
+// = meter #1, acct B = meter #2), combine all meters onto ONE account,
+// re-point that account's bills/payments/readings/CBU to the kept pn, and
+// archive the emptied secondaries. Only merges when the meter numbers DON'T
+// overlap (a clean split); skips any group that has a loan. Dry-run-first.
+const _nm = (s) => String(s || "").toUpperCase().trim();
+export async function mergeSplitMeterDuplicates({ dry = true } = {}) {
+  const all = await WaterMember.find({ accountStatus: "active" })
+    .select("pnNo accountName billing purok address.barangay meters createdAt").lean();
+  const groups = new Map();
+  for (const m of all) { const k = norm(m.accountName); if (!k) continue; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(m); }
+  const dupGroups = [...groups.values()].filter((g) => g.length > 1);
+
+  const r = { dry, dupGroups: dupGroups.length, merged: 0, accountsArchived: 0, metersMoved: 0, skippedOverlap: 0, skippedLoan: 0, review: [], sample: [] };
+  if (!dupGroups.length) return r;
+
+  const allPns = dupGroups.flatMap((g) => g.map((m) => m.pnNo));
+  const [billC, payC, readC, cbuC, loanPns] = await Promise.all([
+    WaterBill.aggregate([{ $match: { pnNo: { $in: allPns } } }, { $group: { _id: "$pnNo", n: { $sum: 1 } } }]),
+    WaterPayment.aggregate([{ $match: { pnNo: { $in: allPns } } }, { $group: { _id: "$pnNo", n: { $sum: 1 } } }]),
+    WaterReading.aggregate([{ $match: { pnNo: { $in: allPns } } }, { $group: { _id: "$pnNo", n: { $sum: 1 } } }]),
+    CbuTransaction.aggregate([{ $match: { pnNo: { $in: allPns } } }, { $group: { _id: "$pnNo", n: { $sum: 1 } } }]),
+    LoanApplication.distinct("borrowerPnNo", { borrowerPnNo: { $in: allPns } }),
+  ]);
+  const act = new Map();
+  for (const arr of [billC, payC, readC, cbuC]) for (const x of arr) act.set(String(x._id), (act.get(String(x._id)) || 0) + x.n);
+  const loanSet = new Set(loanPns.map(String));
+
+  for (const g of dupGroups) {
+    const counts = new Map();
+    for (const m of g) for (const mt of (m.meters || [])) { const mn = _nm(mt.meterNumber); if (mn) counts.set(mn, (counts.get(mn) || 0) + 1); }
+    if ([...counts.values()].some((c) => c > 1)) { r.skippedOverlap++; continue; } // same meter on 2 accts → not a clean split
+    if (g.some((m) => loanSet.has(m.pnNo))) { r.skippedLoan++; r.review.push({ name: g[0].accountName, reason: "has loan — review", pnNos: g.map((m) => m.pnNo) }); continue; }
+
+    const sorted = [...g].sort((a, b) => (act.get(b.pnNo) || 0) - (act.get(a.pnNo) || 0) || (b.meters?.length || 0) - (a.meters?.length || 0) || new Date(a.createdAt) - new Date(b.createdAt));
+    const primary = sorted[0], secondaries = sorted.slice(1);
+    const secPns = secondaries.map((s) => s.pnNo);
+    const secMeters = secondaries.flatMap((s) => s.meters || []);
+
+    r.merged++; r.accountsArchived += secondaries.length; r.metersMoved += secMeters.length;
+    if (r.sample.length < 15) r.sample.push({ name: g[0].accountName, primary: primary.pnNo, secondaries: secPns, totalMeters: (primary.meters?.length || 0) + secMeters.length });
+
+    if (!dry) {
+      const doc = await WaterMember.findOne({ pnNo: primary.pnNo });
+      if (doc) {
+        const have = new Set((doc.meters || []).map((mt) => _nm(mt.meterNumber)));
+        for (const mt of secMeters) {
+          const mn = _nm(mt.meterNumber);
+          if (mn && !have.has(mn)) { doc.meters.push({ meterNumber: mt.meterNumber, meterStatus: mt.meterStatus || "active", isBillingActive: mt.isBillingActive !== false, lastReading: mt.lastReading || 0, meterReaderNotes: mt.meterReaderNotes || "" }); have.add(mn); }
+        }
+        await doc.save();
+      }
+      await Promise.all([
+        WaterBill.updateMany({ pnNo: { $in: secPns } }, { $set: { pnNo: primary.pnNo, accountName: primary.accountName } }),
+        WaterPayment.updateMany({ pnNo: { $in: secPns } }, { $set: { pnNo: primary.pnNo } }),
+        WaterReading.updateMany({ pnNo: { $in: secPns } }, { $set: { pnNo: primary.pnNo } }),
+        CbuTransaction.updateMany({ pnNo: { $in: secPns } }, { $set: { pnNo: primary.pnNo, accountName: primary.accountName } }),
+      ]);
+      await WaterMember.updateMany({ pnNo: { $in: secPns } }, { $set: { accountStatus: "inactive", statusReason: `Merged into ${primary.pnNo}`, statusDate: new Date() } });
+    }
+  }
+  return r;
+}

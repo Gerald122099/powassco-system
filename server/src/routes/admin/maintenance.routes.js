@@ -20,7 +20,7 @@ import { regenLoanAmortization } from "../../scripts/regenLoanAmortization.js";
 import { rebuildLoanCharges } from "../../scripts/rebuildLoanCharges.js";
 import { importLegacyLoans, LEGACY_LOAN_BATCHES, fixWaterMemberNames } from "../../utils/legacyLoanImport.js";
 import { recomputeWaterBills } from "../../scripts/recomputeWaterBills.js";
-import { importLegacyWater, LEGACY_WATER_AREAS, importWaterRoster, WATER_ROSTER_AREAS, importMemberPuroks, purokImportAreas, dedupeWaterMembers } from "../../utils/legacyWaterImport.js";
+import { importLegacyWater, LEGACY_WATER_AREAS, importWaterRoster, WATER_ROSTER_AREAS, importMemberPuroks, purokImportAreas, dedupeWaterMembers, mergeSplitMeterDuplicates } from "../../utils/legacyWaterImport.js";
 import { emitJobProgress } from "../../realtime.js";
 import WaterMember from "../../models/WaterMember.js";
 
@@ -153,6 +153,21 @@ router.post("/dedupe-water-members", guard, async (req, res) => {
   }
   try {
     res.json(await dedupeWaterMembers({ dry: Boolean(dry) }));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Merge split-meter duplicate accounts (acct A meter #1 + acct B meter #2
+// → one account with both meters; transactions re-pointed, empties archived).
+// Dry-run by default. Skips meter-overlap groups + any group with a loan.
+router.post("/merge-split-meters", guard, async (req, res) => {
+  const { confirm, dry = true } = req.body || {};
+  if (confirm !== "MERGE SPLIT METERS") {
+    return res.status(400).json({ error: 'Pass { confirm: "MERGE SPLIT METERS" } to proceed.' });
+  }
+  try {
+    res.json(await mergeSplitMeterDuplicates({ dry: Boolean(dry) }));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
