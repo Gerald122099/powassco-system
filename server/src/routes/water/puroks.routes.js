@@ -100,6 +100,29 @@ router.delete("/:id", ...guard, async (req, res) => {
   }
 });
 
+// Rename or MERGE an area (barangay): retags every member + purok from the
+// old name to the new one. Use it to fold stray "Owak" accounts into
+// "Owak Proper", fix typos, etc. If `to` already exists the two areas merge.
+router.post("/rename-area", ...guard, async (req, res) => {
+  try {
+    const from = norm(req.body?.from), to = norm(req.body?.to);
+    if (!from || !to) return res.status(400).json({ error: "from and to are required." });
+    if (from === to) return res.json({ ok: true, members: 0, puroks: 0 });
+    const m = await WaterMember.updateMany({ "address.barangay": from }, { $set: { "address.barangay": to } });
+    // Move purok registry rows too (skip any that would collide with an
+    // existing same-named purok in the target area).
+    const targetNames = new Set((await Purok.find({ barangay: to }).select("name").lean()).map((p) => p.name));
+    let movedP = 0;
+    for (const p of await Purok.find({ barangay: from })) {
+      if (targetNames.has(p.name)) { await p.deleteOne(); continue; }
+      p.barangay = to; await p.save(); movedP++;
+    }
+    res.json({ ok: true, members: m.modifiedCount || 0, puroks: movedP });
+  } catch (e) {
+    res.status(500).json({ error: e.message || "Failed to rename area." });
+  }
+});
+
 // Members for the assignment UI: filter by area, purok, unassigned, or search.
 router.get("/members", ...guard, async (req, res) => {
   try {

@@ -71,6 +71,16 @@ export default function PurokManagementPanel() {
     try { await apiFetch(`/water/puroks/${p._id}`, { method: "DELETE", token }); toast.success("Deleted"); loadAreas(); loadMembers(); }
     catch (e) { toast.error(e.message); }
   }
+  async function renameArea() {
+    if (!area) return;
+    const to = window.prompt(`Rename / merge area "${area}" into:\n(e.g. fold "Owak" into "Owak Proper" — all its members + puroks move over)`, area);
+    if (!to || !to.trim() || to.trim() === area) return;
+    try {
+      const r = await apiFetch("/water/puroks/rename-area", { method: "POST", token, body: { from: area, to: to.trim() } });
+      toast.success(`Moved ${r.members} member(s) → ${to.trim()}`);
+      setArea(to.trim()); loadAreas();
+    } catch (e) { toast.error(e.message); }
+  }
   async function assignSelected() {
     if (!selected.size) return;
     setBusy(true);
@@ -109,6 +119,7 @@ export default function PurokManagementPanel() {
             {areas.length === 0 && <option value="">No areas yet</option>}
             {areas.map((a) => <option key={a.barangay} value={a.barangay}>{a.barangay} ({a.total})</option>)}
           </select>
+          <button onClick={renameArea} disabled={!area} className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50" title="Rename or merge this area">Rename area</button>
           <button onClick={loadAreas} className="rounded-xl border border-slate-200 p-2 text-slate-500 hover:bg-slate-50"><RefreshCw size={15} className={loading ? "animate-spin" : ""} /></button>
         </div>
       </div>

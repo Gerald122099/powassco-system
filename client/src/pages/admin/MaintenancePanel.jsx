@@ -313,7 +313,8 @@ function PurokImportCard() {
             {isDry ? "Dry run" : "Applied"} — records <b>{result.records}</b>, matched <b>{result.matched}</b>
             {result.ambiguous ? <> (incl. <b className="text-amber-700">{result.ambiguous}</b> ambiguous)</> : null},
             puroks {isDry ? "to create" : "created"} <b className="text-purple-700">{isDry ? result.puroksToCreate : result.puroksCreated}</b>,
-            {isDry ? <> would assign <b>{result.assigned}</b></> : <> assigned <b>{result.assigned}</b></>},
+            {isDry ? <> would assign <b>{result.assigned}</b></> : <> assigned <b>{result.assigned}</b></>}
+            {result.areaCorrected ? <>, area-corrected <b className="text-emerald-700">{result.areaCorrected}</b> (e.g. Owak → Owak Proper)</> : null},
             unmatched <b className={result.unmatched.length ? "text-red-600" : ""}>{result.unmatched.length}</b>
           </div>
           {result.sample?.length > 0 && (

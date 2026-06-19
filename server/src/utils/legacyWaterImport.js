@@ -480,7 +480,7 @@ export async function importMemberPuroks({ area = "all", dry = true } = {}) {
   const records = (loadPurokData().records || []).filter((r) => area === "all" || r.area === area);
   const idx = buildIndex(await WaterMember.find({}).select("pnNo accountName meters billing address purok").lean());
 
-  const r = { dry, area, records: records.length, puroksToCreate: 0, puroksCreated: 0, matched: 0, ambiguous: 0, assigned: 0, unmatched: [], sample: [] };
+  const r = { dry, area, records: records.length, puroksToCreate: 0, puroksCreated: 0, matched: 0, ambiguous: 0, assigned: 0, areaCorrected: 0, unmatched: [], sample: [] };
 
   // distinct (area, purok) → registry entries to ensure
   const wantPuroks = new Map(); // `${area}__${purok}` -> { barangay, name, order }
@@ -509,8 +509,13 @@ export async function importMemberPuroks({ area = "all", dry = true } = {}) {
     if (res.status === "ambiguous") r.ambiguous++;
     r.matched++;
     const m = res.member;
-    if (r.sample.length < 12) r.sample.push({ name: rec.name, pnNo: m.pnNo, accountName: m.accountName, area: rec.area, purok: rec.purok, kind: res.status });
-    if (!dry) bulk.push({ updateOne: { filter: { pnNo: m.pnNo }, update: { $set: { purok: rec.purok } } } });
+    const movedArea = (m.address?.barangay || "") !== rec.area;
+    if (r.sample.length < 12) r.sample.push({ name: rec.name, pnNo: m.pnNo, accountName: m.accountName, area: rec.area, purok: rec.purok, kind: res.status, wasArea: m.address?.barangay || "" });
+    if (movedArea) r.areaCorrected = (r.areaCorrected || 0) + 1;
+    // The lists you sent are the source of truth for BOTH the area
+    // (barangay) and the purok — so a member saved under a stray "Owak"
+    // is moved into "Owak Proper" when matched by name.
+    if (!dry) bulk.push({ updateOne: { filter: { pnNo: m.pnNo }, update: { $set: { purok: rec.purok, "address.barangay": rec.area } } } });
   }
   if (!dry && bulk.length) {
     for (let i = 0; i < bulk.length; i += 1000) {
