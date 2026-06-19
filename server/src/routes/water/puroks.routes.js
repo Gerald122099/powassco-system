@@ -87,6 +87,20 @@ router.patch("/:id", ...guard, async (req, res) => {
   }
 });
 
+// Set (or clear) the GROUP on many puroks at once — e.g. tag
+// "Owak Proper 1" + "Owak Proper 2" both into group "Purok 1".
+router.post("/set-group", ...guard, async (req, res) => {
+  try {
+    const ids = (Array.isArray(req.body?.ids) ? req.body.ids : []).filter((x) => /^[a-f0-9]{24}$/i.test(String(x)));
+    const group = norm(req.body?.group);
+    if (!ids.length) return res.status(400).json({ error: "ids[] required." });
+    const r = await Purok.updateMany({ _id: { $in: ids } }, { $set: { group } });
+    res.json({ ok: true, updated: r.modifiedCount || 0, group });
+  } catch (e) {
+    res.status(500).json({ error: e.message || "Failed to set group." });
+  }
+});
+
 // Delete a purok — members on it become unassigned.
 router.delete("/:id", ...guard, async (req, res) => {
   try {

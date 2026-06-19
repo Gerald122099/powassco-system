@@ -19,6 +19,8 @@ export default function PurokManagementPanel() {
   const [editing, setEditing] = useState(null); // purok _id being edited
   const [editName, setEditName] = useState("");
   const [editGroup, setEditGroup] = useState("");
+  const [selP, setSelP] = useState(() => new Set()); // purok ids selected for bulk group-set
+  const [bulkGroup, setBulkGroup] = useState("");
 
   const [members, setMembers] = useState([]);
   const [filter, setFilter] = useState("all"); // "all" | "unassigned" | purok name
@@ -70,6 +72,15 @@ export default function PurokManagementPanel() {
     if (!window.confirm(`Delete "${p.name}"? Its ${p.members} member(s) become unassigned.`)) return;
     try { await apiFetch(`/water/puroks/${p._id}`, { method: "DELETE", token }); toast.success("Deleted"); loadAreas(); loadMembers(); }
     catch (e) { toast.error(e.message); }
+  }
+  const togglePurok = (id) => setSelP((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  async function setGroupForSelected() {
+    if (!selP.size) return;
+    try {
+      const r = await apiFetch("/water/puroks/set-group", { method: "POST", token, body: { ids: [...selP], group: bulkGroup.trim() } });
+      toast.success(`${r.updated} purok(s) → group ${bulkGroup.trim() || "(none)"}`);
+      setSelP(new Set()); setBulkGroup(""); loadAreas();
+    } catch (e) { toast.error(e.message); }
   }
   async function renameArea() {
     if (!area) return;
@@ -149,6 +160,7 @@ export default function PurokManagementPanel() {
                       </>
                     ) : (
                       <>
+                        <input type="checkbox" checked={selP.has(p._id)} onChange={() => togglePurok(p._id)} title="Select for group" />
                         <button onClick={() => setFilter(p.name)} className={`flex-1 text-left font-semibold ${filter === p.name ? "text-purple-700" : "text-slate-800"}`}>{p.name}</button>
                         <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500">{p.members}</span>
                         <button onClick={() => { setEditing(p._id); setEditName(p.name); setEditGroup(p.group || ""); }} className="text-slate-400 hover:text-purple-600"><Pencil size={13} /></button>
@@ -161,6 +173,15 @@ export default function PurokManagementPanel() {
             ))}
             {current && current.puroks.length === 0 && <div className="rounded-xl border border-dashed border-slate-200 px-3 py-4 text-center text-xs text-slate-400">No puroks yet — add the first one below.</div>}
           </div>
+          {/* Bulk group-set: tick several puroks → tag them all to one group */}
+          {selP.size > 0 && (
+            <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-purple-200 bg-purple-50 px-3 py-2">
+              <span className="text-xs font-semibold text-purple-800">{selP.size} selected → group:</span>
+              <input value={bulkGroup} onChange={(e) => setBulkGroup(e.target.value)} placeholder='e.g. "Purok 1"' className="w-32 rounded-lg border border-slate-200 px-2 py-1.5 text-sm" />
+              <button onClick={setGroupForSelected} className="rounded-lg bg-purple-600 px-3 py-1.5 text-sm font-bold text-white hover:bg-purple-700">Set group</button>
+              <button onClick={() => setSelP(new Set())} className="text-xs font-semibold text-slate-500 hover:text-slate-700">clear</button>
+            </div>
+          )}
           {/* add purok */}
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Purok name (e.g. Purok 1)" className="flex-1 rounded-xl border border-slate-200 px-3 py-2 text-sm" />
