@@ -20,7 +20,7 @@ import { regenLoanAmortization } from "../../scripts/regenLoanAmortization.js";
 import { rebuildLoanCharges } from "../../scripts/rebuildLoanCharges.js";
 import { importLegacyLoans, LEGACY_LOAN_BATCHES, fixWaterMemberNames } from "../../utils/legacyLoanImport.js";
 import { recomputeWaterBills } from "../../scripts/recomputeWaterBills.js";
-import { importLegacyWater, LEGACY_WATER_AREAS, importWaterRoster, WATER_ROSTER_AREAS, importMemberPuroks, purokImportAreas, dedupeWaterMembers, mergeSplitMeterDuplicates, findDuplicateMembers } from "../../utils/legacyWaterImport.js";
+import { importLegacyWater, LEGACY_WATER_AREAS, importWaterRoster, WATER_ROSTER_AREAS, importMemberPuroks, purokImportAreas, dedupeWaterMembers, mergeSplitMeterDuplicates, findDuplicateMembers, purgeArchivedDuplicates } from "../../utils/legacyWaterImport.js";
 import { emitJobProgress } from "../../realtime.js";
 import WaterMember from "../../models/WaterMember.js";
 
@@ -153,6 +153,20 @@ router.post("/dedupe-water-members", guard, async (req, res) => {
   }
   try {
     res.json(await dedupeWaterMembers({ dry: Boolean(dry), fuzzy: Boolean(req.body?.fuzzy) }));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// HARD-DELETE the archived duplicate accounts (dedupe/merge leftovers with
+// zero transactions). Irreversible. Dry-run by default.
+router.post("/purge-archived-duplicates", guard, async (req, res) => {
+  const { confirm, dry = true } = req.body || {};
+  if (confirm !== "PURGE DUPLICATES") {
+    return res.status(400).json({ error: 'Pass { confirm: "PURGE DUPLICATES" } to proceed.' });
+  }
+  try {
+    res.json(await purgeArchivedDuplicates({ dry: Boolean(dry) }));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

@@ -659,6 +659,47 @@ export async function dedupeWaterMembers({ dry = true, fuzzy = false } = {}) {
   return r;
 }
 
+// ── Purge archived duplicates ──────────────────────────────────────────
+// HARD-DELETES the accounts the dedupe/merge tools set inactive (status
+// reason "archived during dedupe" or "Merged into <pn>") — only those, and
+// only after re-confirming each still has ZERO transactions (any with data
+// is skipped + reported). Irreversible; dry-run-first.
+export async function purgeArchivedDuplicates({ dry = true } = {}) {
+  const candidates = await WaterMember.find({
+    accountStatus: "inactive",
+    $or: [{ statusReason: /archived during dedupe/i }, { statusReason: /^Merged into /i }],
+  }).select("pnNo accountName statusReason address.barangay").lean();
+
+  const r = { dry, candidates: candidates.length, deleted: 0, skippedHasData: [], sample: [] };
+  if (!candidates.length) return r;
+
+  const pns = candidates.map((c) => c.pnNo);
+  const [b, p, rd, cb, ln] = await Promise.all([
+    WaterBill.distinct("pnNo", { pnNo: { $in: pns } }),
+    WaterPayment.distinct("pnNo", { pnNo: { $in: pns } }),
+    WaterReading.distinct("pnNo", { pnNo: { $in: pns } }),
+    CbuTransaction.distinct("pnNo", { pnNo: { $in: pns } }),
+    LoanApplication.distinct("borrowerPnNo", { borrowerPnNo: { $in: pns } }),
+  ]);
+  const hasData = new Set([...b, ...p, ...rd, ...cb, ...ln].map(String));
+
+  const toDelete = [];
+  for (const c of candidates) {
+    if (hasData.has(c.pnNo)) { r.skippedHasData.push({ pnNo: c.pnNo, accountName: c.accountName }); continue; }
+    toDelete.push(c.pnNo);
+    if (r.sample.length < 15) r.sample.push({ pnNo: c.pnNo, accountName: c.accountName, area: c.address?.barangay || "", reason: c.statusReason });
+  }
+
+  if (!dry && toDelete.length) {
+    for (let i = 0; i < toDelete.length; i += 1000) {
+      const res = await WaterMember.deleteMany({ pnNo: { $in: toDelete.slice(i, i + 1000) } });
+      r.deleted += res.deletedCount || 0;
+    }
+  } else if (dry) r.deleted = toDelete.length;
+
+  return r;
+}
+
 // ── Merge split-meter duplicates ───────────────────────────────────────
 // When one owner's meters got split across duplicate-name accounts (acct A
 // = meter #1, acct B = meter #2), combine all meters onto ONE account,

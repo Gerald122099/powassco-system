@@ -15,7 +15,7 @@ import { apiFetch } from "../../lib/api";
 import { getSocket } from "../../lib/realtime";
 import { useAuth } from "../../context/AuthContext";
 import { toast } from "../../components/Toast";
-import { Wrench, Play, CheckCircle2, AlertCircle, Receipt, Upload, Droplets, FileSpreadsheet, Loader2, UserPlus, Users } from "lucide-react";
+import { Wrench, Play, CheckCircle2, AlertCircle, Receipt, Upload, Droplets, FileSpreadsheet, Loader2, UserPlus, Users, Trash2 } from "lucide-react";
 
 const peso = (n) =>
   "₱" + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -250,6 +250,8 @@ export default function MaintenancePanel() {
 
       <DedupeWaterMembersCard />
 
+      <PurgeArchivedDuplicatesCard />
+
       <MergeSplitMetersCard />
 
       <FixWaterNamesCard />
@@ -340,6 +342,89 @@ function MergeSplitMetersCard() {
               <div className="px-2 py-1 font-bold text-amber-800">Skipped — manual review ({result.review.length})</div>
               {result.review.slice(0, 100).map((rv, i) => (
                 <div key={i} className="px-2 py-0.5"><b>{rv.name}</b> <span className="text-slate-500">— {rv.reason}</span> <span className="font-mono text-slate-400">{rv.pnNos?.join(", ")}</span></div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// Permanently delete the archived duplicate accounts (dedupe/merge
+// leftovers with no transactions). Irreversible.
+function PurgeArchivedDuplicatesCard() {
+  const { token } = useAuth();
+  const [result, setResult] = useState(null);
+  const [working, setWorking] = useState(false);
+  const [mode, setMode] = useState("");
+
+  async function call(dry) {
+    if (!dry && !window.confirm(`PERMANENTLY DELETE ${result?.deleted ?? "the"} archived duplicate account(s)? This cannot be undone. (Any with transactions are skipped automatically.) Proceed?`)) return;
+    setMode(dry ? "Dry run" : "Apply"); setResult(null); setWorking(true);
+    try {
+      const res = await apiFetch("/admin/maintenance/purge-archived-duplicates", { method: "POST", token, body: { confirm: "PURGE DUPLICATES", dry } });
+      setResult(res);
+      toast.success(dry ? `Dry run: ${res.deleted} would be deleted, ${res.skippedHasData.length} skipped (has data).` : `Deleted ${res.deleted} archived duplicate(s).`);
+    } catch (e) { toast.error(e.message); } finally { setWorking(false); }
+  }
+  const isDry = result?.dry !== false;
+
+  return (
+    <Card>
+      <div className="flex items-center gap-2 text-lg font-bold tracking-tight text-slate-900">
+        <Trash2 size={20} className="text-rose-700" /> Maintenance — Delete Archived Duplicates
+      </div>
+      <div className="mt-0.5 text-sm text-slate-600">
+        Permanently removes the duplicate accounts the dedupe/merge tools set <b>inactive</b> (status "archived during dedupe" / "Merged into …").
+        Only those, and only after re-confirming each has <b>zero</b> transactions — any with data is skipped.
+      </div>
+
+      <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-900 flex items-start gap-2">
+        <AlertCircle size={16} className="mt-0.5 shrink-0" />
+        <div><b>This is permanent (hard delete).</b> Always dry-run first. Run AFTER you've verified the Dedupe/Merge results — those are the accounts this removes.</div>
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <div className="flex-1" />
+        <button onClick={() => call(true)} disabled={working} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50">
+          {working && mode === "Dry run" ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+          {working && mode === "Dry run" ? "Running…" : "Dry run"}
+        </button>
+        <button onClick={() => call(false)} disabled={working || !result || !result.deleted} className="inline-flex items-center gap-2 rounded-xl bg-rose-700 px-5 py-2 text-sm font-bold text-white hover:bg-rose-800 disabled:opacity-50" title={!result ? "Dry-run first" : !result.deleted ? "Nothing to delete" : ""}>
+          {working && mode === "Apply" ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+          {working && mode === "Apply" ? "Deleting…" : "Delete permanently"}
+        </button>
+      </div>
+
+      {result && (
+        <div className="mt-4 space-y-3">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-700">
+            {isDry ? "Dry run" : "Done"} — candidates <b>{result.candidates}</b>, {isDry ? "would delete" : "deleted"} <b className="text-rose-700">{result.deleted}</b>,
+            skipped (has data) <b className={result.skippedHasData.length ? "text-amber-700" : ""}>{result.skippedHasData.length}</b>
+          </div>
+          {result.sample?.length > 0 && (
+            <div className="overflow-x-auto rounded-xl border border-slate-200">
+              <table className="w-full text-xs">
+                <thead className="bg-white text-left text-slate-500"><tr><th className="px-3 py-2">Account</th><th className="px-3 py-2">Name</th><th className="px-3 py-2">Area</th><th className="px-3 py-2">Why archived</th></tr></thead>
+                <tbody>
+                  {result.sample.map((s, i) => (
+                    <tr key={i} className="border-t border-slate-100">
+                      <td className="px-3 py-1.5 font-mono">{s.pnNo}</td>
+                      <td className="px-3 py-1.5">{s.accountName}</td>
+                      <td className="px-3 py-1.5 text-slate-500">{s.area || "—"}</td>
+                      <td className="px-3 py-1.5 text-slate-400">{s.reason}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {result.skippedHasData?.length > 0 && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-2 text-xs">
+              <div className="px-2 py-1 font-bold text-amber-800">Skipped — still has transactions ({result.skippedHasData.length})</div>
+              {result.skippedHasData.slice(0, 100).map((n, i) => (
+                <div key={i} className="px-2 py-0.5"><span className="font-mono">{n.pnNo}</span> {n.accountName}</div>
               ))}
             </div>
           )}
