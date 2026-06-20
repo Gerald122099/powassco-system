@@ -5,6 +5,9 @@ import { apiFetch } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
 import { toast } from "../../components/Toast";
 import { Kpi } from "./WaterDuesLookup";
+import PrinterPrompt from "../../components/PrinterPrompt";
+import { printPaymentReceipt, thermalSupported, printerConnected, tryReconnect, connectPrinter } from "../../lib/thermalPrint";
+import { autoPrintReceipt, isAutoPrintOn } from "../../lib/printerSettings";
 import { Search, Banknote, Printer, Hourglass, CheckCircle, Wallet, History, TrendingUp, ReceiptText } from "lucide-react";
 
 const RECENT_KEY = "pow_cashier_recent_loan";
@@ -46,6 +49,28 @@ export default function LoanDuesLookup() {
   const [payExcessTo, setPayExcessTo] = useState("cbu");
   const [paying, setPaying] = useState(false);
   const [justPaid, setJustPaid] = useState(null);
+  const [printerPrompt, setPrinterPrompt] = useState(null);
+
+  // Thermal-receipt print fn for a just-paid loan payment.
+  function loanReceiptFn(j) {
+    return () => printPaymentReceipt({
+      title: "LOAN PAYMENT OR",
+      accountName: j.borrowerName,
+      pnNo: j.borrowerPnNo,
+      orNo: j.orNo,
+      cashierName: user?.fullName || user?.employeeId || "",
+      lines: [
+        ["Loan", j.loanId],
+        ["Periods", `${j.periodsCovered} mo.`],
+        ["Amount due", peso(j.amountDue)],
+        ["Received", peso(j.amountReceived)],
+        ...(j.cbuExcess > 0 ? [["Excess->CBU", peso(j.cbuExcess)], ["New CBU bal", peso(j.newCbu)]] : []),
+      ],
+      total: j.amountDue,
+      totalLabel: "PAID",
+      note: "Bring this OR to the Loan Officer.",
+    });
+  }
   const [todayStats, setTodayStats] = useState(null);
   const [recents, setRecents] = useState(() => loadRecents());
   const searchRef = useRef(null);
@@ -169,7 +194,7 @@ export default function LoanDuesLookup() {
       });
       toast.success(res.message || "Payment posted.");
       setPayLoan(null);
-      setJustPaid({
+      const j = {
         orNo,
         loanId: target.loanId,
         borrowerName: target.borrowerName,
@@ -181,7 +206,15 @@ export default function LoanDuesLookup() {
         cbuExcess: res.cbuExcess || 0,
         newCbu: res.newCbuBalance || 0,
         at: new Date(),
-      });
+      };
+      setJustPaid(j);
+      // Auto-print the OR receipt — no dialog. Popup to connect if needed.
+      if (isAutoPrintOn() && thermalSupported()) {
+        const pr = await autoPrintReceipt(loanReceiptFn(j));
+        if (pr.needConnect) setPrinterPrompt({ printFn: loanReceiptFn(j) });
+        else if (pr.error) toast.error("Print failed: " + pr.error);
+        else if (pr.ok) toast.success("Receipt printed.");
+      }
       await lookup(null, target.loanId);
     } catch (e2) {
       toast.error(e2.message);
@@ -190,9 +223,16 @@ export default function LoanDuesLookup() {
     }
   }
 
-  function printJustPaidReceipt() {
+  async function printJustPaidReceipt() {
     if (!justPaid) return;
     const j = justPaid;
+    if (thermalSupported()) {
+      try {
+        if (!printerConnected() && !(await tryReconnect())) await connectPrinter();
+        await loanReceiptFn(j)();
+        return toast.success("Receipt printed.");
+      } catch (e) { toast.error("Print failed: " + e.message); return; }
+    }
     const w = window.open("", "_blank", "width=440,height=640");
     if (!w) return alert("Allow pop-ups to print.");
     w.document.write(`<!doctype html><html><head><meta charset="utf-8"/><title>OR ${j.orNo}</title>
@@ -849,6 +889,13 @@ export default function LoanDuesLookup() {
           </form>
         )}
       </Modal>
+
+      <PrinterPrompt
+        open={!!printerPrompt}
+        onClose={() => setPrinterPrompt(null)}
+        printFn={printerPrompt?.printFn}
+        onPrinted={() => toast.success("Receipt printed.")}
+      />
     </Card>
   );
 }
