@@ -1,5 +1,10 @@
-// Web Bluetooth ESC/POS printing for 58mm thermal printers. Works on Chrome
-// for Android over HTTPS. The printer connection is kept for the session.
+// ESC/POS thermal printing over two transports:
+//   • Bluetooth (Web Bluetooth) — portable BLE printers, Chrome on Android.
+//   • USB (WebUSB)              — desktop receipt printers on a USB cable,
+//                                 Chrome/Edge on desktop. No print dialog,
+//                                 no re-selecting a driver/default printer.
+// Whichever the user connects becomes the active printer for the session and
+// silently reconnects next time via getDevices().
 
 // Common services exposed by cheap BLE thermal printers (and Nordic UART).
 const OPTIONAL_SERVICES = [
@@ -10,22 +15,31 @@ const OPTIONAL_SERVICES = [
   "6e400001-b5a3-f393-e0a9-e50e24dcca9e", // Nordic UART
 ];
 
+// ── Bluetooth (BLE) state ──
 let device = null;
 let characteristic = null;
+// ── USB (WebUSB) state ──
+let usbDevice = null;
+let usbEpOut = null;
 
-export function thermalSupported() {
-  return typeof navigator !== "undefined" && !!navigator.bluetooth;
-}
-export function printerConnected() {
-  return !!characteristic && !!device?.gatt?.connected;
-}
+export function bluetoothSupported() { return typeof navigator !== "undefined" && !!navigator.bluetooth; }
+export function usbSupported() { return typeof navigator !== "undefined" && !!navigator.usb; }
+export function thermalSupported() { return bluetoothSupported() || usbSupported(); }
+
+export function usbConnected() { return !!usbEpOut && !!usbDevice?.opened; }
+export function bleConnected() { return !!characteristic && !!device?.gatt?.connected; }
+export function printerConnected() { return usbConnected() || bleConnected(); }
+export function printerTransport() { return usbConnected() ? "usb" : bleConnected() ? "ble" : null; }
 export function printerName() {
-  return device?.name || "";
+  if (usbConnected()) return usbDevice.productName || `USB Printer ${usbDevice.productId || ""}`.trim();
+  if (bleConnected()) return device?.name || "Printer";
+  return "";
 }
 
+// ── Bluetooth ───────────────────────────────────────────────────────────
 // Walk a connected GATT server and latch onto the first writable
 // characteristic (where ESC/POS bytes go). Shared by connect + reconnect.
-async function bindWritable(dev) {
+async function bindBLE(dev) {
   const server = await dev.gatt.connect();
   const services = await server.getPrimaryServices();
   for (const svc of services) {
@@ -42,44 +56,105 @@ async function bindWritable(dev) {
   return null;
 }
 
-export async function connectPrinter() {
-  if (!thermalSupported()) {
-    throw new Error("Bluetooth printing needs Chrome on Android (HTTPS). Not supported on this device/browser.");
+export async function connectPrinterBLE() {
+  if (!bluetoothSupported()) {
+    throw new Error("Bluetooth printing needs Chrome on Android (HTTPS). Not supported here.");
   }
   const dev = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: OPTIONAL_SERVICES });
-  const name = await bindWritable(dev);
+  const name = await bindBLE(dev);
   if (!name) throw new Error("No writable characteristic found — this printer may be incompatible.");
   return name;
 }
 
-// Silently reconnect a printer this browser was already paired with — no
-// device-picker, so it can run AFTER a payment (no user gesture needed).
-// Chrome exposes previously-granted devices via getDevices(). Returns the
-// printer name on success, or null if none can be reconnected.
-export async function tryReconnect() {
-  if (printerConnected()) return printerName();
-  if (!thermalSupported() || typeof navigator.bluetooth.getDevices !== "function") return null;
+async function reconnectBLE() {
+  if (!bluetoothSupported() || typeof navigator.bluetooth.getDevices !== "function") return null;
   try {
     const devices = await navigator.bluetooth.getDevices();
     for (const d of devices) {
-      try {
-        const name = await bindWritable(d);
-        if (name) return name;
-      } catch { /* try the next paired device */ }
+      try { const name = await bindBLE(d); if (name) return name; } catch { /* next */ }
     }
-  } catch { /* getDevices unavailable / not permitted */ }
+  } catch { /* not permitted */ }
   return null;
 }
 
-async function write(bytes) {
-  if (!characteristic) throw new Error("Printer not connected.");
-  const CHUNK = 180;
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    const slice = bytes.slice(i, i + CHUNK);
-    if (characteristic.properties.writeWithoutResponse) await characteristic.writeValueWithoutResponse(slice);
-    else await characteristic.writeValue(slice);
-    await new Promise((r) => setTimeout(r, 18));
+// ── USB ─────────────────────────────────────────────────────────────────
+// Open a USB receipt printer and latch onto its bulk-OUT endpoint.
+async function bindUSB(dev) {
+  await dev.open();
+  if (!dev.configuration) await dev.selectConfiguration(1);
+  for (const iface of dev.configuration.interfaces) {
+    for (const alt of iface.alternates) {
+      // Prefer the printer class (7), but accept any bulk-OUT endpoint.
+      const ep = alt.endpoints.find((e) => e.direction === "out" && e.type === "bulk");
+      if (!ep) continue;
+      try { await dev.claimInterface(iface.interfaceNumber); }
+      catch { continue; } // interface busy (OS driver owns it) — try next
+      usbDevice = dev;
+      usbEpOut = ep.endpointNumber;
+      return printerName();
+    }
   }
+  try { await dev.close(); } catch { /* ignore */ }
+  return null;
+}
+
+export async function connectPrinterUSB() {
+  if (!usbSupported()) throw new Error("USB printing needs Chrome/Edge on desktop (HTTPS).");
+  const dev = await navigator.usb.requestDevice({ filters: [] }); // user picks the printer
+  const name = await bindUSB(dev);
+  if (!name) throw new Error("Couldn’t open this USB printer. On Windows it may need the WinUSB/Zadig driver, or another app is using it.");
+  return name;
+}
+
+async function reconnectUSB() {
+  if (!usbSupported()) return null;
+  try {
+    const devices = await navigator.usb.getDevices();
+    for (const d of devices) {
+      try { const name = await bindUSB(d); if (name) return name; } catch { /* next */ }
+    }
+  } catch { /* not permitted */ }
+  return null;
+}
+
+// ── Unified connect / reconnect ───────────────────────────────────────────
+// Back-compat: connectPrinter() picks USB on desktop, Bluetooth on mobile.
+export async function connectPrinter() {
+  // A touch device with Bluetooth (phone/tablet) → BLE; otherwise USB.
+  const mobile = typeof navigator !== "undefined" && /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent || "");
+  if (mobile && bluetoothSupported()) return connectPrinterBLE();
+  if (usbSupported()) return connectPrinterUSB();
+  if (bluetoothSupported()) return connectPrinterBLE();
+  throw new Error("No supported printer transport on this device/browser.");
+}
+
+// Silently reconnect a printer this browser was already granted — no picker,
+// so it can run AFTER a payment (no user gesture). Tries USB then Bluetooth.
+export async function tryReconnect() {
+  if (printerConnected()) return printerName();
+  return (await reconnectUSB()) || (await reconnectBLE());
+}
+
+// ── Unified write ─────────────────────────────────────────────────────────
+async function write(bytes) {
+  if (usbConnected()) {
+    const CHUNK = 16384;
+    for (let i = 0; i < bytes.length; i += CHUNK) {
+      await usbDevice.transferOut(usbEpOut, bytes.slice(i, i + CHUNK));
+    }
+    return;
+  }
+  if (bleConnected()) {
+    const CHUNK = 180;
+    for (let i = 0; i < bytes.length; i += CHUNK) {
+      const slice = bytes.slice(i, i + CHUNK);
+      if (characteristic.properties.writeWithoutResponse) await characteristic.writeValueWithoutResponse(slice);
+      else await characteristic.writeValue(slice);
+      await new Promise((r) => setTimeout(r, 18));
+    }
+    return;
+  }
+  throw new Error("Printer not connected.");
 }
 
 // ---- ESC/POS builder ----
