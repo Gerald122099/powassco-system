@@ -15,6 +15,9 @@ import { apiFetch } from "../../lib/api";
 import { useRealtime } from "../../lib/realtime";
 import { useAuth } from "../../context/AuthContext";
 import { toast } from "../../components/Toast";
+import PrinterPrompt from "../../components/PrinterPrompt";
+import { printPaymentReceipt, thermalSupported, printerConnected, tryReconnect, connectPrinter } from "../../lib/thermalPrint";
+import { autoPrintReceipt, isAutoPrintOn } from "../../lib/printerSettings";
 import {
   ShoppingBag, Plus, Search, User, UserPlus, Receipt, RefreshCw, Printer,
 } from "lucide-react";
@@ -28,6 +31,27 @@ const METHODS = [
   { value: "bank", label: "Bank" },
   { value: "other", label: "Other" },
 ];
+
+// Thermal-receipt print fn for a sale.
+function saleReceiptFn(sale, cashierName) {
+  const customer = sale.borrowerPnNo
+    ? `${sale.borrowerName || ""} (${sale.borrowerPnNo})`
+    : (sale.customerName || "Walk-in");
+  return () => printPaymentReceipt({
+    title: "SALES OR",
+    accountName: customer,
+    orNo: sale.orNo,
+    cashierName,
+    lines: [
+      ["Product", String(sale.productName || "Product").slice(0, 20)],
+      ["Quantity", String(sale.quantity || 1)],
+      ["Unit price", peso(sale.unitPrice)],
+    ],
+    total: Number(sale.principal) || 0,
+    totalLabel: "PAID",
+    note: "Thank you for your purchase!",
+  });
+}
 
 function printSaleReceipt({ sale, cashierName }) {
   const w = window.open("", "_blank", "width=440,height=640");
@@ -78,6 +102,8 @@ export default function CashierSalesPanel() {
   const [remarks, setRemarks] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [lastSale, setLastSale] = useState(null);
+  const [printerPrompt, setPrinterPrompt] = useState(null);
+  const cashierName = user?.fullName || user?.employeeId || "";
 
   const memberSearchRef = useRef(null);
 
@@ -190,15 +216,23 @@ export default function CashierSalesPanel() {
       // without closing it, so the cashier can hit Print and then close.
       // The created doc keeps the OR inside payments[0]; surface the
       // typed OR directly so the receipt always shows it.
-      setLastSale({
+      const sale = {
         ...res,
         orNo: saleOr,
         productName: product.name,
         unitPrice,
         quantity: body.quantity,
         principal: total,
-      });
+      };
+      setLastSale(sale);
       toast.success(`Sale posted • OR ${saleOr}`);
+      // Auto-print the sales receipt — no dialog. Popup to connect if needed.
+      if (isAutoPrintOn() && thermalSupported()) {
+        const pr = await autoPrintReceipt(saleReceiptFn(sale, cashierName));
+        if (pr.needConnect) setPrinterPrompt({ printFn: saleReceiptFn(sale, cashierName) });
+        else if (pr.error) toast.error("Print failed: " + pr.error);
+        else if (pr.ok) toast.success("Receipt printed.");
+      }
       load(); // refresh recent list
     } catch (e) {
       toast.error(e.message || "Failed to post sale.");
@@ -294,7 +328,16 @@ export default function CashierSalesPanel() {
             </div>
             <div className="flex gap-2 justify-end">
               <button
-                onClick={() => printSaleReceipt({ sale: lastSale, cashierName: user?.fullName || user?.employeeId })}
+                onClick={async () => {
+                  if (thermalSupported()) {
+                    try {
+                      if (!printerConnected() && !(await tryReconnect())) await connectPrinter();
+                      await saleReceiptFn(lastSale, cashierName)();
+                      return toast.success("Receipt printed.");
+                    } catch (e) { toast.error("Print failed: " + e.message); return; }
+                  }
+                  printSaleReceipt({ sale: lastSale, cashierName });
+                }}
                 className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold hover:bg-slate-50"
               >
                 <Printer size={14} /> Print OR
@@ -472,6 +515,13 @@ export default function CashierSalesPanel() {
           </div>
         )}
       </Modal>
+
+      <PrinterPrompt
+        open={!!printerPrompt}
+        onClose={() => setPrinterPrompt(null)}
+        printFn={printerPrompt?.printFn}
+        onPrinted={() => toast.success("Receipt printed.")}
+      />
     </Card>
   );
 }
