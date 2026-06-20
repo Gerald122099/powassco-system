@@ -9,6 +9,8 @@ import * as odb from "../../../lib/offlineDb";
 import { downloadAllMeters, downloadUpdates, saveReadingOffline, syncQueue, currentPeriodKey, getCurrentLocation } from "../../../lib/fieldSync";
 import { getSocket } from "../../../lib/realtime";
 import { connectPrinter, printerConnected, printWaterReceipt, thermalSupported } from "../../../lib/thermalPrint";
+import { autoPrintReceipt, isAutoPrintOn } from "../../../lib/printerSettings";
+import PrinterPrompt from "../../../components/PrinterPrompt";
 import { calculateWaterBillLocal } from "../../../lib/waterBillingLocal";
 import { printRouteSheet } from "../../../lib/routeSheet";
 import { Wifi, WifiOff, Download, RefreshCw, QrCode, Save, Search, MapPin, CheckCircle, CloudOff, Printer, Bluetooth, FileText, Trash2, AlertTriangle, Ban, UploadCloud, MoreVertical, X, Keyboard } from "lucide-react";
@@ -74,6 +76,8 @@ export default function FieldModePanel() {
   const [editUnlocked, setEditUnlocked] = useState({}); // key → true
   const [settings, setSettings] = useState(null);
   const [printerOn, setPrinterOn] = useState(false);
+  // Pending receipt print fn when auto-print is on but no printer is paired.
+  const [printerPrompt, setPrinterPrompt] = useState(null);
 
   // Visual progress for long-running operations.
   // phase: "" | "download" | "sync"
@@ -337,6 +341,16 @@ export default function FieldModePanel() {
         });
       }
       flash(`✓ Saved ${items.length} reading(s)${navigator.onLine ? " — syncing…" : " offline (will sync when online)."}`, "success");
+      // Auto-print the reading slip(s) on the spot — no dialog. If no printer
+      // is paired, pop up "Connect & print". Prints fine offline (Bluetooth).
+      if (isAutoPrintOn() && thermalSupported() && items.length) {
+        const fns = items.map(({ mt, val, prev }) => readingReceiptFn(member, mt, prev, val));
+        const printAll = async () => { for (const f of fns) await f(); };
+        const pr = await autoPrintReceipt(printAll);
+        if (pr.needConnect) setPrinterPrompt({ printFn: printAll });
+        else if (pr.error) flash("Print failed: " + pr.error, "error");
+        else if (pr.ok) setPrinterOn(true);
+      }
       setInputs((p) => {
         const next = { ...p };
         for (const { mt } of items) delete next[`${mnorm(member.pnNo)}__${mnorm(mt.meterNumber)}`];
@@ -380,6 +394,18 @@ export default function FieldModePanel() {
       setPrinterOn(false);
       flash(e.message, "error");
     }
+  }
+
+  // Build a thermal-print fn for one just-saved reading (used by auto-print
+  // after commitSave). Works offline — Bluetooth printing needs no internet.
+  function readingReceiptFn(member, mt, previous, present) {
+    const prev = Number(previous) || 0;
+    const pres = Number(present);
+    const consumed = (pres - prev) * (mt.consumptionMultiplier || 1);
+    const calc = settings
+      ? calculateWaterBillLocal(consumed, member.billing?.classification || "residential", member, mt.meterNumber, settings)
+      : null;
+    return () => printWaterReceipt({ member, meter: mt, previous: prev, present: pres, consumed, calc, periodKey });
   }
 
   async function printMeter(member, mt) {
@@ -1124,6 +1150,13 @@ export default function FieldModePanel() {
           </div>
         )}
       </Modal>
+
+      <PrinterPrompt
+        open={!!printerPrompt}
+        onClose={() => setPrinterPrompt(null)}
+        printFn={printerPrompt?.printFn}
+        onPrinted={() => { setPrinterOn(true); flash("Receipt printed.", "success"); }}
+      />
 
       {/* Sticky bottom-right FAB — the primary action in Field Mode. Always
           reachable while scrolling the member list. Includes a paddding

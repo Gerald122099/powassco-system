@@ -4,6 +4,9 @@ import Modal from "../../components/Modal";
 import { apiFetch } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
 import { toast } from "../../components/Toast";
+import PrinterPrompt from "../../components/PrinterPrompt";
+import { printPaymentReceipt, thermalSupported, printerConnected, tryReconnect, connectPrinter } from "../../lib/thermalPrint";
+import { autoPrintReceipt, isAutoPrintOn } from "../../lib/printerSettings";
 import { Search, Droplets, Printer, AlertTriangle, MapPin, CheckCircle, Hourglass, Gauge, Banknote, History, Wallet, TrendingUp, ReceiptText } from "lucide-react";
 
 // Recently-looked-up PNs are kept in localStorage so the cashier can
@@ -49,6 +52,30 @@ export default function WaterDuesLookup() {
   const [paying, setPaying] = useState(false);
   // Highlight the just-paid bill + post-pay receipt info for printing.
   const [justPaid, setJustPaid] = useState(null); // { orNo, period, meter, amountDue, amountReceived, cbuExcess, newCbu, accountName, pnNo }
+  // Holds a pending receipt print fn when auto-print is on but no printer is
+  // connected → opens the "Connect & print" popup.
+  const [printerPrompt, setPrinterPrompt] = useState(null);
+
+  // Build the thermal-receipt print fn for a just-paid water payment.
+  function waterReceiptFn(j) {
+    return () => printPaymentReceipt({
+      title: "WATER OFFICIAL RECEIPT",
+      accountName: j.accountName,
+      pnNo: j.pnNo,
+      orNo: j.orNo,
+      cashierName: user?.fullName || user?.employeeId || "",
+      lines: [
+        ["Meter", j.meter],
+        ["Period", j.period],
+        ["Amount due", peso(j.amountDue)],
+        ["Received", peso(j.amountReceived)],
+        ...(j.cbuExcess > 0 ? [["Excess->CBU", peso(j.cbuExcess)], ["New CBU bal", peso(j.newCbu)]] : []),
+      ],
+      total: j.amountDue,
+      totalLabel: "PAID",
+      note: "Bring this OR to the Water Bill Officer.",
+    });
+  }
   // Quick today's-collection summary fetched from /collections/today, and
   // recent customers (localStorage) so the cashier can re-open a stepped-
   // away walk-in with a single tap.
@@ -124,7 +151,7 @@ export default function WaterDuesLookup() {
       toast.success(res.message || "Payment posted.");
       setPayTarget(null);
       // Capture receipt info so we can show "just paid" + print OR.
-      setJustPaid({
+      const j = {
         module: "water",
         orNo,
         period: target.periodCovered || target.periodKey,
@@ -136,7 +163,16 @@ export default function WaterDuesLookup() {
         accountName: data.member.accountName,
         pnNo: data.member.pnNo,
         at: new Date(),
-      });
+      };
+      setJustPaid(j);
+      // Auto-print the thermal receipt — no dialog, no redirect. If a printer
+      // isn't connected yet, pop up the "Connect & print" prompt.
+      if (isAutoPrintOn() && thermalSupported()) {
+        const pr = await autoPrintReceipt(waterReceiptFn(j));
+        if (pr.needConnect) setPrinterPrompt({ printFn: waterReceiptFn(j) });
+        else if (pr.error) toast.error("Print failed: " + pr.error);
+        else if (pr.ok) toast.success("Receipt printed.");
+      }
       // Await the refresh so the bill flips to PAID in the same render pass.
       await lookup(null, data.member.pnNo);
     } catch (e2) {
@@ -146,10 +182,19 @@ export default function WaterDuesLookup() {
     }
   }
 
-  // Print a small thermal-style OR receipt (works on any browser printer).
-  function printJustPaidReceipt() {
+  // Print the OR receipt. Prefers the Bluetooth thermal printer (this is a
+  // user click, so it may show the device picker if not yet paired); falls
+  // back to a browser print window when thermal isn't available.
+  async function printJustPaidReceipt() {
     if (!justPaid) return;
     const j = justPaid;
+    if (thermalSupported()) {
+      try {
+        if (!printerConnected() && !(await tryReconnect())) await connectPrinter();
+        await waterReceiptFn(j)();
+        return toast.success("Receipt printed.");
+      } catch (e) { toast.error("Print failed: " + e.message); return; }
+    }
     const w = window.open("", "_blank", "width=440,height=640");
     if (!w) return alert("Allow pop-ups to print.");
     w.document.write(`<!doctype html><html><head><meta charset="utf-8"/><title>OR ${j.orNo}</title>
@@ -794,6 +839,13 @@ export default function WaterDuesLookup() {
           </form>
         )}
       </Modal>
+
+      <PrinterPrompt
+        open={!!printerPrompt}
+        onClose={() => setPrinterPrompt(null)}
+        printFn={printerPrompt?.printFn}
+        onPrinted={() => toast.success("Receipt printed.")}
+      />
     </Card>
   );
 }

@@ -23,26 +23,52 @@ export function printerName() {
   return device?.name || "";
 }
 
-export async function connectPrinter() {
-  if (!thermalSupported()) {
-    throw new Error("Bluetooth printing needs Chrome on Android (HTTPS). Not supported on this device/browser.");
-  }
-  device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: OPTIONAL_SERVICES });
-  const server = await device.gatt.connect();
+// Walk a connected GATT server and latch onto the first writable
+// characteristic (where ESC/POS bytes go). Shared by connect + reconnect.
+async function bindWritable(dev) {
+  const server = await dev.gatt.connect();
   const services = await server.getPrimaryServices();
   for (const svc of services) {
     const chars = await svc.getCharacteristics();
     for (const ch of chars) {
       if (ch.properties.write || ch.properties.writeWithoutResponse) {
+        device = dev;
         characteristic = ch;
-        device.addEventListener("gattserverdisconnected", () => {
-          characteristic = null;
-        });
-        return device.name || "Printer";
+        dev.addEventListener("gattserverdisconnected", () => { characteristic = null; });
+        return dev.name || "Printer";
       }
     }
   }
-  throw new Error("No writable characteristic found — this printer may be incompatible.");
+  return null;
+}
+
+export async function connectPrinter() {
+  if (!thermalSupported()) {
+    throw new Error("Bluetooth printing needs Chrome on Android (HTTPS). Not supported on this device/browser.");
+  }
+  const dev = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: OPTIONAL_SERVICES });
+  const name = await bindWritable(dev);
+  if (!name) throw new Error("No writable characteristic found — this printer may be incompatible.");
+  return name;
+}
+
+// Silently reconnect a printer this browser was already paired with — no
+// device-picker, so it can run AFTER a payment (no user gesture needed).
+// Chrome exposes previously-granted devices via getDevices(). Returns the
+// printer name on success, or null if none can be reconnected.
+export async function tryReconnect() {
+  if (printerConnected()) return printerName();
+  if (!thermalSupported() || typeof navigator.bluetooth.getDevices !== "function") return null;
+  try {
+    const devices = await navigator.bluetooth.getDevices();
+    for (const d of devices) {
+      try {
+        const name = await bindWritable(d);
+        if (name) return name;
+      } catch { /* try the next paired device */ }
+    }
+  } catch { /* getDevices unavailable / not permitted */ }
+  return null;
 }
 
 async function write(bytes) {
@@ -140,5 +166,46 @@ export async function printWaterReceipt({ member, meter, previous, present, cons
     t("Thank you!\n"),
     CMD.feed3
   );
+  await write(join(parts));
+}
+
+// Generic OR / payment receipt — used by the cashier for water, loan,
+// savings and product-sale collections. `lines` is an array of
+// [label, value] rows; `total` prints big + bold at the bottom.
+export async function printPaymentReceipt({
+  title = "OFFICIAL RECEIPT",
+  accountName,
+  pnNo,
+  orNo,
+  cashierName,
+  lines = [],
+  total,
+  totalLabel = "TOTAL PAID",
+  note = "Keep this receipt. Thank you!",
+}) {
+  const parts = [
+    CMD.init, CMD.center, CMD.big, CMD.boldOn,
+    t("POWASSCO\n"),
+    CMD.normal, CMD.boldOff,
+    t("Brgy. Owak, Asturias, Cebu\n"),
+    LINE(),
+    CMD.boldOn, t(String(title).toUpperCase() + "\n"), CMD.boldOff,
+    CMD.left,
+  ];
+  if (orNo) parts.push(row("OR No.", String(orNo)));
+  if (accountName) parts.push(row("Name", String(accountName).slice(0, 22)));
+  if (pnNo) parts.push(row("Account No.", String(pnNo)));
+  parts.push(row("Date", new Date().toLocaleString()));
+  if (cashierName) parts.push(row("Cashier", String(cashierName).slice(0, 20)));
+  parts.push(LINE());
+  for (const [label, value] of lines) parts.push(row(String(label), String(value)));
+  parts.push(LINE());
+  if (total != null) {
+    parts.push(CMD.boldOn, CMD.big, row(totalLabel, money(total).replace("PHP ", "P")), CMD.normal, CMD.boldOff);
+    parts.push(LINE());
+  }
+  parts.push(CMD.center);
+  if (note) parts.push(t(note + "\n"));
+  parts.push(t(new Date().toLocaleString() + "\n"), CMD.feed3);
   await write(join(parts));
 }

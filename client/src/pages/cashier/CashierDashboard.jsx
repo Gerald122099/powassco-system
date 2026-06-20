@@ -23,10 +23,11 @@ import ReportsPanel from "../../components/ReportsPanel";
 import TreasuryPanel from "../../components/TreasuryPanel";
 import CashDrawerPanel from "../../components/CashDrawerPanel";
 import PettyCashPanel from "./PettyCashPanel";
+import PrinterSettings from "../../components/PrinterSettings";
 import { apiFetch } from "../../lib/api";
 import { cashierBadges } from "../../lib/requestBadges";
 import { useAuth } from "../../context/AuthContext";
-import { Droplets, Banknote, ReceiptText, Wallet, CheckCircle, TrendingUp, History, ShoppingBag, FileDown, Receipt, PiggyBank, Coins } from "lucide-react";
+import { Droplets, Banknote, ReceiptText, Wallet, CheckCircle, TrendingUp, History, ShoppingBag, FileDown, Receipt, PiggyBank, Coins, Printer } from "lucide-react";
 
 const peso = (n) =>
   "₱" + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -59,7 +60,7 @@ function Kpi({ label, value, sub, icon: Icon, tone = "slate" }) {
 }
 
 export default function CashierDashboard() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const [view, setView] = useState("water"); // "water" | "loan" | "collections"
   const [todayStats, setTodayStats] = useState(null);
   const [pillBadges, setPillBadges] = useState({});
@@ -182,6 +183,7 @@ export default function CashierDashboard() {
             { key: "history", label: "Transaction History", icon: History },
             { key: "reports", label: "Reports", icon: FileDown },
             { key: "treasury", label: "Treasury", icon: Wallet },
+            { key: "settings", label: "Printer", icon: Printer },
           ].map(({ key, label, icon: Icon }) => (
             <button
               key={key}
@@ -218,6 +220,7 @@ export default function CashierDashboard() {
         {view === "history" && <TransactionsPanel />}
         {view === "reports" && <ReportsPanel />}
         {view === "treasury" && <TreasuryPanel />}
+        {view === "settings" && <PrinterSettings cashierName={user?.fullName || user?.employeeId || ""} />}
       </div>
     </DashboardLayout>
   );
