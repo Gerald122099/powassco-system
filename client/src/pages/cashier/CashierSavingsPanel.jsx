@@ -17,18 +17,18 @@ import { apiFetch } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
 import { toast } from "../../components/Toast";
 import PrinterPrompt from "../../components/PrinterPrompt";
-import { printPaymentReceipt, thermalSupported, printerConnected, tryReconnect, connectPrinter } from "../../lib/thermalPrint";
-import { autoPrintReceipt, isAutoPrintOn } from "../../lib/printerSettings";
+import { printPaymentReceipt } from "../../lib/thermalPrint";
+import { printReceiptSmart, printReceiptManual } from "../../lib/printerSettings";
 import { PiggyBank, Search, RefreshCw, Plus, ArrowUpRight, ArrowDownLeft, Printer } from "lucide-react";
 
 const peso = (n) =>
   "₱" + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtDateTime = (d) => (d ? new Date(d).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" }) : "—");
 
-// Thermal-receipt print fn for a savings deposit/withdrawal.
-function savingsReceiptFn(tx, account, cashierName) {
+// Receipt descriptor for a savings deposit/withdrawal (thermal or default-printer).
+function savingsReceiptDesc(tx, account, cashierName) {
   const action = tx.type === "deposit" ? "DEPOSIT" : "WITHDRAWAL";
-  return () => printPaymentReceipt({
+  return {
     title: `SAVINGS ${action}`,
     accountName: account.accountName,
     pnNo: account.pnNo,
@@ -43,33 +43,7 @@ function savingsReceiptFn(tx, account, cashierName) {
     total: Number(tx.amount) || 0,
     totalLabel: tx.type === "deposit" ? "DEPOSITED" : "PAID OUT",
     note: "Keep this receipt.",
-  });
-}
-
-function printSavingsReceipt({ tx, account, cashierName }) {
-  const w = window.open("", "_blank", "width=440,height=640");
-  if (!w) return alert("Allow pop-ups to print.");
-  const action = tx.type === "deposit" ? "DEPOSIT" : "WITHDRAWAL";
-  const color = tx.type === "deposit" ? "#0f766e" : "#b91c1c";
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8"/><title>OR ${tx.orNo}</title>
-    <style>@page{size:A6;margin:6mm}body{font-family:Arial,sans-serif;color:#0f172a;font-size:12px}
-    h1{font-size:14px;margin:0 0 4px;color:${color}}.row{display:flex;justify-content:space-between;margin:2px 0}
-    .total{margin-top:8px;text-align:right;font-weight:bold;font-size:15px;color:${color}}
-    .muted{color:#64748b;font-size:10px}.line{border-bottom:1px dashed #cbd5e1;margin:6px 0}
-    </style></head><body>
-    <h1>POWASSCO — Savings ${action}</h1>
-    <div class="muted">OR ${tx.orNo} • ${new Date(tx.paidAt).toLocaleString()} • by ${cashierName || ""}</div>
-    <div class="line"></div>
-    <div class="row"><span>Account</span><b>${account.accountName} (${account.pnNo})</b></div>
-    <div class="row"><span>Type</span><b>${action}</b></div>
-    <div class="row"><span>Method</span><span>${tx.method}</span></div>
-    ${tx.note ? `<div class="row"><span>Note</span><span>${tx.note}</span></div>` : ""}
-    <div class="line"></div>
-    <div class="total">${tx.type === "deposit" ? "+" : "-"}₱${(Number(tx.amount) || 0).toFixed(2)}</div>
-    <div class="row" style="margin-top:6px"><span>New Balance</span><b>₱${(Number(tx.balanceAfter) || 0).toFixed(2)}</b></div>
-    </body></html>`);
-  w.document.close();
-  setTimeout(() => { w.focus(); w.print(); }, 250);
+  };
 }
 
 const METHODS = ["cash", "check", "bank", "gcash", "other"];
@@ -227,13 +201,10 @@ export default function CashierSavingsPanel() {
       setLastTx(res.tx);
       toast.success(`${txType === "deposit" ? "Deposit" : "Withdrawal"} • OR ${res.tx.orNo}`);
       setTxType(null);
-      // Auto-print the savings receipt — no dialog. Popup to connect if needed.
-      if (isAutoPrintOn() && thermalSupported()) {
-        const pr = await autoPrintReceipt(savingsReceiptFn(res.tx, res.account, cashierName));
-        if (pr.needConnect) setPrinterPrompt({ printFn: savingsReceiptFn(res.tx, res.account, cashierName) });
-        else if (pr.error) toast.error("Print failed: " + pr.error);
-        else if (pr.ok) toast.success("Receipt printed.");
-      }
+      // Auto-print: thermal printer if ready, else the OS default printer.
+      const pr = await printReceiptSmart(savingsReceiptDesc(res.tx, res.account, cashierName));
+      if (pr.needConnect) setPrinterPrompt({ printFn: () => printPaymentReceipt(savingsReceiptDesc(res.tx, res.account, cashierName)) });
+      else if (pr.via === "thermal") toast.success("Receipt printed.");
     } catch (e) {
       toast.error(e.message || `Failed to ${txType}.`);
     } finally {
@@ -397,14 +368,8 @@ export default function CashierSavingsPanel() {
               </div>
               <button
                 onClick={async () => {
-                  if (thermalSupported()) {
-                    try {
-                      if (!printerConnected() && !(await tryReconnect())) await connectPrinter();
-                      await savingsReceiptFn(lastTx, account, cashierName)();
-                      return toast.success("Receipt printed.");
-                    } catch (e) { toast.error("Print failed: " + e.message); return; }
-                  }
-                  printSavingsReceipt({ tx: lastTx, account, cashierName });
+                  const res = await printReceiptManual(savingsReceiptDesc(lastTx, account, cashierName));
+                  if (res.via === "thermal") toast.success("Receipt printed.");
                 }}
                 className="inline-flex items-center gap-2 rounded-xl border border-emerald-300 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50"
               >

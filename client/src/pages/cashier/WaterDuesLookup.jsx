@@ -5,8 +5,8 @@ import { apiFetch } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
 import { toast } from "../../components/Toast";
 import PrinterPrompt from "../../components/PrinterPrompt";
-import { printPaymentReceipt, thermalSupported, printerConnected, tryReconnect, connectPrinter } from "../../lib/thermalPrint";
-import { autoPrintReceipt, isAutoPrintOn } from "../../lib/printerSettings";
+import { printPaymentReceipt } from "../../lib/thermalPrint";
+import { printReceiptSmart, printReceiptManual } from "../../lib/printerSettings";
 import { Search, Droplets, Printer, AlertTriangle, MapPin, CheckCircle, Hourglass, Gauge, Banknote, History, Wallet, TrendingUp, ReceiptText } from "lucide-react";
 
 // Recently-looked-up PNs are kept in localStorage so the cashier can
@@ -56,9 +56,9 @@ export default function WaterDuesLookup() {
   // connected → opens the "Connect & print" popup.
   const [printerPrompt, setPrinterPrompt] = useState(null);
 
-  // Build the thermal-receipt print fn for a just-paid water payment.
-  function waterReceiptFn(j) {
-    return () => printPaymentReceipt({
+  // Receipt descriptor for a just-paid water payment (thermal or default-printer).
+  function waterReceiptDesc(j) {
+    return {
       title: "WATER OFFICIAL RECEIPT",
       accountName: j.accountName,
       pnNo: j.pnNo,
@@ -74,7 +74,7 @@ export default function WaterDuesLookup() {
       total: j.amountDue,
       totalLabel: "PAID",
       note: "Bring this OR to the Water Bill Officer.",
-    });
+    };
   }
   // Quick today's-collection summary fetched from /collections/today, and
   // recent customers (localStorage) so the cashier can re-open a stepped-
@@ -165,14 +165,11 @@ export default function WaterDuesLookup() {
         at: new Date(),
       };
       setJustPaid(j);
-      // Auto-print the thermal receipt — no dialog, no redirect. If a printer
-      // isn't connected yet, pop up the "Connect & print" prompt.
-      if (isAutoPrintOn() && thermalSupported()) {
-        const pr = await autoPrintReceipt(waterReceiptFn(j));
-        if (pr.needConnect) setPrinterPrompt({ printFn: waterReceiptFn(j) });
-        else if (pr.error) toast.error("Print failed: " + pr.error);
-        else if (pr.ok) toast.success("Receipt printed.");
-      }
+      // Auto-print: thermal printer if ready, else the OS default printer.
+      // Only pops the connect prompt if no printer AND fallback is disabled.
+      const pr = await printReceiptSmart(waterReceiptDesc(j));
+      if (pr.needConnect) setPrinterPrompt({ printFn: () => printPaymentReceipt(waterReceiptDesc(j)) });
+      else if (pr.via === "thermal") toast.success("Receipt printed.");
       // Await the refresh so the bill flips to PAID in the same render pass.
       await lookup(null, data.member.pnNo);
     } catch (e2) {
@@ -182,42 +179,13 @@ export default function WaterDuesLookup() {
     }
   }
 
-  // Print the OR receipt. Prefers the Bluetooth thermal printer (this is a
-  // user click, so it may show the device picker if not yet paired); falls
-  // back to a browser print window when thermal isn't available.
+  // Print the OR receipt on demand. Prefers the thermal printer (USB/BT — may
+  // show the picker since it's a click); falls back to the OS default printer
+  // (58mm receipt) when no thermal printer is available.
   async function printJustPaidReceipt() {
     if (!justPaid) return;
-    const j = justPaid;
-    if (thermalSupported()) {
-      try {
-        if (!printerConnected() && !(await tryReconnect())) await connectPrinter();
-        await waterReceiptFn(j)();
-        return toast.success("Receipt printed.");
-      } catch (e) { toast.error("Print failed: " + e.message); return; }
-    }
-    const w = window.open("", "_blank", "width=440,height=640");
-    if (!w) return alert("Allow pop-ups to print.");
-    w.document.write(`<!doctype html><html><head><meta charset="utf-8"/><title>OR ${j.orNo}</title>
-      <style>@page{size:A6;margin:6mm}body{font-family:Arial,sans-serif;color:#0f172a;font-size:12px}
-      h1{font-size:14px;color:#0f766e;margin:0 0 4px}.row{display:flex;justify-content:space-between;margin:2px 0}
-      .total{margin-top:8px;text-align:right;font-weight:bold;font-size:15px;color:#b91c1c}
-      .ok{color:#15803d}.muted{color:#64748b;font-size:10px}.line{border-bottom:1px dashed #cbd5e1;margin:6px 0}
-      </style></head><body>
-      <h1>POWASSCO — Official Receipt</h1>
-      <div class="muted">OR ${j.orNo} • ${j.at.toLocaleString()} • by ${user?.fullName || user?.employeeId || ""}</div>
-      <div class="line"></div>
-      <div class="row"><span>Account</span><b>${j.accountName} (${j.pnNo})</b></div>
-      <div class="row"><span>Meter / Period</span><span>${j.meter} • ${j.period}</span></div>
-      <div class="line"></div>
-      <div class="row"><span>Amount due</span><span>₱${j.amountDue.toFixed(2)}</span></div>
-      <div class="row"><span>Amount received</span><b>₱${j.amountReceived.toFixed(2)}</b></div>
-      ${j.cbuExcess > 0 ? `<div class="row"><span>Excess → CBU</span><b class="ok">₱${j.cbuExcess.toFixed(2)}</b></div><div class="row"><span class="muted">New CBU balance</span><span class="muted">₱${j.newCbu.toFixed(2)}</span></div>` : ""}
-      <div class="line"></div>
-      <div class="total">PAID ₱${j.amountDue.toFixed(2)}</div>
-      <div class="muted" style="margin-top:8px">Bring this OR to the Water Bill Officer for filing. Keep your stub.</div>
-      </body></html>`);
-    w.document.close();
-    setTimeout(() => { w.focus(); w.print(); }, 250);
+    const res = await printReceiptManual(waterReceiptDesc(justPaid));
+    if (res.via === "thermal") toast.success("Receipt printed.");
   }
 
   // Focus the search box the moment the page opens so the cashier can

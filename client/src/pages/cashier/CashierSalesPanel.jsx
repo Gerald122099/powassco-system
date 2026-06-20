@@ -16,8 +16,8 @@ import { useRealtime } from "../../lib/realtime";
 import { useAuth } from "../../context/AuthContext";
 import { toast } from "../../components/Toast";
 import PrinterPrompt from "../../components/PrinterPrompt";
-import { printPaymentReceipt, thermalSupported, printerConnected, tryReconnect, connectPrinter } from "../../lib/thermalPrint";
-import { autoPrintReceipt, isAutoPrintOn } from "../../lib/printerSettings";
+import { printPaymentReceipt } from "../../lib/thermalPrint";
+import { printReceiptSmart, printReceiptManual } from "../../lib/printerSettings";
 import {
   ShoppingBag, Plus, Search, User, UserPlus, Receipt, RefreshCw, Printer,
 } from "lucide-react";
@@ -32,12 +32,12 @@ const METHODS = [
   { value: "other", label: "Other" },
 ];
 
-// Thermal-receipt print fn for a sale.
-function saleReceiptFn(sale, cashierName) {
+// Receipt descriptor for a sale (thermal or default-printer).
+function saleReceiptDesc(sale, cashierName) {
   const customer = sale.borrowerPnNo
     ? `${sale.borrowerName || ""} (${sale.borrowerPnNo})`
     : (sale.customerName || "Walk-in");
-  return () => printPaymentReceipt({
+  return {
     title: "SALES OR",
     accountName: customer,
     orNo: sale.orNo,
@@ -50,35 +50,7 @@ function saleReceiptFn(sale, cashierName) {
     total: Number(sale.principal) || 0,
     totalLabel: "PAID",
     note: "Thank you for your purchase!",
-  });
-}
-
-function printSaleReceipt({ sale, cashierName }) {
-  const w = window.open("", "_blank", "width=440,height=640");
-  if (!w) return alert("Allow pop-ups to print.");
-  const productLine = sale.productName || "Product";
-  const customerLine = sale.borrowerPnNo
-    ? `${sale.borrowerName || ""} (${sale.borrowerPnNo})`
-    : `${sale.customerName || "Walk-in"}${sale.customerContact ? ` • ${sale.customerContact}` : ""}`;
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8"/><title>OR ${sale.orNo || ""}</title>
-    <style>@page{size:A6;margin:6mm}body{font-family:Arial,sans-serif;color:#0f172a;font-size:12px}
-    h1{font-size:14px;color:#0f766e;margin:0 0 4px}.row{display:flex;justify-content:space-between;margin:2px 0}
-    .total{margin-top:8px;text-align:right;font-weight:bold;font-size:15px;color:#0f766e}
-    .muted{color:#64748b;font-size:10px}.line{border-bottom:1px dashed #cbd5e1;margin:6px 0}
-    </style></head><body>
-    <h1>POWASSCO — Sales OR</h1>
-    <div class="muted">OR ${sale.orNo || "—"} • ${new Date().toLocaleString()} • by ${cashierName || ""}</div>
-    <div class="line"></div>
-    <div class="row"><span>Customer</span><b>${customerLine}</b></div>
-    <div class="row"><span>Product</span><span>${productLine}</span></div>
-    <div class="row"><span>Quantity</span><span>${sale.quantity || 1}</span></div>
-    <div class="row"><span>Unit Price</span><span>₱${(Number(sale.unitPrice) || 0).toFixed(2)}</span></div>
-    <div class="line"></div>
-    <div class="total">PAID ₱${(Number(sale.principal) || 0).toFixed(2)}</div>
-    <div class="muted" style="margin-top:8px">Thank you for your purchase.</div>
-    </body></html>`);
-  w.document.close();
-  setTimeout(() => { w.focus(); w.print(); }, 250);
+  };
 }
 
 export default function CashierSalesPanel() {
@@ -226,13 +198,10 @@ export default function CashierSalesPanel() {
       };
       setLastSale(sale);
       toast.success(`Sale posted • OR ${saleOr}`);
-      // Auto-print the sales receipt — no dialog. Popup to connect if needed.
-      if (isAutoPrintOn() && thermalSupported()) {
-        const pr = await autoPrintReceipt(saleReceiptFn(sale, cashierName));
-        if (pr.needConnect) setPrinterPrompt({ printFn: saleReceiptFn(sale, cashierName) });
-        else if (pr.error) toast.error("Print failed: " + pr.error);
-        else if (pr.ok) toast.success("Receipt printed.");
-      }
+      // Auto-print: thermal printer if ready, else the OS default printer.
+      const pr = await printReceiptSmart(saleReceiptDesc(sale, cashierName));
+      if (pr.needConnect) setPrinterPrompt({ printFn: () => printPaymentReceipt(saleReceiptDesc(sale, cashierName)) });
+      else if (pr.via === "thermal") toast.success("Receipt printed.");
       load(); // refresh recent list
     } catch (e) {
       toast.error(e.message || "Failed to post sale.");
@@ -329,14 +298,8 @@ export default function CashierSalesPanel() {
             <div className="flex gap-2 justify-end">
               <button
                 onClick={async () => {
-                  if (thermalSupported()) {
-                    try {
-                      if (!printerConnected() && !(await tryReconnect())) await connectPrinter();
-                      await saleReceiptFn(lastSale, cashierName)();
-                      return toast.success("Receipt printed.");
-                    } catch (e) { toast.error("Print failed: " + e.message); return; }
-                  }
-                  printSaleReceipt({ sale: lastSale, cashierName });
+                  const res = await printReceiptManual(saleReceiptDesc(lastSale, cashierName));
+                  if (res.via === "thermal") toast.success("Receipt printed.");
                 }}
                 className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold hover:bg-slate-50"
               >

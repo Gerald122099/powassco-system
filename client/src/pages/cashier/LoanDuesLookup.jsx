@@ -6,8 +6,8 @@ import { useAuth } from "../../context/AuthContext";
 import { toast } from "../../components/Toast";
 import { Kpi } from "./WaterDuesLookup";
 import PrinterPrompt from "../../components/PrinterPrompt";
-import { printPaymentReceipt, thermalSupported, printerConnected, tryReconnect, connectPrinter } from "../../lib/thermalPrint";
-import { autoPrintReceipt, isAutoPrintOn } from "../../lib/printerSettings";
+import { printPaymentReceipt } from "../../lib/thermalPrint";
+import { printReceiptSmart, printReceiptManual } from "../../lib/printerSettings";
 import { Search, Banknote, Printer, Hourglass, CheckCircle, Wallet, History, TrendingUp, ReceiptText } from "lucide-react";
 
 const RECENT_KEY = "pow_cashier_recent_loan";
@@ -51,9 +51,9 @@ export default function LoanDuesLookup() {
   const [justPaid, setJustPaid] = useState(null);
   const [printerPrompt, setPrinterPrompt] = useState(null);
 
-  // Thermal-receipt print fn for a just-paid loan payment.
-  function loanReceiptFn(j) {
-    return () => printPaymentReceipt({
+  // Receipt descriptor for a just-paid loan payment (thermal or default-printer).
+  function loanReceiptDesc(j) {
+    return {
       title: "LOAN PAYMENT OR",
       accountName: j.borrowerName,
       pnNo: j.borrowerPnNo,
@@ -69,7 +69,7 @@ export default function LoanDuesLookup() {
       total: j.amountDue,
       totalLabel: "PAID",
       note: "Bring this OR to the Loan Officer.",
-    });
+    };
   }
   const [todayStats, setTodayStats] = useState(null);
   const [recents, setRecents] = useState(() => loadRecents());
@@ -208,13 +208,10 @@ export default function LoanDuesLookup() {
         at: new Date(),
       };
       setJustPaid(j);
-      // Auto-print the OR receipt — no dialog. Popup to connect if needed.
-      if (isAutoPrintOn() && thermalSupported()) {
-        const pr = await autoPrintReceipt(loanReceiptFn(j));
-        if (pr.needConnect) setPrinterPrompt({ printFn: loanReceiptFn(j) });
-        else if (pr.error) toast.error("Print failed: " + pr.error);
-        else if (pr.ok) toast.success("Receipt printed.");
-      }
+      // Auto-print: thermal printer if ready, else the OS default printer.
+      const pr = await printReceiptSmart(loanReceiptDesc(j));
+      if (pr.needConnect) setPrinterPrompt({ printFn: () => printPaymentReceipt(loanReceiptDesc(j)) });
+      else if (pr.via === "thermal") toast.success("Receipt printed.");
       await lookup(null, target.loanId);
     } catch (e2) {
       toast.error(e2.message);
@@ -225,37 +222,8 @@ export default function LoanDuesLookup() {
 
   async function printJustPaidReceipt() {
     if (!justPaid) return;
-    const j = justPaid;
-    if (thermalSupported()) {
-      try {
-        if (!printerConnected() && !(await tryReconnect())) await connectPrinter();
-        await loanReceiptFn(j)();
-        return toast.success("Receipt printed.");
-      } catch (e) { toast.error("Print failed: " + e.message); return; }
-    }
-    const w = window.open("", "_blank", "width=440,height=640");
-    if (!w) return alert("Allow pop-ups to print.");
-    w.document.write(`<!doctype html><html><head><meta charset="utf-8"/><title>OR ${j.orNo}</title>
-      <style>@page{size:A6;margin:6mm}body{font-family:Arial,sans-serif;color:#0f172a;font-size:12px}
-      h1{font-size:14px;color:#0f766e;margin:0 0 4px}.row{display:flex;justify-content:space-between;margin:2px 0}
-      .total{margin-top:8px;text-align:right;font-weight:bold;font-size:15px;color:#b91c1c}
-      .ok{color:#15803d}.muted{color:#64748b;font-size:10px}.line{border-bottom:1px dashed #cbd5e1;margin:6px 0}
-      </style></head><body>
-      <h1>POWASSCO — Loan Payment OR</h1>
-      <div class="muted">OR ${j.orNo} • ${j.at.toLocaleString()} • by ${user?.fullName || user?.employeeId || ""}</div>
-      <div class="line"></div>
-      <div class="row"><span>Borrower</span><b>${j.borrowerName}${j.borrowerPnNo ? " ("+j.borrowerPnNo+")" : ""}</b></div>
-      <div class="row"><span>Loan</span><span>${j.loanId} • ${j.periodsCovered} period(s)</span></div>
-      <div class="line"></div>
-      <div class="row"><span>Amount due (${j.periodsCovered} mo.)</span><span>₱${j.amountDue.toFixed(2)}</span></div>
-      <div class="row"><span>Amount received</span><b>₱${j.amountReceived.toFixed(2)}</b></div>
-      ${j.cbuExcess > 0 ? `<div class="row"><span>Excess → CBU</span><b class="ok">₱${j.cbuExcess.toFixed(2)}</b></div><div class="row"><span class="muted">New CBU balance</span><span class="muted">₱${j.newCbu.toFixed(2)}</span></div>` : ""}
-      <div class="line"></div>
-      <div class="total">PAID ₱${j.amountDue.toFixed(2)}</div>
-      <div class="muted" style="margin-top:8px">Bring this OR to the Loan Officer for filing. Keep your stub.</div>
-      </body></html>`);
-    w.document.close();
-    setTimeout(() => { w.focus(); w.print(); }, 250);
+    const res = await printReceiptManual(loanReceiptDesc(justPaid));
+    if (res.via === "thermal") toast.success("Receipt printed.");
   }
 
   useEffect(() => { searchRef.current?.focus(); }, []);

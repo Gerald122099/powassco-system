@@ -10,7 +10,7 @@ import {
   printerConnected, printerName, printerTransport,
   usbSupported, bluetoothSupported, thermalSupported, printPaymentReceipt,
 } from "../lib/thermalPrint";
-import { isAutoPrintOn, setAutoPrint } from "../lib/printerSettings";
+import { isAutoPrintOn, setAutoPrint, isDefaultFallbackOn, setDefaultFallback } from "../lib/printerSettings";
 import { Bluetooth, Printer, CheckCircle2, RefreshCw, AlertTriangle, Usb } from "lucide-react";
 
 export default function PrinterSettings({ cashierName = "" }) {
@@ -20,6 +20,7 @@ export default function PrinterSettings({ cashierName = "" }) {
   const [transport, setTransport] = useState(printerTransport());
   const [busy, setBusy] = useState("");
   const [autoPrint, setAuto] = useState(isAutoPrintOn());
+  const [fallback, setFallback] = useState(isDefaultFallbackOn());
 
   function syncStatus() {
     setConnected(printerConnected());
@@ -67,6 +68,11 @@ export default function PrinterSettings({ cashierName = "" }) {
     setAuto(on);
     setAutoPrint(on);
     toast.success(on ? "Auto-print ON — receipts print after each payment." : "Auto-print OFF.");
+  }
+  function toggleFallback(on) {
+    setFallback(on);
+    setDefaultFallback(on);
+    toast.success(on ? "Fallback ON — prints to the default printer when no thermal printer." : "Fallback OFF.");
   }
 
   return (
@@ -130,6 +136,23 @@ export default function PrinterSettings({ cashierName = "" }) {
               className={`relative h-7 w-12 shrink-0 rounded-full transition ${autoPrint ? "bg-emerald-600" : "bg-slate-300"}`}
             >
               <span className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition ${autoPrint ? "left-[22px]" : "left-0.5"}`} />
+            </button>
+          </label>
+
+          {/* Default-printer fallback toggle */}
+          <label className="mt-3 flex items-center justify-between gap-3 rounded-2xl border border-slate-200 px-4 py-3">
+            <div className="text-sm">
+              <div className="font-semibold text-slate-800">Fall back to the default printer</div>
+              <div className="text-xs text-slate-500">When no thermal printer is connected, print the 58mm receipt to your computer’s default printer instead.</div>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={fallback}
+              onClick={() => toggleFallback(!fallback)}
+              className={`relative h-7 w-12 shrink-0 rounded-full transition ${fallback ? "bg-emerald-600" : "bg-slate-300"}`}
+            >
+              <span className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition ${fallback ? "left-[22px]" : "left-0.5"}`} />
             </button>
           </label>
 

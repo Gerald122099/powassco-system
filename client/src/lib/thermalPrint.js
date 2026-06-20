@@ -284,3 +284,71 @@ export async function printPaymentReceipt({
   parts.push(t(new Date().toLocaleString() + "\n"), CMD.feed3);
   await write(join(parts));
 }
+
+// FALLBACK for desktops with no WebUSB/Bluetooth printer bound: render the
+// SAME receipt as 58mm HTML and print it to the OS DEFAULT printer via a
+// hidden iframe. With the thermal printer set as the Windows default this is
+// one Ctrl+P→Enter (or silent in kiosk mode) — no driver fiddling. Takes the
+// same descriptor as printPaymentReceipt().
+export function printReceiptHTML({
+  title = "OFFICIAL RECEIPT",
+  accountName,
+  pnNo,
+  orNo,
+  cashierName,
+  lines = [],
+  total,
+  totalLabel = "TOTAL PAID",
+  note = "Keep this receipt. Thank you!",
+}) {
+  const esc = (s) => String(s ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+  const peso = (n) => "P" + Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const r = (l, v) => `<div class="r"><span>${esc(l)}</span><span>${esc(v)}</span></div>`;
+  const meta = [];
+  if (orNo) meta.push(r("OR No.", orNo));
+  if (accountName) meta.push(r("Name", accountName));
+  if (pnNo) meta.push(r("Account No.", pnNo));
+  meta.push(r("Date", new Date().toLocaleString()));
+  if (cashierName) meta.push(r("Cashier", cashierName));
+  const body = lines.map(([l, v]) => r(l, v)).join("");
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(orNo || title)}</title>
+    <style>
+      @page { size: 58mm auto; margin: 0; }
+      * { box-sizing: border-box; }
+      body { width: 58mm; margin: 0; padding: 3mm 2mm; font-family: 'Courier New', monospace; font-size: 11px; color: #000; }
+      .c { text-align: center; }
+      h1 { font-size: 16px; margin: 0; }
+      .sub { font-size: 10px; margin: 0; }
+      .ttl { font-weight: bold; margin: 3px 0; }
+      .line { border-top: 1px dashed #000; margin: 4px 0; }
+      .r { display: flex; justify-content: space-between; gap: 6px; }
+      .r span:last-child { text-align: right; }
+      .total { display: flex; justify-content: space-between; font-weight: bold; font-size: 14px; margin-top: 3px; }
+    </style></head><body>
+    <div class="c"><h1>POWASSCO</h1><div class="sub">Brgy. Owak, Asturias, Cebu</div></div>
+    <div class="line"></div>
+    <div class="c ttl">${esc(String(title).toUpperCase())}</div>
+    ${meta.join("")}
+    <div class="line"></div>
+    ${body}
+    <div class="line"></div>
+    ${total != null ? `<div class="total"><span>${esc(totalLabel)}</span><span>${peso(total)}</span></div><div class="line"></div>` : ""}
+    ${note ? `<div class="c sub">${esc(note)}</div>` : ""}
+    </body></html>`;
+
+  const iframe = document.createElement("iframe");
+  iframe.setAttribute("aria-hidden", "true");
+  iframe.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;";
+  document.body.appendChild(iframe);
+  let done = false;
+  const doPrint = () => {
+    if (done) return; done = true;
+    try { iframe.contentWindow.focus(); iframe.contentWindow.print(); } catch { /* ignore */ }
+    setTimeout(() => { try { document.body.removeChild(iframe); } catch { /* ignore */ } }, 1500);
+  };
+  iframe.onload = doPrint;
+  const doc = iframe.contentWindow.document;
+  doc.open(); doc.write(html); doc.close();
+  // Safety net if onload doesn't fire (some engines on document.write).
+  setTimeout(doPrint, 500);
+}
