@@ -778,7 +778,17 @@ export default function FieldModePanel() {
       <div className="mt-4 space-y-3 pb-32">
         {total === 0 ? (
           <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">
-            No meters downloaded yet. {online ? "Tap “Download” to load ALL meters (grouped by purok) for offline reading." : "Connect to the internet and download."}
+            {online ? (
+              <>
+                <div className="font-semibold text-slate-700">{busy === "download" ? "Downloading all meters…" : "Loading all meters (grouped by purok)…"}</div>
+                <div className="mt-1 text-xs">This happens automatically — no button needed. Once saved, you can read fully offline.</div>
+              </>
+            ) : (
+              <>
+                <div className="font-semibold text-slate-700">No meters saved on this device yet</div>
+                <div className="mt-1 text-xs">Connect to the internet once — the app downloads every meter automatically, then works with no signal in the field.</div>
+              </>
+            )}
           </div>
         ) : filtered.length === 0 ? (
           <div className="p-6 text-center text-sm text-slate-500">No matching accounts.</div>
