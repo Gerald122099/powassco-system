@@ -4,7 +4,7 @@
 // own the push/notificationclick handlers so saved meters can receive
 // reminders and clicking a notification deep-links into /inquiry.
 
-import { precacheAndRoute } from "workbox-precaching";
+import { precacheAndRoute, matchPrecache } from "workbox-precaching";
 import { NavigationRoute, registerRoute } from "workbox-routing";
 import { clientsClaim } from "workbox-core";
 import { CacheFirst, StaleWhileRevalidate } from "workbox-strategies";
@@ -15,12 +15,22 @@ import { CacheableResponsePlugin } from "workbox-cacheable-response";
 //    self.__WB_MANIFEST array is injected at build time.
 precacheAndRoute(self.__WB_MANIFEST || []);
 
-// 2) Same behavior as the generated SW we replaced: SPA navigation
-//    fallback to /index.html, never intercept /api/*.
-const navigationRoute = new NavigationRoute(
-  async () => (await caches.match("/index.html")) || fetch("/index.html"),
-  { denylist: [/^\/api\//] }
-);
+// 2) SPA navigation fallback → the PRECACHED index.html, never /api/*.
+//    IMPORTANT: Workbox stores index.html under a revisioned URL
+//    (/index.html?__WB_REVISION__=…), so a plain caches.match("/index.html")
+//    MISSES it and we'd fall through to fetch() — which fails with no
+//    signal ("site can't be reached"). matchPrecache() resolves the
+//    revisioned entry, so the field app shell loads fully OFFLINE.
+async function appShell() {
+  return (
+    (await matchPrecache("/index.html")) ||
+    (await matchPrecache("index.html")) ||
+    (await caches.match("/index.html", { ignoreSearch: true })) ||
+    (await caches.match("/", { ignoreSearch: true })) ||
+    fetch("/index.html")
+  );
+}
+const navigationRoute = new NavigationRoute(() => appShell(), { denylist: [/^\/api\//] });
 registerRoute(navigationRoute);
 
 // 3) Activate immediately on update so users see the new bundle on
