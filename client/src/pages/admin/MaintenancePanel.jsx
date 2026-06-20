@@ -264,12 +264,13 @@ function MergeSplitMetersCard() {
   const [result, setResult] = useState(null);
   const [working, setWorking] = useState(false);
   const [mode, setMode] = useState("");
+  const [fuzzy, setFuzzy] = useState(true);
 
   async function call(dry) {
     if (!dry && !window.confirm(`Merge ${result?.merged ?? "the"} split-meter group(s)? Meters combine onto one account, transactions re-point to it, and the emptied accounts go inactive (reversible). Proceed?`)) return;
     setMode(dry ? "Dry run" : "Apply"); setResult(null); setWorking(true);
     try {
-      const res = await apiFetch("/admin/maintenance/merge-split-meters", { method: "POST", token, body: { confirm: "MERGE SPLIT METERS", dry } });
+      const res = await apiFetch("/admin/maintenance/merge-split-meters", { method: "POST", token, body: { confirm: "MERGE SPLIT METERS", dry, fuzzy } });
       setResult(res);
       toast.success(dry
         ? `Dry run: ${res.merged} mergeable, ${res.metersMoved} meters move, ${res.review.length} to review.`
@@ -295,6 +296,10 @@ function MergeSplitMetersCard() {
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-3">
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={fuzzy} onChange={(e) => setFuzzy(e.target.checked)} />
+          <span>Fuzzy match (catch typo twins)</span>
+        </label>
         <div className="flex-1" />
         <button onClick={() => call(true)} disabled={working} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50">
           {working && mode === "Dry run" ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
@@ -351,12 +356,13 @@ function DedupeWaterMembersCard() {
   const [result, setResult] = useState(null);
   const [working, setWorking] = useState(false);
   const [mode, setMode] = useState("");
+  const [fuzzy, setFuzzy] = useState(true);
 
   async function call(dry) {
     if (!dry && !window.confirm(`Archive ${result?.archived ?? "the"} empty duplicate account(s)? They become INACTIVE (reversible) — accounts with any transactions are never touched. Proceed?`)) return;
     setMode(dry ? "Dry run" : "Apply"); setResult(null); setWorking(true);
     try {
-      const res = await apiFetch("/admin/maintenance/dedupe-water-members", { method: "POST", token, body: { confirm: "DEDUPE WATER MEMBERS", dry } });
+      const res = await apiFetch("/admin/maintenance/dedupe-water-members", { method: "POST", token, body: { confirm: "DEDUPE WATER MEMBERS", dry, fuzzy } });
       setResult(res);
       toast.success(dry
         ? `Dry run: ${res.dupGroups} duplicate name(s); would archive ${res.archived}, keep ${res.kept}.`
@@ -382,6 +388,10 @@ function DedupeWaterMembersCard() {
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-3">
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={fuzzy} onChange={(e) => setFuzzy(e.target.checked)} />
+          <span>Fuzzy match (catch typo twins)</span>
+        </label>
         <div className="flex-1" />
         <button onClick={() => call(true)} disabled={working} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50">
           {working && mode === "Dry run" ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
@@ -516,13 +526,17 @@ function DuplicateMembersCard() {
   const [data, setData] = useState(null);
   const [busy, setBusy] = useState(false);
   const [inactive, setInactive] = useState(false);
+  const [fuzzy, setFuzzy] = useState(true);
 
   async function check() {
     setBusy(true);
     try {
-      const r = await apiFetch(`/admin/maintenance/duplicate-members${inactive ? "?includeInactive=1" : ""}`, { token });
+      const qs = new URLSearchParams();
+      if (inactive) qs.set("includeInactive", "1");
+      if (fuzzy) qs.set("fuzzy", "1");
+      const r = await apiFetch(`/admin/maintenance/duplicate-members?${qs}`, { token });
       setData(r);
-      toast.success(`${r.groupCount} duplicate name(s) across ${r.totalDupAccounts} account(s).`);
+      toast.success(`${r.groupCount} duplicate name(s) across ${r.totalDupAccounts} account(s)${r.fuzzy ? " (incl. typos)" : ""}.`);
     } catch (e) { toast.error(e.message); } finally { setBusy(false); }
   }
 
@@ -532,10 +546,14 @@ function DuplicateMembersCard() {
         <Users size={20} className="text-rose-600" /> Maintenance — Duplicate Account Names
       </div>
       <div className="mt-0.5 text-sm text-slate-600">
-        Lists water members that share the same account name (case/space-insensitive) so you can review and merge/clean them. Read-only — nothing is changed.
+        Lists water members with the same account name so you can review and merge/clean them. With <b>fuzzy</b> on, it also catches near-identical spellings (e.g. "Cudis, Cinderila" vs "Cudis, Cindirela"). Read-only — nothing is changed.
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-3">
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={fuzzy} onChange={(e) => setFuzzy(e.target.checked)} />
+          <span>Fuzzy match (catch typos / near-identical names)</span>
+        </label>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={inactive} onChange={(e) => setInactive(e.target.checked)} />
           <span>Include inactive / archived accounts</span>

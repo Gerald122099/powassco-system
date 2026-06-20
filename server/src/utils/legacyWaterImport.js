@@ -529,6 +529,80 @@ export async function importMemberPuroks({ area = "all", dry = true } = {}) {
   return r;
 }
 
+// ── Duplicate detection: exact + fuzzy (typo) name matching ────────────
+// Levenshtein distance with an early-out past 2 edits (our typo threshold).
+function lev(a, b) {
+  if (a === b) return 0;
+  const m = a.length, n = b.length;
+  if (!m) return n; if (!n) return m;
+  if (Math.abs(m - n) > 2) return 9;
+  let prev = Array.from({ length: n + 1 }, (_, i) => i);
+  for (let i = 1; i <= m; i++) {
+    const cur = [i]; let best = i;
+    for (let j = 1; j <= n; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      if (cur[j] < best) best = cur[j];
+    }
+    if (best > 2) return 9; // whole row already past threshold
+    prev = cur;
+  }
+  return prev[n];
+}
+// Two names (same last name, blocked) are "typo twins" when their FIRST
+// names are within a length-aware edit distance: 1 edit on 5+ chars or 2
+// edits on 8+ chars. This catches Cinderila/Cindirela (2 edits, 9 chars)
+// and Marivel/Maribel (1 edit) but NOT Lorna/Myrna (2 edits, 5 chars) or
+// Jose/Rose (1 edit, 4 chars), which are different people.
+const _firstOf = (folded) => { const i = folded.indexOf(","); return (i >= 0 ? folded.slice(i + 1) : folded).trim(); };
+function typoTwins(fa, fb) {
+  const a = _firstOf(fa), b = _firstOf(fb);
+  if (a === b) return true;
+  const d = lev(a, b), mx = Math.max(a.length, b.length);
+  return (d === 1 && mx >= 5) || (d === 2 && mx >= 8);
+}
+// Group members by name. exact = identical normalized name; fuzzy = also
+// clusters typo-twin names within the same last-name block.
+function groupMembersByName(members, { fuzzy = false } = {}) {
+  if (!fuzzy) {
+    const map = new Map();
+    for (const m of members) { const k = norm(m.accountName); if (!k) continue; if (!map.has(k)) map.set(k, []); map.get(k).push(m); }
+    return [...map.values()];
+  }
+  const byLast = new Map();
+  for (const m of members) {
+    const f = norm(fold(m.accountName)); if (!f) continue;
+    const last = f.split(",")[0].trim();
+    if (!byLast.has(last)) byLast.set(last, []);
+    byLast.get(last).push({ m, f });
+  }
+  const clusters = [];
+  for (const arr of byLast.values()) {
+    const parent = arr.map((_, i) => i);
+    const find = (x) => { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; };
+    for (let i = 0; i < arr.length; i++) for (let j = i + 1; j < arr.length; j++) { if (typoTwins(arr[i].f, arr[j].f)) parent[find(i)] = find(j); }
+    const gm = new Map();
+    for (let i = 0; i < arr.length; i++) { const r = find(i); if (!gm.has(r)) gm.set(r, []); gm.get(r).push(arr[i].m); }
+    for (const g of gm.values()) clusters.push(g);
+  }
+  return clusters;
+}
+
+// Report duplicate-name groups (exact or fuzzy), incl. each account's status.
+export async function findDuplicateMembers({ includeInactive = false, fuzzy = false } = {}) {
+  const match = includeInactive ? {} : { accountStatus: "active" };
+  const members = await WaterMember.find(match).select("pnNo accountName purok address.barangay accountStatus meters").lean();
+  const groups = groupMembersByName(members, { fuzzy })
+    .filter((g) => g.length > 1)
+    .map((g) => ({
+      _id: norm(g[0].accountName),
+      count: g.length,
+      accounts: g.map((m) => ({ pnNo: m.pnNo, accountName: m.accountName, purok: m.purok || "", barangay: m.address?.barangay || "", status: m.accountStatus, meters: (m.meters || []).length })),
+    }))
+    .sort((a, b) => b.count - a.count || a._id.localeCompare(b._id))
+    .slice(0, 1000);
+  return { groups, groupCount: groups.length, totalDupAccounts: groups.reduce((s, g) => s + g.count, 0), fuzzy };
+}
+
 // ── Dedupe water members ───────────────────────────────────────────────
 // The legacy imports created duplicate accounts (same name, different pn).
 // This keeps every account that has ANY transaction history and ARCHIVES
@@ -536,21 +610,14 @@ export async function importMemberPuroks({ area = "all", dry = true } = {}) {
 // has history, it keeps one (prefers a purok-assigned, then oldest) and
 // archives the rest. NEVER hard-deletes; groups where 2+ copies both have
 // history are left for manual review. Dry-run-first.
-export async function dedupeWaterMembers({ dry = true } = {}) {
+export async function dedupeWaterMembers({ dry = true, fuzzy = false } = {}) {
   const all = await WaterMember.find({ accountStatus: "active" })
     .select("pnNo accountName purok address.barangay meters createdAt").lean();
 
-  const groups = new Map();
-  for (const m of all) {
-    const k = norm(m.accountName);
-    if (!k) continue;
-    if (!groups.has(k)) groups.set(k, []);
-    groups.get(k).push(m);
-  }
-  const dupGroups = [...groups.values()].filter((g) => g.length > 1);
+  const dupGroups = groupMembersByName(all, { fuzzy }).filter((g) => g.length > 1);
   const dupPns = dupGroups.flatMap((g) => g.map((m) => m.pnNo));
 
-  const r = { dry, dupGroups: dupGroups.length, dupAccounts: dupPns.length, kept: 0, archived: 0, review: [], sample: [] };
+  const r = { dry, fuzzy, dupGroups: dupGroups.length, dupAccounts: dupPns.length, kept: 0, archived: 0, review: [], sample: [] };
   if (!dupPns.length) return r;
 
   const [billPns, payPns, readPns, cbuPns, loanPns] = await Promise.all([
@@ -599,14 +666,12 @@ export async function dedupeWaterMembers({ dry = true } = {}) {
 // archive the emptied secondaries. Only merges when the meter numbers DON'T
 // overlap (a clean split); skips any group that has a loan. Dry-run-first.
 const _nm = (s) => String(s || "").toUpperCase().trim();
-export async function mergeSplitMeterDuplicates({ dry = true } = {}) {
+export async function mergeSplitMeterDuplicates({ dry = true, fuzzy = false } = {}) {
   const all = await WaterMember.find({ accountStatus: "active" })
     .select("pnNo accountName billing purok address.barangay meters createdAt").lean();
-  const groups = new Map();
-  for (const m of all) { const k = norm(m.accountName); if (!k) continue; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(m); }
-  const dupGroups = [...groups.values()].filter((g) => g.length > 1);
+  const dupGroups = groupMembersByName(all, { fuzzy }).filter((g) => g.length > 1);
 
-  const r = { dry, dupGroups: dupGroups.length, merged: 0, accountsArchived: 0, metersMoved: 0, skippedOverlap: 0, skippedLoan: 0, review: [], sample: [] };
+  const r = { dry, fuzzy, dupGroups: dupGroups.length, merged: 0, accountsArchived: 0, metersMoved: 0, skippedOverlap: 0, skippedLoan: 0, review: [], sample: [] };
   if (!dupGroups.length) return r;
 
   const allPns = dupGroups.flatMap((g) => g.map((m) => m.pnNo));

@@ -20,7 +20,7 @@ import { regenLoanAmortization } from "../../scripts/regenLoanAmortization.js";
 import { rebuildLoanCharges } from "../../scripts/rebuildLoanCharges.js";
 import { importLegacyLoans, LEGACY_LOAN_BATCHES, fixWaterMemberNames } from "../../utils/legacyLoanImport.js";
 import { recomputeWaterBills } from "../../scripts/recomputeWaterBills.js";
-import { importLegacyWater, LEGACY_WATER_AREAS, importWaterRoster, WATER_ROSTER_AREAS, importMemberPuroks, purokImportAreas, dedupeWaterMembers, mergeSplitMeterDuplicates } from "../../utils/legacyWaterImport.js";
+import { importLegacyWater, LEGACY_WATER_AREAS, importWaterRoster, WATER_ROSTER_AREAS, importMemberPuroks, purokImportAreas, dedupeWaterMembers, mergeSplitMeterDuplicates, findDuplicateMembers } from "../../utils/legacyWaterImport.js";
 import { emitJobProgress } from "../../realtime.js";
 import WaterMember from "../../models/WaterMember.js";
 
@@ -152,7 +152,7 @@ router.post("/dedupe-water-members", guard, async (req, res) => {
     return res.status(400).json({ error: 'Pass { confirm: "DEDUPE WATER MEMBERS" } to proceed.' });
   }
   try {
-    res.json(await dedupeWaterMembers({ dry: Boolean(dry) }));
+    res.json(await dedupeWaterMembers({ dry: Boolean(dry), fuzzy: Boolean(req.body?.fuzzy) }));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -167,7 +167,7 @@ router.post("/merge-split-meters", guard, async (req, res) => {
     return res.status(400).json({ error: 'Pass { confirm: "MERGE SPLIT METERS" } to proceed.' });
   }
   try {
-    res.json(await mergeSplitMeterDuplicates({ dry: Boolean(dry) }));
+    res.json(await mergeSplitMeterDuplicates({ dry: Boolean(dry), fuzzy: Boolean(req.body?.fuzzy) }));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -188,31 +188,15 @@ router.post("/fix-water-names", guard, async (req, res) => {
   }
 });
 
-// Find water members that share the same (case/space-insensitive) account
-// name — surfaces duplicates from imports or manual entry so the office can
-// merge/clean them. includeInactive=1 also scans archived accounts.
+// Find water members with duplicate account names — exact, or with
+// fuzzy=1 also near-identical spellings (e.g. "Cudis, Cinderila" vs
+// "Cudis, Cindirela"). includeInactive=1 also scans archived accounts.
 router.get("/duplicate-members", guard, async (req, res) => {
   try {
-    const match = (req.query.includeInactive === "1") ? {} : { accountStatus: "active" };
-    const groups = await WaterMember.aggregate([
-      { $match: match },
-      { $group: {
-        _id: { $trim: { input: { $toLower: { $ifNull: ["$accountName", ""] } } } },
-        count: { $sum: 1 },
-        accounts: { $push: {
-          pnNo: "$pnNo", accountName: "$accountName",
-          purok: { $ifNull: ["$purok", ""] },
-          barangay: { $ifNull: ["$address.barangay", ""] },
-          status: "$accountStatus",
-          meters: { $size: { $ifNull: ["$meters", []] } },
-        } },
-      } },
-      { $match: { count: { $gt: 1 }, _id: { $ne: "" } } },
-      { $sort: { count: -1, _id: 1 } },
-      { $limit: 1000 },
-    ]);
-    const totalDupAccounts = groups.reduce((s, g) => s + g.count, 0);
-    res.json({ groups, groupCount: groups.length, totalDupAccounts });
+    res.json(await findDuplicateMembers({
+      includeInactive: req.query.includeInactive === "1",
+      fuzzy: req.query.fuzzy === "1",
+    }));
   } catch (e) {
     res.status(500).json({ error: e.message || "Failed to scan duplicates." });
   }
