@@ -21,6 +21,17 @@ import { Lock, KeyRound } from "lucide-react";
 const UNLOCK_KEY = "pow_pin_unlocked";
 const ATTEMPT_KEY = "pow_pin_attempts";
 
+// SHA-256 → hex. Used to cache the PIN locally (after a successful ONLINE
+// unlock) so the field reader can still unlock OFFLINE with the same PIN.
+async function sha256Hex(s) {
+  try {
+    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+    return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+  } catch {
+    return null; // crypto.subtle unavailable (non-secure context)
+  }
+}
+
 export default function AppPinLock({ children }) {
   const { user, logout } = useAuth();
   const [hasPin, setHasPin] = useState(null); // null = checking
@@ -30,16 +41,36 @@ export default function AppPinLock({ children }) {
   const [err, setErr] = useState("");
   const [cooldown, setCooldown] = useState(0);
 
-  // Ask the server whether this user has a PIN configured.
+  const uid = user?._id || user?.employeeId || "";
+
+  // Determine whether this user has a PIN. CRITICAL for offline field use:
+  // never block on the network — a refresh with no signal must not get stuck
+  // on "Checking…". Offline we use the last known status cached locally;
+  // online we ask the server but cap the wait so a flaky link can't hang.
   useEffect(() => {
     let cancelled = false;
     if (!user) return;
     if (unlocked) { setHasPin(true); return; }
-    apiFetch("/auth/pin-status")
-      .then((res) => { if (!cancelled) setHasPin(!!res.hasPin); })
-      .catch(() => { if (!cancelled) setHasPin(false); });
+    const cachedStatus = localStorage.getItem(`pow_haspin_${uid}`) === "1";
+
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      setHasPin(cachedStatus);
+      return;
+    }
+    (async () => {
+      const statusP = apiFetch("/auth/pin-status").then((r) => ({ has: !!r.hasPin })).catch(() => null);
+      const timeoutP = new Promise((res) => setTimeout(() => res("timeout"), 5000));
+      const out = await Promise.race([statusP, timeoutP]);
+      if (cancelled) return;
+      if (out && out !== "timeout") {
+        setHasPin(out.has);
+        try { localStorage.setItem(`pow_haspin_${uid}`, out.has ? "1" : "0"); } catch { /* quota */ }
+      } else {
+        setHasPin(cachedStatus); // timed out or network failed → cached value
+      }
+    })();
     return () => { cancelled = true; };
-  }, [user, unlocked]);
+  }, [user, unlocked, uid]);
 
   // Brute-force-friction: each successive wrong PIN bumps a cooldown
   // before the next try. Resets on a correct entry or after 10 minutes.
@@ -49,16 +80,36 @@ export default function AppPinLock({ children }) {
     return () => clearTimeout(t);
   }, [cooldown]);
 
+  function unlockNow() {
+    sessionStorage.setItem(UNLOCK_KEY, "1");
+    sessionStorage.removeItem(ATTEMPT_KEY);
+    setUnlocked(true);
+  }
+
   async function submit(e) {
     e?.preventDefault?.();
     if (cooldown > 0) return;
     if (!/^\d{4}$/.test(pin)) return setErr("Enter your 4-digit PIN.");
     setBusy(true); setErr("");
     try {
-      await apiFetch("/auth/pin-verify", { method: "POST", body: { pin } });
-      sessionStorage.setItem(UNLOCK_KEY, "1");
-      sessionStorage.removeItem(ATTEMPT_KEY);
-      setUnlocked(true);
+      const enteredHash = await sha256Hex(`${pin}:${uid}`);
+      const online = typeof navigator === "undefined" || navigator.onLine !== false;
+      if (online) {
+        try {
+          await apiFetch("/auth/pin-verify", { method: "POST", body: { pin } });
+          // Cache the PIN hash so the SAME pin unlocks offline next time.
+          if (enteredHash) { try { localStorage.setItem(`pow_pinhash_${uid}`, enteredHash); } catch { /* quota */ } }
+          return unlockNow();
+        } catch (err) {
+          // A real connection drop mid-request → fall through to offline
+          // verify. A genuine online failure (wrong PIN) → surface it.
+          if (navigator.onLine) throw err;
+        }
+      }
+      // Offline: verify against the hash cached on the last online unlock.
+      const cached = localStorage.getItem(`pow_pinhash_${uid}`);
+      if (cached && enteredHash && cached === enteredHash) return unlockNow();
+      throw new Error(cached ? "Wrong PIN." : "You're offline — connect to the internet once to enable offline unlock.");
     } catch (e2) {
       const tries = Number(sessionStorage.getItem(ATTEMPT_KEY) || 0) + 1;
       sessionStorage.setItem(ATTEMPT_KEY, String(tries));
