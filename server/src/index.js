@@ -60,6 +60,8 @@ import { ensureBootstrapAdmin } from "./utils/ensureAdmin.js";
 import { startSavingsInterestJob } from "./jobs/savingsInterest.js";
 import { startBillReminderJob } from "./jobs/billReminders.js";
 import { startReservationExpiryJob } from "./jobs/reservationExpiry.js";
+import { startBackupJob } from "./jobs/backupJob.js";
+import backupsRoutes from "./routes/admin/backups.routes.js";
 import { initRealtime, startChangeStream } from "./realtime.js";
 
 dotenv.config();
@@ -193,6 +195,7 @@ app.use("/api/audit", auditRoutes);
 app.use("/api/requests", adminRequestsRoutes);
 app.use("/api/product-reservations", productReservationsRoutes);
 app.use("/api/events", eventsRoutes);
+app.use("/api/admin/backups", backupsRoutes);
 app.use("/api/meetings", meetingsRoutes);
 app.use("/api/announcements", adminAnnouncementsRoutes);
 app.use("/api/assets", assetsRoutes);
@@ -260,6 +263,8 @@ async function connectDB() {
     startBillReminderJob();
     // Release unclaimed store reservations (free held stock, mark no-show).
     startReservationExpiryJob();
+    // Daily off-site database backup (GridFS snapshot + optional email).
+    startBackupJob();
     // Real-time: watch the DB for changes and ping subscribed clients.
     startChangeStream(mongoose.connection);
   } catch (err) {

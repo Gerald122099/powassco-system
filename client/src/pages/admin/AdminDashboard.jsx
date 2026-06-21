@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import DashboardLayout from "../../components/DashboardLayout";
-import { Users, Settings, BarChart3, Banknote, Wallet, FileBarChart, UserCog, ScrollText, ShieldCheck, Inbox, CalendarClock, Megaphone, Boxes, CreditCard, ReceiptText, AlertTriangle, MapPin, Wrench, PiggyBank, Scale } from "lucide-react";
+import { Users, Settings, BarChart3, Banknote, Wallet, FileBarChart, UserCog, ScrollText, ShieldCheck, Inbox, CalendarClock, Megaphone, Boxes, CreditCard, ReceiptText, AlertTriangle, MapPin, Wrench, PiggyBank, Scale, DatabaseBackup } from "lucide-react";
 import CollectionTodayPanel from "../../components/CollectionTodayPanel";
 import MembersPanel from "../water/panels/MembersPanel";
 import MeterMapPanel from "../water/panels/MeterMapPanel";
 import DangerZonePanel from "./DangerZonePanel";
 import MaintenancePanel from "./MaintenancePanel";
+import BackupsPanel from "./BackupsPanel";
 import SavingsSettingsPanel from "./SavingsSettingsPanel";
 import AdjustmentsPanel from "../../components/AdjustmentsPanel";
 import DevFeedbackPanel from "./DevFeedbackPanel";
@@ -126,6 +127,7 @@ const adminNavItems = [
   { key: "dev-feedback", label: "Dev Feedback", icon: Inbox, desc: "Messages from the public 'Message the Developer' form" },
   { key: "savings-settings", label: "Savings Policy", icon: PiggyBank, desc: "Interest, minimum balance, opening fee for voluntary savings" },
   { key: "maintenance", label: "Maintenance", icon: Wrench, desc: "One-shot data fixes (e.g. regen amortization on imported loans)" },
+  { key: "backups", label: "Backups", icon: DatabaseBackup, desc: "Daily off-site database snapshots — download or run on demand" },
   ...(IS_STAGING_ENV
     ? [{ key: "danger", label: "Danger Zone", icon: AlertTriangle, desc: "STAGING ONLY — reset operational data" }]
     : []),
@@ -462,6 +464,7 @@ export default function AdminDashboard() {
         {activeTab === "dev-feedback" && <DevFeedbackPanel />}
         {activeTab === "savings-settings" && <SavingsSettingsPanel />}
         {activeTab === "maintenance" && <MaintenancePanel />}
+        {activeTab === "backups" && <BackupsPanel />}
         {activeTab === "danger" && IS_STAGING_ENV && <DangerZonePanel />}
       </div>
 
