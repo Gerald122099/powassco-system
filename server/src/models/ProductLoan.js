@@ -27,6 +27,7 @@ const ProductLoanCatalogSchema = new mongoose.Schema(
     capital: { type: Number, default: 0, min: 0 },
     profit: { type: Number, default: 0 },
     stock: { type: Number, default: 0, min: 0 },         // optional inventory
+    onHold: { type: Number, default: 0, min: 0 },        // qty reserved (not yet paid) — held off available
     description: { type: String, default: "" },
     imageBase64: { type: String, default: "" },          // small thumbnail (≤ 200KB)
     minCbuRequired: { type: Number, default: 0 },        // bookkeeper eligibility rule
