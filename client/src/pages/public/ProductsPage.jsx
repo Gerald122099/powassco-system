@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import Navbar from "../../components/Navbar";
 import Modal from "../../components/Modal";
 import { apiFetch } from "../../lib/api";
-import { Store, MapPin, Search, PackageOpen, Loader2, Tag, Boxes, ShoppingCart, Plus, Minus, Trash2, CheckCircle2, X, Megaphone } from "lucide-react";
+import { Store, MapPin, Search, PackageOpen, Loader2, Tag, Boxes, ShoppingCart, Plus, Minus, Trash2, CheckCircle2, X, Megaphone, ClipboardList } from "lucide-react";
 
 const peso = (n) => "₱" + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -43,6 +43,7 @@ export default function ProductsPage() {
   const [q, setQ] = useState("");
   const [cart, setCart] = useState({}); // productId -> qty
   const [cartOpen, setCartOpen] = useState(false);
+  const [trackOpen, setTrackOpen] = useState(false);
   const [announcement, setAnnouncement] = useState("");
 
   // No synchronous setState — all updates happen in the async callbacks, so
@@ -104,6 +105,9 @@ export default function ProductsPage() {
               <Store className="text-emerald-600" size={28} /> POWASSCO Store
             </h1>
             <p className="mt-2 text-sm text-slate-500">Browse what's available and reserve for pickup. Prices and stocks are updated by the office.</p>
+            <button onClick={() => setTrackOpen(true)} className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+              <ClipboardList size={14} /> Track my reservation
+            </button>
           </div>
 
           {announcement && (
@@ -173,7 +177,71 @@ export default function ProductsPage() {
         onSet={setQty}
         onReserved={() => { setCart({}); setCartOpen(false); load(); }}
       />
+
+      <TrackModal open={trackOpen} onClose={() => setTrackOpen(false)} />
     </>
+  );
+}
+
+const TRACK_STATUS = {
+  reserved: { label: "Pending office approval", cls: "bg-amber-100 text-amber-700" },
+  approved: { label: "Approved — pay at the cashier", cls: "bg-blue-100 text-blue-700" },
+  paid: { label: "Paid — ready for pickup", cls: "bg-emerald-100 text-emerald-700" },
+  picked_up: { label: "Picked up — thank you!", cls: "bg-slate-200 text-slate-600" },
+  cancelled: { label: "Cancelled", cls: "bg-slate-100 text-slate-500" },
+  expired: { label: "Expired (unclaimed)", cls: "bg-red-100 text-red-600" },
+  no_show: { label: "Expired (unclaimed)", cls: "bg-red-100 text-red-600" },
+};
+
+function TrackModal({ open, onClose }) {
+  const [q, setQ] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [res, setRes] = useState(null);
+  const [err, setErr] = useState("");
+
+  async function lookup(e) {
+    e?.preventDefault?.();
+    if (!q.trim()) return;
+    setBusy(true); setErr(""); setRes(null);
+    try {
+      const r = await apiFetch(`/public/products/track?q=${encodeURIComponent(q.trim())}`);
+      setRes(r.items || []);
+    } catch (e2) { setErr(e2.message || "Lookup failed."); } finally { setBusy(false); }
+  }
+
+  return (
+    <Modal open={open} title="Track my reservation" onClose={() => { setRes(null); setQ(""); setErr(""); onClose(); }} size="md">
+      <form onSubmit={lookup} className="flex gap-2">
+        <input value={q} onChange={(e) => setQ(e.target.value.toUpperCase())} placeholder="Reservation code (R-XXXXXX) or account number" className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-mono uppercase focus:border-emerald-400 focus:outline-none" />
+        <button disabled={busy} className="shrink-0 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50">{busy ? "…" : "Check"}</button>
+      </form>
+      {err && <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{err}</div>}
+      {res && res.length === 0 && <div className="mt-4 text-center text-sm text-slate-500">No reservation found for that code/account.</div>}
+      {res && res.length > 0 && (
+        <div className="mt-4 space-y-3">
+          {res.map((r) => {
+            const st = TRACK_STATUS[r.status] || TRACK_STATUS.reserved;
+            return (
+              <div key={r.code} className="rounded-2xl border border-slate-200 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-mono text-sm font-bold text-slate-900">{r.code}</span>
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${st.cls}`}>{st.label}</span>
+                </div>
+                <ul className="mt-2 space-y-0.5 text-sm text-slate-700">
+                  {r.items.map((it, i) => (
+                    <li key={i} className="flex justify-between"><span><span className="text-slate-400">{it.quantity}×</span> {it.name}</span><span className="font-semibold">{peso(it.lineTotal)}</span></li>
+                  ))}
+                </ul>
+                <div className="mt-2 flex items-center justify-between border-t border-slate-100 pt-2 text-sm">
+                  <span className="text-slate-500">{r.paymentMethod === "savings" ? "Pay via savings" : "Pay at cashier"}{r.orNo ? ` • OR ${r.orNo}` : ""}</span>
+                  <span className="font-extrabold text-emerald-700">{peso(r.total)}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Modal>
   );
 }
 

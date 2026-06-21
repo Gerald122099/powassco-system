@@ -46,6 +46,23 @@ router.get("/", async (req, res) => {
   }
 });
 
+// Member self-service: track reservation(s) by code (R-XXXXXX) or account #.
+router.get("/track", async (req, res) => {
+  try {
+    const q = String(req.query.q || "").trim().toUpperCase();
+    if (!q) return res.status(400).json({ message: "Enter your reservation code or account number." });
+    const sel = "code status total paymentMethod pickupDate items createdAt holdExpiresAt accountName orNo";
+    let items;
+    if (/^R-/.test(q)) {
+      const one = await ProductReservation.findOne({ code: q }).select(sel).lean();
+      items = one ? [one] : [];
+    } else {
+      items = await ProductReservation.find({ pnNo: q }).select(sel).sort({ createdAt: -1 }).limit(10).lean();
+    }
+    res.json({ items });
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
 // Per-product image (decoded from the stored data URL). Cached by the
 // browser so each thumbnail loads once. 404 when there's no image.
 router.get("/:id/image", async (req, res) => {
