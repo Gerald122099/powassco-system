@@ -16,6 +16,10 @@
 
 import { saveAs } from "file-saver";
 import logoUrl from "../assets/logo.png";
+// Subset Noto Sans (SIL OFL) with Latin + currency incl. ₱ (U+20B1). jsPDF's
+// built-in fonts are Latin-1 only and can't draw ₱; embedding this lets the
+// PDF print the real peso sign. ~20 KB, fetched + cached on first export.
+import reportFontUrl from "../assets/fonts/NotoSans-Report.ttf";
 
 // jsPDF + autotable + exceljs are heavy (~1 MB combined) and only needed
 // when the user actually exports, so they're lazy-loaded on demand —
@@ -31,15 +35,29 @@ const peso = (n) =>
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "2-digit" }) : "—");
 const fmtDateTime = (d) => (d ? new Date(d).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" }) : "—");
 
-// jsPDF's built-in fonts are Latin-1 only — the ₱ glyph (U+20B1) renders as a
-// blank box, making amounts look broken. Convert any text destined for the
-// PDF to a safe form: ₱ → "PHP ", plus a few other non-Latin-1 chars used in
-// our labels (so the digits always print cleanly). Excel keeps the real ₱.
-const pdfSafe = (s) => String(s ?? "")
-  .replace(/₱/g, "PHP ")   // ₱
-  .replace(/–|—/g, "-") // – —
-  .replace(/•/g, "*")        // •
-  .replace(/₦/g, "N");       // ₦ (just in case)
+// FALLBACK only: if the embedded Unicode font fails to load, the built-in
+// Latin-1 font can't draw ₱ (renders as a box), so swap it for "PHP ". When
+// the font loads (normal case) the real ₱ is used.
+const pdfSafe = (s) => String(s ?? "").replace(/₱/g, "PHP ");
+
+// Load the report font once, as base64, for jsPDF embedding. Cached across
+// exports; resolves to null if it can't be fetched (→ Helvetica fallback).
+let _fontB64Promise = null;
+function getReportFontB64() {
+  if (!_fontB64Promise) {
+    _fontB64Promise = fetch(reportFontUrl)
+      .then((r) => r.arrayBuffer())
+      .then((buf) => {
+        const bytes = new Uint8Array(buf);
+        let bin = "";
+        const CH = 0x8000;
+        for (let i = 0; i < bytes.length; i += CH) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+        return btoa(bin);
+      })
+      .catch(() => null);
+  }
+  return _fontB64Promise;
+}
 
 const ORG = "POWASSCO MULTIPURPOSE COOPERATIVE";
 const ADDR = "Owak, Asturias, Cebu • C.D.A Reg. No. 9520-07014753";
@@ -91,6 +109,22 @@ export async function exportPdf({
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
 
+  // Embed the Unicode font so amounts print the REAL ₱. If it can't be
+  // loaded, fall back to Helvetica + "PHP " text (still readable).
+  let uniFont = null; // "NotoSans" when embedded
+  try {
+    const b64 = await getReportFontB64();
+    if (b64) {
+      doc.addFileToVFS("NotoSans-Report.ttf", b64);
+      doc.addFont("NotoSans-Report.ttf", "NotoSans", "normal");
+      uniFont = "NotoSans";
+    }
+  } catch { /* keep Helvetica fallback */ }
+  const bodyFont = uniFont || "helvetica";
+  // Text helper: pass through the real ₱ when the font is embedded, else
+  // swap ₱→"PHP " so Helvetica doesn't print a blank box.
+  const tx = (s) => (uniFont ? String(s ?? "") : pdfSafe(s));
+
   // Letterhead (page 1)
   const logo = await getLogoDataUrl();
   if (logo) { try { doc.addImage(logo, "PNG", 14, 9, 17, 17); } catch { /* skip logo */ } }
@@ -124,17 +158,18 @@ export async function exportPdf({
   doc.text(pdfSafe(periodLabel), pageW / 2, hy, { align: "center" }); hy += 4.5;
   doc.text(pdfSafe(`${rows.length} row(s) - Generated ${new Date().toLocaleString()}`), pageW / 2, hy, { align: "center" });
 
-  // Table
-  const head = [columns.map((c) => pdfSafe(c.header))];
-  const body = rows.map((r) => columns.map((c) => pdfSafe(cellValue(c, r))));
+  // Table — body uses the embedded Unicode font (real ₱); the header row
+  // stays Helvetica-bold (ASCII headers) for a crisp bold look.
+  const head = [columns.map((c) => tx(c.header))];
+  const body = rows.map((r) => columns.map((c) => tx(cellValue(c, r))));
 
   autoTable(doc, {
     startY: hy + 5,
     head,
     body,
     theme: "grid",
-    styles: { fontSize: 8, cellPadding: 1.6, lineColor: [226, 232, 240], lineWidth: 0.1, textColor: INK },
-    headStyles: { fillColor: GREEN, textColor: 255, fontStyle: "bold", halign: "center", lineWidth: 0 },
+    styles: { font: bodyFont, fontSize: 8, cellPadding: 1.6, lineColor: [226, 232, 240], lineWidth: 0.1, textColor: INK },
+    headStyles: { font: "helvetica", fillColor: GREEN, textColor: 255, fontStyle: "bold", halign: "center", lineWidth: 0 },
     alternateRowStyles: { fillColor: ZEBRA },
     columnStyles: columns.reduce((acc, c, i) => {
       if (c.align === "right") acc[i] = { halign: "right" };
@@ -165,11 +200,15 @@ export async function exportPdf({
     doc.setTextColor(...INK);
     totals.forEach((t, i) => {
       const emphasize = i === totals.length - 1;
+      // Label: Helvetica (bold for the emphasized last line). Value: the
+      // embedded Unicode font so the ₱ amount renders correctly.
       doc.setFont("helvetica", emphasize ? "bold" : "normal");
       doc.text(pdfSafe(t.label), boxX + 3, ty);
-      doc.text(pdfSafe(t.value), boxX + boxW - 3, ty, { align: "right" });
+      doc.setFont(bodyFont, "normal");
+      doc.text(tx(t.value), boxX + boxW - 3, ty, { align: "right" });
       ty += lineH;
     });
+    doc.setFont("helvetica", "normal");
     cursorY += boxH + 8;
   }
 
