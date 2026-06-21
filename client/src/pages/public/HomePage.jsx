@@ -147,10 +147,17 @@ function HomeAnnouncements() {
 }
 
 export default function HomePage() {
-  // Day/night hero — sun shows the daytime photo (default), moon swaps to the
-  // same angle lit up at dusk. Remembered across visits.
+  // Day/night hero — auto-picks by the visitor's local time (night 6pm–6am)
+  // unless they've manually overridden it with the sun/moon button (which is
+  // remembered across visits).
   const [night, setNight] = useState(() => {
-    try { return localStorage.getItem("pow_hero_night") === "1"; } catch { return false; }
+    try {
+      const saved = localStorage.getItem("pow_hero_night");
+      if (saved === "1") return true;
+      if (saved === "0") return false;
+    } catch { /* ignore */ }
+    const h = new Date().getHours();
+    return h >= 18 || h < 6; // auto: night after 6pm, before 6am
   });
   function toggleNight() {
     setNight((n) => {
