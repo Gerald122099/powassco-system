@@ -57,6 +57,7 @@ import { auditLogger } from "./middleware/auditLogger.js";
 import { ensureBootstrapAdmin } from "./utils/ensureAdmin.js";
 import { startSavingsInterestJob } from "./jobs/savingsInterest.js";
 import { startBillReminderJob } from "./jobs/billReminders.js";
+import { startReservationExpiryJob } from "./jobs/reservationExpiry.js";
 import { initRealtime, startChangeStream } from "./realtime.js";
 
 dotenv.config();
@@ -253,6 +254,8 @@ async function connectDB() {
     // Hourly tick that runs the water-bill reminder pass once a day at
     // the configured local hour. Idempotent per (bill, day) via ReminderLog.
     startBillReminderJob();
+    // Release unclaimed store reservations (free held stock, mark no-show).
+    startReservationExpiryJob();
     // Real-time: watch the DB for changes and ping subscribed clients.
     startChangeStream(mongoose.connection);
   } catch (err) {

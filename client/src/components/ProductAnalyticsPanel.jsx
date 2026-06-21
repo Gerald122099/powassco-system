@@ -6,7 +6,9 @@ import Card from "./Card";
 import { apiFetch } from "../lib/api";
 import { useRealtime } from "../lib/realtime";
 import { useAuth } from "../context/AuthContext";
-import { Package, RefreshCw } from "lucide-react";
+import { exportPdf, exportExcel } from "../lib/reportExport";
+import { toast } from "./Toast";
+import { Package, RefreshCw, FileDown, FileSpreadsheet } from "lucide-react";
 
 const peso = (n) =>
   "₱" + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -28,7 +30,7 @@ function Tile({ label, value, tone }) {
 }
 
 export default function ProductAnalyticsPanel() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const [data, setData] = useState(null);
   const [busy, setBusy] = useState(false);
 
@@ -42,6 +44,68 @@ export default function ProductAnalyticsPanel() {
 
   const o = data?.overall || {};
   const inv = data?.inventory || {};
+  const money = (v) => peso(v);
+  const preparedBy = user?.fullName || user?.employeeId || "";
+
+  // Sold / sales / loan / capital / profit per product.
+  const salesReport = () => ({
+    title: "Product Sales & Profit Report",
+    subtitle: "Sold (sale vs loan), capital, profit, paid vs unpaid",
+    preparedBy,
+    columns: [
+      { header: "Product", key: "product" },
+      { header: "Txns", key: "count", align: "right" },
+      { header: "Capital", key: "capital", align: "right", format: money },
+      { header: "Profit", key: "profit", align: "right", format: money },
+      { header: "Sold as Sale", key: "soldAsSale", align: "right", format: money },
+      { header: "Sold as Loan", key: "soldAsLoan", align: "right", format: money },
+      { header: "Paid", key: "paid", align: "right", format: money },
+      { header: "Unpaid", key: "unpaid", align: "right", format: money },
+    ],
+    rows: data?.products || [],
+    totals: [
+      { label: "Capital of goods sold/loaned", value: peso(o.capital) },
+      { label: "Sold as SALE", value: peso(o.soldAsSale) },
+      { label: "Sold as LOAN", value: peso(o.soldAsLoan) },
+      { label: "Collected (paid)", value: peso(o.paid) },
+      { label: "Outstanding (unpaid)", value: peso(o.unpaid) },
+      { label: "TOTAL PROFIT", value: peso(o.profit) },
+    ],
+  });
+
+  // Stock on hand + capital/value tied up.
+  const stocksReport = () => ({
+    title: "Product Stock Inventory",
+    subtitle: "Units on hand, capital tied up, retail value, potential profit",
+    preparedBy,
+    columns: [
+      { header: "Product", key: "name" },
+      { header: "Category", key: "category" },
+      { header: "Stock", key: "stock", align: "right" },
+      { header: "Unit Capital", key: "unitCapital", align: "right", format: money },
+      { header: "Unit Price", key: "unitPrice", align: "right", format: money },
+      { header: "Capital in Stock", key: "capitalUnsold", align: "right", format: money },
+      { header: "Retail Value", key: "retailUnsold", align: "right", format: money },
+      { header: "Potential Profit", key: "profitPotential", align: "right", format: money },
+    ],
+    rows: inv?.items || [],
+    totals: [
+      { label: "Stock units on hand", value: String(inv.stockUnits ?? 0) },
+      { label: "Capital tied in stock", value: peso(inv.capitalUnsold) },
+      { label: "Retail value unsold", value: peso(inv.retailUnsold) },
+      { label: "Potential profit if sold", value: peso(inv.profitPotential) },
+    ],
+  });
+
+  async function doExport(kind, fmt) {
+    if (!data) return toast.error("Still loading…");
+    const r = kind === "stocks" ? stocksReport() : salesReport();
+    const base = kind === "stocks" ? "Product_Stock_Inventory" : "Product_Sales_Profit";
+    try {
+      if (fmt === "excel") await exportExcel({ ...r, filename: `${base}.xlsx` });
+      else await exportPdf({ ...r, filename: `${base}.pdf` });
+    } catch (e) { toast.error("Export failed: " + e.message); }
+  }
   return (
     <Card>
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -53,9 +117,21 @@ export default function ProductAnalyticsPanel() {
             Capital vs profit per product, sale vs loan revenue, paid vs unpaid balances.
           </div>
         </div>
-        <button onClick={load} disabled={busy} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold hover:bg-slate-50">
-          <RefreshCw size={14} className={busy ? "animate-spin" : ""} />
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1 rounded-xl border border-slate-200 p-1">
+            <span className="px-2 text-[11px] font-bold uppercase text-slate-400">Sales</span>
+            <button onClick={() => doExport("sales", "pdf")} className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50"><FileDown size={13} /> PDF</button>
+            <button onClick={() => doExport("sales", "excel")} className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50"><FileSpreadsheet size={13} /> Excel</button>
+          </div>
+          <div className="flex items-center gap-1 rounded-xl border border-slate-200 p-1">
+            <span className="px-2 text-[11px] font-bold uppercase text-slate-400">Stocks</span>
+            <button onClick={() => doExport("stocks", "pdf")} className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50"><FileDown size={13} /> PDF</button>
+            <button onClick={() => doExport("stocks", "excel")} className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50"><FileSpreadsheet size={13} /> Excel</button>
+          </div>
+          <button onClick={load} disabled={busy} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold hover:bg-slate-50">
+            <RefreshCw size={14} className={busy ? "animate-spin" : ""} />
+          </button>
+        </div>
       </div>
 
       <div className="mt-3 text-xs font-bold uppercase tracking-wide text-slate-500">Sold / loaned out (capital of goods released)</div>
