@@ -76,6 +76,11 @@ export default function ProductReservationsPanel() {
       const or = window.prompt(`OR number for ${r.code} — ${peso(r.total)}${r.paymentMethod === "savings" ? " (deduct from SAVINGS)" : ""}:`, "");
       if (or === null || !or.trim()) return;
       body = { orNo: or.trim() };
+      if (r.paymentMethod === "savings") {
+        const pin = window.prompt(`Member's 4-digit SAVINGS PIN to authorize the ${peso(r.total)} debit (leave blank if none set):`, "");
+        if (pin === null) return; // cancelled
+        body.savingsPin = pin.trim();
+      }
     }
     if (action === "cancel" && !window.confirm(`Cancel ${r.code}? This releases the held stock.`)) return;
     setBusyId(r._id);

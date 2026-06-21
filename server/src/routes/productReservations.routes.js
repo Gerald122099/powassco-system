@@ -4,6 +4,7 @@
 // collect. Paying deducts stock, logs a product sale, and — for pay-with-
 // savings — debits the SavingsAccount + writes a SavingsTransaction.
 import express from "express";
+import bcrypt from "bcryptjs";
 import ProductReservation from "../models/ProductReservation.js";
 import { ProductLoanCatalog, ProductLoanApplication } from "../models/ProductLoan.js";
 import SavingsAccount from "../models/SavingsAccount.js";
@@ -102,6 +103,14 @@ router.post("/:id/pay", pay, async (req, res) => {
       const account = await SavingsAccount.findOne({ pnNo: r.pnNo });
       if (!account || account.status === "closed") return res.status(400).json({ message: "No active savings account for this member." });
       if (Number(account.balance) < r.total) return res.status(400).json({ message: `Insufficient savings (₱${account.balance.toLocaleString()} on file).` });
+      // Member authorization: when the account has a savings PIN, the member
+      // must provide it to authorize the debit (verified here).
+      if (account.pinHash) {
+        const pin = String(req.body?.savingsPin || "").trim();
+        if (!pin) return res.status(400).json({ needPin: true, message: "Enter the member's savings PIN to authorize this savings debit." });
+        const okPin = await bcrypt.compare(pin, account.pinHash);
+        if (!okPin) return res.status(403).json({ needPin: true, message: "Incorrect savings PIN." });
+      }
       const updated = await SavingsAccount.findOneAndUpdate(
         { _id: account._id, balance: { $gte: r.total } },
         { $inc: { balance: -r.total } },

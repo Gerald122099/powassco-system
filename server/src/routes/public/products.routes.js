@@ -11,6 +11,8 @@ const router = express.Router();
 const NO_SHOW_LIMIT = 2;        // 2 no-shows...
 const BAN_MONTHS = 3;           // ...blocks reservations for 3 months.
 const HOLD_DAYS = 2;            // reservation hold window.
+const MAX_ACTIVE = 2;           // max open (unclaimed) reservations per account.
+const MAX_QTY = 50;             // max units per line item.
 
 // How many no-shows the member has inside the ban window, and whether blocked.
 async function noShowStatus(pnNo) {
@@ -80,6 +82,11 @@ router.post("/reserve", async (req, res) => {
     if (ns.blocked) {
       return res.status(403).json({ message: "Reservations are temporarily unavailable for this account (2 unclaimed reservations). Please try again after the 3-month period or visit the office." });
     }
+    // Cap concurrent open reservations so one account can't tie up stock.
+    const activeCount = await ProductReservation.countDocuments({ pnNo, status: { $in: ["reserved", "approved"] } });
+    if (activeCount >= MAX_ACTIVE) {
+      return res.status(429).json({ message: `You already have ${activeCount} open reservation(s). Please claim or cancel them before reserving again.` });
+    }
 
     // Validate pickup date: a real date, not in the past, not a Sunday, within 4 days.
     let pickupDate = null;
@@ -106,6 +113,7 @@ router.post("/reserve", async (req, res) => {
       const qty = Math.floor(Number(ri.quantity) || 0);
       if (!p) return res.status(400).json({ message: "One of the items is no longer available." });
       if (qty < 1) return res.status(400).json({ message: `Invalid quantity for ${p.name}.` });
+      if (qty > MAX_QTY) return res.status(400).json({ message: `Max ${MAX_QTY} per item — for larger orders, please visit the office.` });
       const avail = (Number(p.stock) || 0) - (Number(p.onHold) || 0);
       if (qty > avail) return res.status(409).json({ message: `Only ${Math.max(0, avail)} left of "${p.name}".` });
       items.push({ productId: p._id, name: p.name, category: p.category, unitPrice: p.unitPrice, quantity: qty, lineTotal: p.unitPrice * qty });
