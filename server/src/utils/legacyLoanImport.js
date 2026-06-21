@@ -302,8 +302,8 @@ const LOAN_NAME_ALIAS = {
   "Torion, Diejepete": "Torion, Diejpete",
   "Gabor, Angilie": "Gabor, Angelie",
   "Moncano, Junnel": "Moncano, Junel",
-  "Casas, Mercedita": "Casas, Mercidetha",
-  "Canada, Melanie": "Cañada, Melanie",
+  "Casas, Mercedita": "Casas, Mercideta",
+  "Canada, Melanie": "Cañada, Melane",
   "Del Rosario, Griselda": "Del Rosario, Greselda",
   "Songkip, April Christie": "Songkip, April Christine",
   "Tugahan, Shirley": "Tugahan, Sherlita",
@@ -321,6 +321,11 @@ const LOAN_NAME_ALIAS = {
   "Azarcon, Elizabeth": "Asarcon, Elizabeth",
   "Asupra, Michelle": "Asupra, Mischelle",
   "Canada, Anecito Jr": "Cañada, Anecito Jr.",
+  // Water name is the correct one → alias the loan typo to it (no rename).
+  "Sonedo, Jonnel": "Sonedo, Junnel",
+  // Loan name is correct → alias the loan name to the CURRENT water typo so
+  // the import matches before the WATER_NAME_FIXES rename is applied.
+  "Escalon, Fritzie": "Escalon, Fretzie",
 };
 
 // Water members to RENAME (typo on the WATER side; the loan-register name is
@@ -332,7 +337,9 @@ export const WATER_NAME_FIXES = [
   { from: "Maglasang Jr., Edilberto", to: "Maglasang, Edilbert Jr." },
   { from: "Torion, Diejpete", to: "Torion, Diejepete" },
   { from: "Moncano, Junel", to: "Moncano, Junnel" },
-  { from: "Casas, Mercidetha", to: "Casas, Mercedita" },
+  { from: "Casas, Mercideta", to: "Casas, Mercedita" },
+  { from: "Cañada, Melane", to: "Canada, Melanie" },
+  { from: "Escalon, Fretzie", to: "Escalon, Fritzie" },
   { from: "Del Rosario, Greselda", to: "Del Rosario, Griselda" },
   { from: "Tugahan, Sherlita", to: "Tugahan, Shirley" },
   { from: "Toong, Margeline", to: "Toong, Merceline" },
