@@ -1,7 +1,21 @@
 import { useState } from "react";
 import Navbar from "../../components/Navbar";
 import { apiFetch } from "../../lib/api";
-import { Droplet, PlugZap, CheckCircle2 } from "lucide-react";
+import { Droplet, PlugZap, CheckCircle2, MessageSquare } from "lucide-react";
+
+// Concern categories shown in the Concern / Feedback form (Reconnection is
+// included here too, per request). Stored verbatim as the concern type.
+const CONCERN_TYPES = [
+  "Billing concern",
+  "No water / low pressure",
+  "Water quality",
+  "Leak / pipe damage",
+  "Reconnection",
+  "Meter problem",
+  "Staff / service feedback",
+  "Suggestion",
+  "Other",
+];
 
 const inputCls =
   "mt-1 w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300 focus:border-emerald-400";
@@ -25,6 +39,7 @@ const EMPTY = {
   installationType: "residential",
   accountNumber: "",
   meterNumber: "",
+  concernType: CONCERN_TYPES[0],
   message: "",
 };
 
@@ -40,27 +55,40 @@ export default function ContactPage() {
   async function submit(e) {
     e.preventDefault();
     setErr("");
+    if (!form.fullName.trim() || !form.phone.trim()) { setErr("Name and contact number are required."); return; }
+    if (tab === "concern" && !form.message.trim()) { setErr("Please describe your concern or feedback."); return; }
     setBusy(true);
     try {
-      const body =
-        tab === "new_connection"
-          ? {
-              type: "new_connection",
-              fullName: form.fullName,
-              phone: form.phone,
-              email: form.email,
-              address: form.address,
-              installationType: form.installationType,
-              message: form.message,
-            }
-          : {
-              type: "reconnection",
-              fullName: form.fullName,
-              phone: form.phone,
-              accountNumber: form.accountNumber,
-              meterNumber: form.meterNumber,
-              message: form.message,
-            };
+      let body;
+      if (tab === "new_connection") {
+        body = {
+          type: "new_connection",
+          fullName: form.fullName,
+          phone: form.phone,
+          email: form.email,
+          address: form.address,
+          installationType: form.installationType,
+          message: form.message,
+        };
+      } else if (tab === "reconnection") {
+        body = {
+          type: "reconnection",
+          fullName: form.fullName,
+          phone: form.phone,
+          accountNumber: form.accountNumber,
+          meterNumber: form.meterNumber,
+          message: form.message,
+        };
+      } else {
+        body = {
+          type: "concern",
+          fullName: form.fullName,
+          phone: form.phone,
+          concernType: form.concernType,
+          accountNumber: form.accountNumber, // optional
+          message: form.message,
+        };
+      }
       const res = await apiFetch("/public/requests", { method: "POST", body });
       setDone(res.message || "Request submitted. We'll contact you.");
       setForm(EMPTY);
@@ -79,7 +107,7 @@ export default function ContactPage() {
           <div className="text-center">
             <h1 className="text-2xl font-extrabold text-slate-900 sm:text-3xl">Contact Us</h1>
             <p className="mt-2 text-sm text-slate-500">
-              Apply for a new water connection or request a reconnection. We'll call the number you provide.
+              Apply for a new connection, request a reconnection, or send a concern / feedback. We'll call the number you provide.
             </p>
           </div>
 
@@ -98,10 +126,10 @@ export default function ContactPage() {
           ) : (
             <div className="mt-8 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
               {/* Tabs */}
-              <div className="mb-6 grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1">
+              <div className="mb-6 grid grid-cols-3 gap-2 rounded-2xl bg-slate-100 p-1">
                 <button
                   onClick={() => { setTab("new_connection"); setErr(""); }}
-                  className={`inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold transition ${
+                  className={`inline-flex items-center justify-center gap-1.5 rounded-xl px-2 py-2.5 text-xs font-semibold transition sm:text-sm ${
                     tab === "new_connection" ? "bg-white text-emerald-700 shadow-sm" : "text-slate-500"
                   }`}
                 >
@@ -109,11 +137,19 @@ export default function ContactPage() {
                 </button>
                 <button
                   onClick={() => { setTab("reconnection"); setErr(""); }}
-                  className={`inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold transition ${
+                  className={`inline-flex items-center justify-center gap-1.5 rounded-xl px-2 py-2.5 text-xs font-semibold transition sm:text-sm ${
                     tab === "reconnection" ? "bg-white text-emerald-700 shadow-sm" : "text-slate-500"
                   }`}
                 >
                   <PlugZap size={16} /> Reconnection
+                </button>
+                <button
+                  onClick={() => { setTab("concern"); setErr(""); }}
+                  className={`inline-flex items-center justify-center gap-1.5 rounded-xl px-2 py-2.5 text-xs font-semibold transition sm:text-sm ${
+                    tab === "concern" ? "bg-white text-emerald-700 shadow-sm" : "text-slate-500"
+                  }`}
+                >
+                  <MessageSquare size={16} /> Concern / Feedback
                 </button>
               </div>
 
@@ -144,7 +180,7 @@ export default function ContactPage() {
                       </select>
                     </Field>
                   </>
-                ) : (
+                ) : tab === "reconnection" ? (
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <Field label="Account Number" required>
                       <input className={inputCls} value={form.accountNumber} onChange={(e) => set("accountNumber", e.target.value)} placeholder="e.g. PN123" />
@@ -153,10 +189,21 @@ export default function ContactPage() {
                       <input className={inputCls} value={form.meterNumber} onChange={(e) => set("meterNumber", e.target.value)} placeholder="e.g. MTR456" />
                     </Field>
                   </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <Field label="Type of Concern" required>
+                      <select className={inputCls} value={form.concernType} onChange={(e) => set("concernType", e.target.value)}>
+                        {CONCERN_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </Field>
+                    <Field label="Account Number (optional)">
+                      <input className={inputCls} value={form.accountNumber} onChange={(e) => set("accountNumber", e.target.value)} placeholder="if you have one" />
+                    </Field>
+                  </div>
                 )}
 
-                <Field label="Message / Notes (optional)">
-                  <textarea rows={3} className={inputCls} value={form.message} onChange={(e) => set("message", e.target.value)} placeholder="Anything else we should know?" />
+                <Field label={tab === "concern" ? "Your concern / feedback" : "Message / Notes (optional)"} required={tab === "concern"}>
+                  <textarea rows={3} className={inputCls} value={form.message} onChange={(e) => set("message", e.target.value)} placeholder={tab === "concern" ? "Describe your concern or feedback…" : "Anything else we should know?"} />
                 </Field>
 
                 {err && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{err}</div>}

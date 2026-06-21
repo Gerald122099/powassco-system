@@ -2,10 +2,10 @@ import mongoose from "mongoose";
 
 const ServiceRequestSchema = new mongoose.Schema(
   {
-    type: { type: String, enum: ["new_connection", "reconnection"], required: true, index: true },
+    type: { type: String, enum: ["new_connection", "reconnection", "concern"], required: true, index: true },
     status: { type: String, enum: ["pending", "in_progress", "resolved"], default: "pending", index: true },
 
-    // Contact (required for both)
+    // Contact (required for all)
     fullName: { type: String, required: true, trim: true },
     phone: { type: String, required: true, trim: true },
     email: { type: String, default: "", trim: true },
@@ -14,9 +14,12 @@ const ServiceRequestSchema = new mongoose.Schema(
     address: { type: String, default: "", trim: true },
     installationType: { type: String, default: "", trim: true }, // residential / commercial / etc.
 
-    // Reconnection
+    // Reconnection / concern (account number optional for concerns)
     accountNumber: { type: String, default: "", trim: true },
     meterNumber: { type: String, default: "", trim: true },
+
+    // Concern / feedback: the chosen category (Billing, No water, Reconnection, …)
+    concernType: { type: String, default: "", trim: true },
 
     message: { type: String, default: "", trim: true },
 

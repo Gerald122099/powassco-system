@@ -10,7 +10,7 @@ const norm = (s) => String(s || "").trim().toLowerCase();
 router.post("/", async (req, res) => {
   const b = req.body || {};
   const type = b.type;
-  if (!["new_connection", "reconnection"].includes(type)) {
+  if (!["new_connection", "reconnection", "concern"].includes(type)) {
     return res.status(400).json({ message: "Invalid request type." });
   }
   const fullName = String(b.fullName || "").trim();
@@ -26,7 +26,7 @@ router.post("/", async (req, res) => {
     doc.address = address;
     doc.installationType = String(b.installationType || "").trim();
     basis = `nc|${norm(phone)}|${norm(address)}`;
-  } else {
+  } else if (type === "reconnection") {
     const accountNumber = String(b.accountNumber || "").trim();
     const meterNumber = String(b.meterNumber || "").trim();
     if (!accountNumber || !meterNumber) {
@@ -35,6 +35,13 @@ router.post("/", async (req, res) => {
     doc.accountNumber = accountNumber.toUpperCase();
     doc.meterNumber = meterNumber.toUpperCase();
     basis = `rc|${norm(accountNumber)}|${norm(meterNumber)}|${norm(phone)}`;
+  } else { // concern / feedback
+    const concernType = String(b.concernType || "").trim();
+    if (!concernType) return res.status(400).json({ message: "Please choose the type of concern." });
+    if (!doc.message) return res.status(400).json({ message: "Please describe your concern or feedback." });
+    doc.concernType = concernType;
+    doc.accountNumber = String(b.accountNumber || "").trim().toUpperCase(); // optional
+    basis = `cn|${norm(phone)}|${norm(concernType)}|${norm(doc.message)}`;
   }
 
   doc.dedupeKey = crypto.createHash("sha256").update(basis).digest("hex");

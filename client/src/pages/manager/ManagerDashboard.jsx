@@ -46,7 +46,7 @@ const items = [
   { key: "expenses", label: "Expenses", icon: Wallet, desc: "File disbursement requests — cashier pays them out" },
   { key: "employees", label: "Employees", icon: UserCog, desc: "Register staff, profiles, positions, and salary rates" },
   { key: "reports", label: "Reports", icon: FileBarChart, desc: "Financial reports across expenses and loans" },
-  { key: "requests", label: "Requests", icon: Inbox, desc: "New connection & reconnection requests from the public" },
+  { key: "requests", label: "Requests", icon: Inbox, desc: "New connection, reconnection & concern/feedback messages from the public" },
   { key: "meetings", label: "Calendar & Events", icon: CalendarClock, desc: "Schedule meetings & events shown on staff dashboards" },
   { key: "assets", label: "Inventory", icon: Boxes, desc: "Equipment & device inventory with 6-month audits" },
   { key: "metermap", label: "Meter Map", icon: MapPin, desc: "Map of every meter pinned by field plumbers" },

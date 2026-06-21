@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import Card from "../../components/Card";
 import { apiFetch } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
-import { RefreshCw, Phone, MapPin, CheckCircle2, Clock, Trash2, Droplet, PlugZap } from "lucide-react";
+import { RefreshCw, Phone, MapPin, CheckCircle2, Clock, Trash2, Droplet, PlugZap, MessageSquare } from "lucide-react";
 
 function when(d) {
   return d ? new Date(d).toLocaleString() : "—";
@@ -11,6 +11,11 @@ const STATUS_TONE = {
   pending: "bg-amber-100 text-amber-700",
   in_progress: "bg-blue-100 text-blue-700",
   resolved: "bg-emerald-100 text-emerald-700",
+};
+const TYPE_META = {
+  new_connection: { label: "New Connection", cls: "bg-emerald-50 text-emerald-700", Icon: Droplet },
+  reconnection: { label: "Reconnection", cls: "bg-blue-50 text-blue-700", Icon: PlugZap },
+  concern: { label: "Concern / Feedback", cls: "bg-violet-50 text-violet-700", Icon: MessageSquare },
 };
 
 export default function RequestsPanel() {
@@ -70,7 +75,7 @@ export default function RequestsPanel() {
           <div className="text-lg font-bold tracking-tight text-slate-900">
             Service Requests {pendingCount > 0 && <span className="ml-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700">{pendingCount} pending</span>}
           </div>
-          <div className="mt-0.5 text-sm text-slate-500">New connection & reconnection requests from the public Contact page.</div>
+          <div className="mt-0.5 text-sm text-slate-500">New connection, reconnection & concern/feedback messages from the public Contact page.</div>
         </div>
         <button onClick={load} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold hover:bg-slate-50">
           <RefreshCw size={16} className={loading ? "animate-spin" : ""} /> Reload
@@ -85,6 +90,7 @@ export default function RequestsPanel() {
           <option value="">All types</option>
           <option value="new_connection">New Connection</option>
           <option value="reconnection">Reconnection</option>
+          <option value="concern">Concern / Feedback</option>
         </select>
         <select value={status} onChange={(e) => setStatus(e.target.value)} className="rounded-xl border border-slate-200 px-3 py-2 text-sm">
           <option value="">All status</option>
@@ -105,10 +111,14 @@ export default function RequestsPanel() {
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${r.type === "new_connection" ? "bg-emerald-50 text-emerald-700" : "bg-blue-50 text-blue-700"}`}>
-                      {r.type === "new_connection" ? <Droplet size={12} /> : <PlugZap size={12} />}
-                      {r.type === "new_connection" ? "New Connection" : "Reconnection"}
-                    </span>
+                    {(() => { const meta = TYPE_META[r.type] || TYPE_META.concern; const Icon = meta.Icon; return (
+                      <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${meta.cls}`}>
+                        <Icon size={12} /> {meta.label}
+                      </span>
+                    ); })()}
+                    {r.type === "concern" && r.concernType && (
+                      <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-bold text-violet-700">{r.concernType}</span>
+                    )}
                     <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${STATUS_TONE[r.status]}`}>{r.status.replace("_", " ")}</span>
                   </div>
                   <div className="mt-1.5 font-bold text-slate-900">{r.fullName}</div>
@@ -116,6 +126,7 @@ export default function RequestsPanel() {
                     <span className="inline-flex items-center gap-1"><Phone size={13} /> {r.phone}</span>
                     {r.email && <span>{r.email}</span>}
                     {r.type === "reconnection" && <span className="font-mono text-xs">{r.accountNumber} • {r.meterNumber}</span>}
+                    {r.type === "concern" && r.accountNumber && <span className="font-mono text-xs">Acct {r.accountNumber}</span>}
                   </div>
                   {r.type === "new_connection" && r.address && (
                     <div className="mt-1 flex items-start gap-1 text-sm text-slate-600"><MapPin size={13} className="mt-0.5 shrink-0" /> {r.address} {r.installationType && <span className="text-slate-400">({r.installationType})</span>}</div>
