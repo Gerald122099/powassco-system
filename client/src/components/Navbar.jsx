@@ -12,6 +12,7 @@ const links = [
   { to: "/check-balance", label: "Check Balance" },
   { to: "/calculator", label: "Tariff Calculator" },
   { to: "/products", label: "Products" },
+  { to: "/events", label: "Events" },
   { to: "/contact", label: "Contact Us" },
   { to: "/about", label: "About" },
 ];

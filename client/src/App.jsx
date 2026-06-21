@@ -31,6 +31,7 @@ const CheckBalancePage = lazy(() => import("./pages/public/CheckBalancePage"));
 const AboutPage = lazy(() => import("./pages/public/AboutPage"));
 const ContactPage = lazy(() => import("./pages/public/ContactPage"));
 const ProductsPage = lazy(() => import("./pages/public/ProductsPage"));
+const EventsPage = lazy(() => import("./pages/public/EventsPage"));
 
 function PageLoader() {
   return (
@@ -99,6 +100,8 @@ export default function App() {
         <Route path="/about" element={<AboutPage />} />
         <Route path="/contact" element={<ContactPage />} />
         <Route path="/products" element={<ProductsPage />} />
+        <Route path="/events" element={<EventsPage />} />
+        <Route path="/events/:id" element={<EventsPage />} />
 
         {/* Role-based home redirect for authenticated users */}
         <Route path="/dashboard" element={<RoleHome />} />

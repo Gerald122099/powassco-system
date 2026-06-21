@@ -17,6 +17,7 @@ import EmployeesPanel from "../admin/EmployeesPanel";
 import ReportsPanel from "../admin/ReportsPanel";
 import RequestsPanel from "../admin/RequestsPanel";
 import ProductReservationsPanel from "../../components/ProductReservationsPanel";
+import EventsManagerPanel from "../../components/EventsManagerPanel";
 import MeetingsPanel from "../admin/MeetingsPanel";
 import AssetsPanel from "../admin/AssetsPanel";
 import AnnouncementsPanel from "../admin/AnnouncementsPanel";
@@ -50,6 +51,7 @@ const items = [
   { key: "reports", label: "Reports", icon: FileBarChart, desc: "Financial reports across expenses and loans" },
   { key: "requests", label: "Requests", icon: Inbox, desc: "New connection, reconnection & concern/feedback messages from the public" },
   { key: "meetings", label: "Calendar & Events", icon: CalendarClock, desc: "Schedule meetings & events shown on staff dashboards" },
+  { key: "events", label: "Public Events", icon: CalendarClock, desc: "Post public events/announcements with photos; see views & reactions" },
   { key: "assets", label: "Inventory", icon: Boxes, desc: "Equipment & device inventory with 6-month audits" },
   { key: "metermap", label: "Meter Map", icon: MapPin, desc: "Map of every meter pinned by field plumbers" },
   { key: "members", label: "Water Members", icon: UserCog, desc: "View and edit water member accounts" },
@@ -85,6 +87,7 @@ export default function ManagerDashboard() {
       {tab === "reports" && <ReportsPanel />}
       {tab === "requests" && <RequestsPanel />}
       {tab === "store-orders" && <ProductReservationsPanel />}
+      {tab === "events" && <EventsManagerPanel />}
       {tab === "meetings" && <MeetingsPanel />}
       {tab === "assets" && <AssetsPanel />}
       {tab === "metermap" && <MeterMapPanel />}

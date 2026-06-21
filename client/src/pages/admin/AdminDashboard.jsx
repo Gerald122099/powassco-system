@@ -28,6 +28,7 @@ import SecurityPanel from "./SecurityPanel";
 import RequestsPanel from "./RequestsPanel";
 import MeetingsPanel from "./MeetingsPanel";
 import AnnouncementsPanel from "./AnnouncementsPanel";
+import EventsManagerPanel from "../../components/EventsManagerPanel";
 import AssetsPanel from "./AssetsPanel";
 import PaymentSettingsPanel from "./PaymentSettingsPanel";
 
@@ -116,6 +117,7 @@ const adminNavItems = [
   { key: "audit", label: "Audit Log", icon: ScrollText, desc: "System activity — who did what, and when" },
   { key: "monitor", label: "System Monitor", icon: AlertTriangle, desc: "Captured server errors — cause, who hit it, action taken" },
   { key: "announcements", label: "Announcements", icon: Megaphone, desc: "Post announcements to the public homepage" },
+  { key: "events", label: "Public Events", icon: CalendarClock, desc: "Post public events with photos; see views & reactions" },
   { key: "payments", label: "Payments", icon: CreditCard, desc: "Online payment mode, QR PH, and transaction fee" },
   { key: "bank-settings", label: "Bank Settings", icon: CreditCard, desc: "Register banks (name + logo) for the treasury module" },
   { key: "treasury", label: "Treasury", icon: Wallet, desc: "Banks + Cash Vault overview; approve as manager" },
@@ -448,6 +450,7 @@ export default function AdminDashboard() {
 
         {/* Announcements Tab */}
         {activeTab === "announcements" && <AnnouncementsPanel />}
+        {activeTab === "events" && <EventsManagerPanel />}
 
         {/* Payment Settings Tab */}
         {activeTab === "payments" && <PaymentSettingsPanel />}

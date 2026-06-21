@@ -47,6 +47,7 @@ const COLLECTION_TOPIC = {
   productreservations: "reservations",
   productloancatalogs: "products",
   storesettings: "products",
+  eventposts: "events",
 };
 
 const ALLOWED_TOPICS = new Set(Object.values(COLLECTION_TOPIC));
