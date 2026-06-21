@@ -31,6 +31,16 @@ const peso = (n) =>
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "2-digit" }) : "—");
 const fmtDateTime = (d) => (d ? new Date(d).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" }) : "—");
 
+// jsPDF's built-in fonts are Latin-1 only — the ₱ glyph (U+20B1) renders as a
+// blank box, making amounts look broken. Convert any text destined for the
+// PDF to a safe form: ₱ → "PHP ", plus a few other non-Latin-1 chars used in
+// our labels (so the digits always print cleanly). Excel keeps the real ₱.
+const pdfSafe = (s) => String(s ?? "")
+  .replace(/₱/g, "PHP ")   // ₱
+  .replace(/–|—/g, "-") // – —
+  .replace(/•/g, "*")        // •
+  .replace(/₦/g, "N");       // ₦ (just in case)
+
 const ORG = "POWASSCO MULTIPURPOSE COOPERATIVE";
 const ADDR = "Owak, Asturias, Cebu • C.D.A Reg. No. 9520-07014753";
 
@@ -107,16 +117,16 @@ export async function exportPdf({
   doc.setFontSize(9);
   doc.setTextColor(...SLATE);
   let hy = 37.5;
-  if (subtitle) { doc.text(subtitle, pageW / 2, hy, { align: "center" }); hy += 5; }
+  if (subtitle) { doc.text(pdfSafe(subtitle), pageW / 2, hy, { align: "center" }); hy += 5; }
   const periodLabel = (fromDate || toDate)
     ? `For the period: ${fmtDate(fromDate)} to ${fmtDate(toDate)}`
     : "All records";
-  doc.text(periodLabel, pageW / 2, hy, { align: "center" }); hy += 4.5;
-  doc.text(`${rows.length} row(s) • Generated ${new Date().toLocaleString()}`, pageW / 2, hy, { align: "center" });
+  doc.text(pdfSafe(periodLabel), pageW / 2, hy, { align: "center" }); hy += 4.5;
+  doc.text(pdfSafe(`${rows.length} row(s) - Generated ${new Date().toLocaleString()}`), pageW / 2, hy, { align: "center" });
 
   // Table
-  const head = [columns.map((c) => c.header)];
-  const body = rows.map((r) => columns.map((c) => String(cellValue(c, r))));
+  const head = [columns.map((c) => pdfSafe(c.header))];
+  const body = rows.map((r) => columns.map((c) => pdfSafe(cellValue(c, r))));
 
   autoTable(doc, {
     startY: hy + 5,
@@ -156,8 +166,8 @@ export async function exportPdf({
     totals.forEach((t, i) => {
       const emphasize = i === totals.length - 1;
       doc.setFont("helvetica", emphasize ? "bold" : "normal");
-      doc.text(String(t.label), boxX + 3, ty);
-      doc.text(String(t.value), boxX + boxW - 3, ty, { align: "right" });
+      doc.text(pdfSafe(t.label), boxX + 3, ty);
+      doc.text(pdfSafe(t.value), boxX + boxW - 3, ty, { align: "right" });
       ty += lineH;
     });
     cursorY += boxH + 8;
