@@ -5,7 +5,8 @@ import { apiFetch } from "../../lib/api";
 import { CalendarDays, Eye, Share2, ArrowLeft, X, ChevronLeft, ChevronRight, Loader2, Check } from "lucide-react";
 
 const API_BASE = (import.meta.env.VITE_API_BASE || "http://localhost:5000/api").replace(/\/+$/, "");
-const imgUrl = (id, idx) => `${API_BASE}/public/events/${id}/image/${idx}`;
+// ?v=updatedAt busts the long browser cache when a post's images change.
+const imgUrl = (id, idx, ver = 0) => `${API_BASE}/public/events/${id}/image/${idx}?v=${ver}`;
 
 // Formal reactions only — no "haha".
 const REACTIONS = [
@@ -71,7 +72,7 @@ function EventCard({ p }) {
   const total = REACTIONS.reduce((s, r) => s + (p.reactions?.[r.key] || 0), 0);
   return (
     <Link to={`/events/${p._id}`} className="block overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md">
-      {p.imageCount > 0 && <ImageCollage id={p._id} count={p.imageCount} compact />}
+      {p.imageCount > 0 && <ImageCollage id={p._id} count={p.imageCount} compact ver={Date.parse(p.updatedAt) || 0} />}
       <div className="p-5">
         <div className="text-xs font-semibold uppercase tracking-wide text-emerald-600">{fmtDate(p.createdAt)}</div>
         <h2 className="mt-1 text-lg font-bold text-slate-900">{p.title}</h2>
@@ -155,7 +156,7 @@ function EventDetail({ id }) {
     <article>
       <button onClick={() => navigate("/events")} className="mb-4 inline-flex items-center gap-1 text-sm font-semibold text-slate-500 hover:text-slate-800"><ArrowLeft size={15} /> All events</button>
       <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-        {post.imageCount > 0 && <ImageCollage id={id} count={post.imageCount} onOpen={setLightbox} />}
+        {post.imageCount > 0 && <ImageCollage id={id} count={post.imageCount} onOpen={setLightbox} ver={Date.parse(post.updatedAt) || 0} />}
         <div className="p-6">
           <div className="text-xs font-semibold uppercase tracking-wide text-emerald-600">{fmtDate(post.createdAt)}{post.createdBy ? ` · ${post.createdBy}` : ""}</div>
           <h1 className="mt-1 text-2xl font-extrabold text-slate-900">{post.title}</h1>
@@ -184,21 +185,21 @@ function EventDetail({ id }) {
       </div>
 
       {lightbox >= 0 && (
-        <Lightbox id={id} count={post.imageCount} index={lightbox} onClose={() => setLightbox(-1)} onIndex={setLightbox} />
+        <Lightbox id={id} count={post.imageCount} index={lightbox} ver={Date.parse(post.updatedAt) || 0} onClose={() => setLightbox(-1)} onIndex={setLightbox} />
       )}
     </article>
   );
 }
 
 // Adaptive image collage (1–5). compact = list-card height; otherwise taller.
-function ImageCollage({ id, count, onOpen, compact }) {
+function ImageCollage({ id, count, onOpen, compact, ver = 0 }) {
   const n = Math.min(count, 5);
   const idxs = Array.from({ length: n }, (_, i) => i);
   // cell() returns JSX (not a component) so we don't define a component
   // during render.
   const cell = (i, className) => (
     <button key={i} type="button" onClick={(e) => { if (onOpen) { e.preventDefault(); onOpen(i); } }} className={`relative block overflow-hidden bg-slate-100 ${onOpen ? "cursor-zoom-in" : ""} ${className}`}>
-      <img src={imgUrl(id, i)} alt="" loading="lazy" className="h-full w-full object-cover" />
+      <img src={imgUrl(id, i, ver)} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
     </button>
   );
   const h = compact ? "h-44 sm:h-52" : "h-56 sm:h-72";
@@ -226,7 +227,7 @@ function ImageCollage({ id, count, onOpen, compact }) {
   );
 }
 
-function Lightbox({ id, count, index, onClose, onIndex }) {
+function Lightbox({ id, count, index, onClose, onIndex, ver = 0 }) {
   const n = Math.min(count, 5);
   const go = (d) => onIndex((index + d + n) % n);
   useEffect(() => {
@@ -238,7 +239,7 @@ function Lightbox({ id, count, index, onClose, onIndex }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4" onClick={onClose}>
       <button className="absolute right-4 top-4 rounded-full bg-white/10 p-2 text-white hover:bg-white/20" onClick={onClose}><X size={22} /></button>
       {n > 1 && <button className="absolute left-3 rounded-full bg-white/10 p-2 text-white hover:bg-white/20" onClick={(e) => { e.stopPropagation(); go(-1); }}><ChevronLeft size={24} /></button>}
-      <img src={imgUrl(id, index)} alt="" className="max-h-[90vh] max-w-full rounded-lg object-contain" onClick={(e) => e.stopPropagation()} />
+      <img src={imgUrl(id, index, ver)} alt="" className="max-h-[90vh] max-w-full rounded-lg object-contain" onClick={(e) => e.stopPropagation()} />
       {n > 1 && <button className="absolute right-3 rounded-full bg-white/10 p-2 text-white hover:bg-white/20" onClick={(e) => { e.stopPropagation(); go(1); }}><ChevronRight size={24} /></button>}
       <div className="absolute bottom-4 text-sm text-white/70">{index + 1} / {n}</div>
     </div>

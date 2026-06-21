@@ -47,7 +47,8 @@ router.get("/:id/image/:idx", async (req, res) => {
     const m = img && /^data:(.+?);base64,(.+)$/s.exec(img);
     if (!m) return res.status(404).end();
     res.set("Content-Type", m[1]);
-    res.set("Cache-Control", "public, max-age=86400");
+    // Long cache; the client appends ?v=updatedAt so a replaced image busts it.
+    res.set("Cache-Control", "public, max-age=604800, immutable");
     res.send(Buffer.from(m[2], "base64"));
   } catch { res.status(500).end(); }
 });

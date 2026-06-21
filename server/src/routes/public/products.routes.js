@@ -28,7 +28,7 @@ async function noShowStatus(pnNo) {
 router.get("/", async (req, res) => {
   try {
     const raw = await ProductLoanCatalog.find({ isActive: true })
-      .select("name category unitPrice stock onHold imageBase64 description isRental rentFee")
+      .select("name category unitPrice stock onHold imageBase64 description isRental rentFee updatedAt")
       .sort({ category: 1, name: 1 })
       .lean();
     // Strip the heavy imageBase64 from the LIST payload (images load lazily
@@ -72,7 +72,9 @@ router.get("/:id/image", async (req, res) => {
     const m = /^data:(.+?);base64,(.+)$/s.exec(p.imageBase64);
     if (!m) return res.status(404).end();
     res.set("Content-Type", m[1]);
-    res.set("Cache-Control", "public, max-age=86400");
+    // Long cache + ?v=updatedAt versioning (the client busts it when the image
+    // is replaced), so thumbnails load instantly on repeat views.
+    res.set("Cache-Control", "public, max-age=604800, immutable");
     res.send(Buffer.from(m[2], "base64"));
   } catch { res.status(500).end(); }
 });

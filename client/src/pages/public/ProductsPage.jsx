@@ -7,9 +7,10 @@ import { Store, MapPin, Search, PackageOpen, Loader2, Tag, Boxes, ShoppingCart, 
 
 const peso = (n) => "₱" + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-// Product images load lazily from their own endpoint (not in the list payload).
+// Product images load lazily from their own endpoint (not in the list
+// payload). ?v=updatedAt busts the long browser cache when an image changes.
 const API_BASE = (import.meta.env.VITE_API_BASE || "http://localhost:5000/api").replace(/\/+$/, "");
-const imgSrc = (p) => (p?.hasImage ? `${API_BASE}/public/products/${p._id}/image` : null);
+const imgSrc = (p) => (p?.hasImage ? `${API_BASE}/public/products/${p._id}/image?v=${Date.parse(p.updatedAt) || 0}` : null);
 
 const CATEGORY_LABELS = {
   materials: "Water Materials",
@@ -248,7 +249,7 @@ function ProductCard({ p, qty, onAdd, onSet }) {
     <div className={`group flex flex-col overflow-hidden rounded-2xl border bg-white shadow-sm transition ${out ? "border-slate-200 opacity-70" : "border-slate-200 hover:shadow-md"}`}>
       <div className="relative aspect-square w-full bg-slate-50">
         {imgSrc(p) ? (
-          <img src={imgSrc(p)} alt={p.name} className={`h-full w-full object-cover ${out ? "grayscale" : ""}`} loading="lazy" />
+          <img src={imgSrc(p)} alt={p.name} className={`h-full w-full object-cover ${out ? "grayscale" : ""}`} loading="lazy" decoding="async" />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-slate-300"><Boxes size={40} /></div>
         )}

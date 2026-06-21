@@ -160,7 +160,7 @@ function LatestEvent() {
     <section className="mx-auto mt-8 max-w-6xl px-5">
       <Link to={`/events/${post._id}`} className="flex items-center gap-4 rounded-2xl border border-emerald-200 bg-white p-3 shadow-sm transition hover:shadow-md">
         {post.imageCount > 0 ? (
-          <img src={`${API_BASE}/public/events/${post._id}/image/0`} alt="" className="h-16 w-16 shrink-0 rounded-xl object-cover" loading="lazy" />
+          <img src={`${API_BASE}/public/events/${post._id}/image/0?v=${Date.parse(post.updatedAt) || 0}`} alt="" className="h-16 w-16 shrink-0 rounded-xl object-cover" loading="lazy" decoding="async" />
         ) : (
           <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-500"><CalendarDays size={26} /></div>
         )}
