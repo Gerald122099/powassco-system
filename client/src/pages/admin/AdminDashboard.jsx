@@ -6,7 +6,7 @@ import MembersPanel from "../water/panels/MembersPanel";
 import MeterMapPanel from "../water/panels/MeterMapPanel";
 import DangerZonePanel from "./DangerZonePanel";
 import MaintenancePanel from "./MaintenancePanel";
-import BackupsPanel from "./BackupsPanel";
+import BackupsPanel, { BackupReminder } from "./BackupsPanel";
 import SavingsSettingsPanel from "./SavingsSettingsPanel";
 import AdjustmentsPanel from "../../components/AdjustmentsPanel";
 import DevFeedbackPanel from "./DevFeedbackPanel";
@@ -311,6 +311,8 @@ export default function AdminDashboard() {
           {toast}
         </div>
       )}
+
+      <BackupReminder onOpen={() => setActiveTab("backups")} />
 
       <div className="mt-6">
         {/* User Management Tab */}

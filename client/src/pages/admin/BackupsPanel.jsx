@@ -11,6 +11,38 @@ import { DatabaseBackup, Download, RefreshCw, Trash2, Play, Mail, MailWarning, S
 const when = (d) => (d ? new Date(d).toLocaleString() : "—");
 const mb = (b) => `${(Number(b || 0) / 1024 / 1024).toFixed(2)} MB`;
 
+// Shown on the admin home: warns when the last successful backup is stale
+// (≥3 days) or missing, nudging the admin to download/keep one off-site.
+export function BackupReminder({ onOpen }) {
+  const { token } = useAuth();
+  const [info, setInfo] = useState(null);
+  const [dismissed, setDismissed] = useState(() => { try { return sessionStorage.getItem("pow_backup_remind") === "1"; } catch { return false; } });
+  useEffect(() => {
+    apiFetch("/admin/backups", { token })
+      .then((r) => {
+        const ok = (r.items || []).find((b) => b.status === "ok" && b.at);
+        const days = ok ? Math.floor((Date.now() - new Date(ok.at).getTime()) / 86400000) : null;
+        setInfo({ days, emailOn: !!r.emailConfigured, none: !ok });
+      })
+      .catch(() => {});
+  }, [token]);
+  if (dismissed || !info) return null;
+  const stale = info.none || info.days >= 3;
+  if (!stale) return null;
+  function dismiss() { setDismissed(true); try { sessionStorage.setItem("pow_backup_remind", "1"); } catch { /* ignore */ } }
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-sm">
+      <AlertTriangle size={18} className="shrink-0 text-amber-600" />
+      <div className="min-w-0 flex-1">
+        <b>{info.none ? "No database backup yet." : `Last database backup was ${info.days} day${info.days === 1 ? "" : "s"} ago.`}</b>{" "}
+        {info.emailOn ? "Auto-email is on — keeping an occasional manual copy is still wise." : "Download a snapshot and store it off-site (Drive/USB)."}
+      </div>
+      <button onClick={onOpen} className="shrink-0 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-700">Open Backups</button>
+      <button onClick={dismiss} className="shrink-0 rounded-lg border border-amber-300 px-2.5 py-1.5 text-xs font-semibold text-amber-700 hover:bg-amber-100">Dismiss</button>
+    </div>
+  );
+}
+
 export default function BackupsPanel() {
   const { token } = useAuth();
   const [items, setItems] = useState([]);
