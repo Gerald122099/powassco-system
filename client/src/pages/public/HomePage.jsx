@@ -180,25 +180,31 @@ export default function HomePage() {
 
       {/* Hero */}
       <section className="relative overflow-hidden">
-        <div className="absolute inset-0">
-          {/* POWASSCO office building — same angle, day & night. Crossfade. */}
+        {/* Brand base — fills the desktop text panel (left) + mobile fallback. */}
+        <div className={`absolute inset-0 transition-colors duration-700 ${night ? "bg-slate-950" : "bg-emerald-950"}`} />
+        {/* Building photo: full-bleed on phones (looks great), and on desktop
+            it sits on the RIGHT half so the tall portrait shot isn't cropped
+            awkwardly — the text gets a clean brand panel on the left. */}
+        <div className="absolute inset-0 lg:left-[42%]">
           <img src={dayBuilding} alt="POWASSCO office building by day" className={`absolute inset-0 h-full w-full object-cover object-center transition-opacity duration-700 ${night ? "opacity-0" : "opacity-100"}`} />
           <img src={nightBuilding} alt="POWASSCO office building at night" className={`absolute inset-0 h-full w-full object-cover object-center transition-opacity duration-700 ${night ? "opacity-100" : "opacity-0"}`} />
-          {/* Professional fade — emerald by day, warm/dark at dusk — dark
-              behind the headline (left), clearing over the building (right). */}
-          <div className={`absolute inset-0 bg-gradient-to-r transition-colors duration-700 ${night ? "from-slate-950/95 via-indigo-950/75 to-orange-900/25" : "from-emerald-950/95 via-emerald-900/75 to-emerald-900/30"}`} />
-          <div className="absolute inset-0 bg-gradient-to-t from-slate-950/75 via-transparent to-slate-950/35" />
         </div>
+        {/* Fade: dark behind the headline (left) clearing over the building
+            (right). On desktop it dissolves into the brand panel. */}
+        <div className={`absolute inset-0 bg-gradient-to-r transition-all duration-700 ${night ? "from-slate-950/95 via-indigo-950/70 to-orange-900/20 lg:from-slate-950 lg:via-slate-950/85 lg:to-transparent" : "from-emerald-950/95 via-emerald-900/70 to-emerald-900/25 lg:from-emerald-950 lg:via-emerald-950/85 lg:to-transparent"}`} />
+        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/70 via-transparent to-slate-950/30" />
 
-        {/* Day / night toggle */}
+        {/* Day / night toggle — labelled with the OPPOSITE action + a soft
+            glow so visitors are curious to try it. */}
         <button
           onClick={toggleNight}
           aria-label={night ? "Switch to day view" : "Switch to night view"}
-          title={night ? "Day view" : "Night view"}
-          className="absolute right-4 top-20 z-10 inline-flex items-center gap-2 rounded-full border border-white/25 bg-white/10 px-3 py-2 text-sm font-semibold text-white shadow-lg backdrop-blur transition hover:bg-white/20 sm:top-24"
+          className="group absolute right-4 top-20 z-10 inline-flex items-center gap-2 rounded-full border border-white/25 bg-white/10 px-3.5 py-2 text-sm font-semibold text-white shadow-lg backdrop-blur transition hover:scale-105 hover:bg-white/20 sm:top-24"
         >
-          {night ? <Moon size={16} className="text-amber-200" /> : <Sun size={16} className="text-amber-300" />}
-          <span className="hidden sm:inline">{night ? "Night" : "Day"}</span>
+          <span className="absolute inset-0 -z-10 animate-pulse rounded-full bg-amber-300/25 blur-md" />
+          {night ? <Sun size={16} className="text-amber-300" /> : <Moon size={16} className="text-indigo-100" />}
+          <span>{night ? "See it by day" : "See it at night"}</span>
+          <span className="text-amber-200">✨</span>
         </button>
         <div className="relative mx-auto max-w-6xl px-5 pb-28 pt-32 sm:pt-40">
           <div className="max-w-2xl">
