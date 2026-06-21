@@ -4,7 +4,8 @@ import { apiFetch } from "../../lib/api";
 import Navbar from "../../components/Navbar";
 import PublicAppInstallBanner from "../../components/PublicAppInstallBanner";
 import logo from "../../assets/logo.png";
-import building from "../../assets/powasscobuilding.jpg";
+import dayBuilding from "../../assets/daybuilding.jpg";
+import nightBuilding from "../../assets/nightbuilding.jpg";
 import developerPhoto from "../../assets/developer.jpg";
 import {
   Droplets,
@@ -18,6 +19,8 @@ import {
   Code2,
   Send,
   CheckCircle2,
+  Sun,
+  Moon,
 } from "lucide-react";
 
 // Public "message the developer" form. Submissions land in the admin
@@ -144,6 +147,18 @@ function HomeAnnouncements() {
 }
 
 export default function HomePage() {
+  // Day/night hero — sun shows the daytime photo (default), moon swaps to the
+  // same angle lit up at dusk. Remembered across visits.
+  const [night, setNight] = useState(() => {
+    try { return localStorage.getItem("pow_hero_night") === "1"; } catch { return false; }
+  });
+  function toggleNight() {
+    setNight((n) => {
+      const next = !n;
+      try { localStorage.setItem("pow_hero_night", next ? "1" : "0"); } catch { /* ignore */ }
+      return next;
+    });
+  }
   return (
     <div className="min-h-screen bg-slate-50" style={{ fontFamily: "'Poppins', ui-sans-serif, system-ui, sans-serif" }}>
       <Navbar />
@@ -159,14 +174,25 @@ export default function HomePage() {
       {/* Hero */}
       <section className="relative overflow-hidden">
         <div className="absolute inset-0">
-          {/* POWASSCO office building — our home in Owak, Asturias, Cebu. */}
-          <img src={building} alt="POWASSCO Multipurpose Cooperative office building" className="h-full w-full object-cover object-center" />
-          {/* Professional fade: dark behind the headline (left), clearing over
-              the building (right) so the photo stays visible. */}
-          <div className="absolute inset-0 bg-gradient-to-r from-emerald-950/95 via-emerald-900/75 to-emerald-900/30" />
-          {/* Depth fade top→bottom so the overlapping stats blend cleanly. */}
-          <div className="absolute inset-0 bg-gradient-to-t from-slate-950/75 via-transparent to-emerald-950/35" />
+          {/* POWASSCO office building — same angle, day & night. Crossfade. */}
+          <img src={dayBuilding} alt="POWASSCO office building by day" className={`absolute inset-0 h-full w-full object-cover object-center transition-opacity duration-700 ${night ? "opacity-0" : "opacity-100"}`} />
+          <img src={nightBuilding} alt="POWASSCO office building at night" className={`absolute inset-0 h-full w-full object-cover object-center transition-opacity duration-700 ${night ? "opacity-100" : "opacity-0"}`} />
+          {/* Professional fade — emerald by day, warm/dark at dusk — dark
+              behind the headline (left), clearing over the building (right). */}
+          <div className={`absolute inset-0 bg-gradient-to-r transition-colors duration-700 ${night ? "from-slate-950/95 via-indigo-950/75 to-orange-900/25" : "from-emerald-950/95 via-emerald-900/75 to-emerald-900/30"}`} />
+          <div className="absolute inset-0 bg-gradient-to-t from-slate-950/75 via-transparent to-slate-950/35" />
         </div>
+
+        {/* Day / night toggle */}
+        <button
+          onClick={toggleNight}
+          aria-label={night ? "Switch to day view" : "Switch to night view"}
+          title={night ? "Day view" : "Night view"}
+          className="absolute right-4 top-20 z-10 inline-flex items-center gap-2 rounded-full border border-white/25 bg-white/10 px-3 py-2 text-sm font-semibold text-white shadow-lg backdrop-blur transition hover:bg-white/20 sm:top-24"
+        >
+          {night ? <Moon size={16} className="text-amber-200" /> : <Sun size={16} className="text-amber-300" />}
+          <span className="hidden sm:inline">{night ? "Night" : "Day"}</span>
+        </button>
         <div className="relative mx-auto max-w-6xl px-5 pb-28 pt-32 sm:pt-40">
           <div className="max-w-2xl">
             <div className="mb-6 inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-1.5 text-sm font-medium text-emerald-50 ring-1 ring-white/20 backdrop-blur">
