@@ -21,6 +21,8 @@ import {
   CheckCircle2,
   Sun,
   Moon,
+  CalendarDays,
+  Sparkles,
 } from "lucide-react";
 
 // Public "message the developer" form. Submissions land in the admin
@@ -146,6 +148,36 @@ function HomeAnnouncements() {
   );
 }
 
+// "What's new" strip — surfaces the most recent public event on the homepage.
+function LatestEvent() {
+  const [post, setPost] = useState(null);
+  useEffect(() => {
+    apiFetch("/public/events").then((r) => setPost((r.items || [])[0] || null)).catch(() => {});
+  }, []);
+  if (!post) return null;
+  const API_BASE = (import.meta.env.VITE_API_BASE || "http://localhost:5000/api").replace(/\/+$/, "");
+  return (
+    <section className="mx-auto mt-8 max-w-6xl px-5">
+      <Link to={`/events/${post._id}`} className="flex items-center gap-4 rounded-2xl border border-emerald-200 bg-white p-3 shadow-sm transition hover:shadow-md">
+        {post.imageCount > 0 ? (
+          <img src={`${API_BASE}/public/events/${post._id}/image/0`} alt="" className="h-16 w-16 shrink-0 rounded-xl object-cover" loading="lazy" />
+        ) : (
+          <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-500"><CalendarDays size={26} /></div>
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-emerald-600"><Sparkles size={12} /> What's new</div>
+          <div className="truncate font-bold text-slate-900">{post.title}</div>
+          {post.description && <div className="truncate text-sm text-slate-500">{post.description}</div>}
+        </div>
+        <span className="hidden shrink-0 items-center gap-1 text-sm font-semibold text-emerald-700 sm:inline-flex">Read <ArrowRight size={15} /></span>
+      </Link>
+      <div className="mt-1 text-right">
+        <Link to="/events" className="text-xs font-semibold text-slate-400 hover:text-emerald-700">See all events →</Link>
+      </div>
+    </section>
+  );
+}
+
 export default function HomePage() {
   // Day/night hero — auto-picks by the visitor's local time (night 6pm–6am)
   // unless they've manually overridden it with the sun/moon button (which is
@@ -242,6 +274,8 @@ export default function HomePage() {
           ))}
         </div>
       </section>
+
+      <LatestEvent />
 
       <HomeAnnouncements />
 

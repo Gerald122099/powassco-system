@@ -10,8 +10,8 @@ import { toast } from "./Toast";
 import { CalendarDays, Plus, Edit3, Trash2, Eye, Image as ImageIcon, X, RefreshCw, Save, Link as LinkIcon } from "lucide-react";
 
 const REACTIONS = [
-  { key: "like", emoji: "👍" }, { key: "love", emoji: "❤️" }, { key: "celebrate", emoji: "🎉" },
-  { key: "support", emoji: "🙏" }, { key: "wow", emoji: "😮" }, { key: "sad", emoji: "😢" },
+  { key: "like", emoji: "👍", label: "Like" }, { key: "love", emoji: "❤️", label: "Love" }, { key: "celebrate", emoji: "🎉", label: "Celebrate" },
+  { key: "support", emoji: "🙏", label: "Support" }, { key: "wow", emoji: "😮", label: "Wow" }, { key: "sad", emoji: "😢", label: "Sad" },
 ];
 const when = (d) => (d ? new Date(d).toLocaleString() : "—");
 
@@ -97,7 +97,10 @@ export default function EventsManagerPanel() {
                 {p.description && <div className="mt-1 line-clamp-1 text-sm text-slate-500">{p.description}</div>}
                 <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
                   <span className="inline-flex items-center gap-1 font-semibold text-emerald-700"><Eye size={13} /> {p.views} seen</span>
-                  <span className="inline-flex items-center gap-1">{REACTIONS.map((r) => (p.reactions?.[r.key] || 0) > 0 ? <span key={r.key}>{r.emoji}{p.reactions[r.key]}</span> : null)}{p.totalReactions === 0 && <span className="text-slate-400">no reactions yet</span>}</span>
+                  <span className="inline-flex cursor-help items-center gap-1.5" title={REACTIONS.map((r) => `${r.label}: ${p.reactions?.[r.key] || 0}`).join("   ·   ")}>
+                    {REACTIONS.map((r) => (p.reactions?.[r.key] || 0) > 0 ? <span key={r.key} className="tabular-nums">{r.emoji}{p.reactions[r.key]}</span> : null)}
+                    {p.totalReactions === 0 ? <span className="text-slate-400">no reactions yet</span> : <span className="text-slate-400">· {p.totalReactions} total</span>}
+                  </span>
                   <span className="text-slate-400">{when(p.createdAt)}</span>
                 </div>
               </div>
