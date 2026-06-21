@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import DashboardLayout from "../../components/DashboardLayout";
+import { useAuth } from "../../context/AuthContext";
+import { waterBadges } from "../../lib/requestBadges";
 import MembersPanel from "./panels/MembersPanel";
 import BillsPanel from "./panels/BillsPanel";
 import PaymentsPanel from "./panels/PaymentsPanel";
@@ -33,9 +35,18 @@ const items = [
 ];
 
 export default function WaterBillingDashboard() {
+  const { token } = useAuth();
   const [tab, setTab] = useState("members");
+  const [badges, setBadges] = useState({});
+  useEffect(() => {
+    const tick = () => waterBadges(token).then(setBadges).catch(() => {});
+    tick();
+    const id = setInterval(tick, 60000);
+    return () => clearInterval(id);
+  }, [token]);
+  const badged = items.map((it) => ({ ...it, badge: badges[it.key] || 0 }));
   return (
-    <DashboardLayout title="Water Billing" accent="emerald" items={items} active={tab} onSelect={setTab}>
+    <DashboardLayout title="Water Billing" accent="emerald" items={badged} active={tab} onSelect={setTab}>
       {tab === "members" && <MembersPanel />}
       {tab === "readings" && <MeterReadingsPanel />}
       {tab === "metermap" && <MeterMapPanel />}

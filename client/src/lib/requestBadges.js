@@ -9,18 +9,26 @@ async function safe(p) {
 }
 
 export async function managerBadges(token) {
-  const [tre, loans, payroll, expenses] = await Promise.all([
+  const [tre, loans, payroll, expenses, resv] = await Promise.all([
     safe(apiFetch("/treasury/overview", { token })),
     safe(apiFetch("/loan/applications?status=pending&limit=1", { token })),
     safe(apiFetch("/payroll?status=pending&limit=1", { token })),
     safe(apiFetch("/expenses?status=pending&limit=1", { token })),
+    safe(apiFetch("/product-reservations?limit=1", { token })),
   ]);
   return {
     treasury: tre?.pendingForMe || 0,
     "loan-approvals": loans?.total || 0,
     "payroll-approvals": payroll?.total || 0,
     expenses: expenses?.total || 0,
+    "store-orders": resv?.byStatus?.reserved || 0,
   };
+}
+
+// Water-officer store-reservation badge (they co-approve with the manager).
+export async function waterBadges(token) {
+  const resv = await safe(apiFetch("/product-reservations?limit=1", { token }));
+  return { "store-orders": resv?.byStatus?.reserved || 0 };
 }
 
 export async function bookkeeperBadges(token) {
@@ -51,12 +59,13 @@ export async function adminBadges(token) {
 
 // Cashier's Disbursements pill aggregates every queue waiting on them.
 export async function cashierBadges(token) {
-  const [tre, exp, loans, payroll, fees] = await Promise.all([
+  const [tre, exp, loans, payroll, fees, resv] = await Promise.all([
     safe(apiFetch("/treasury/overview", { token })),
     safe(apiFetch("/expenses?status=approved&limit=1", { token })),
     safe(apiFetch("/cashier/loan-disbursements", { token })),
     safe(apiFetch("/cashier/payroll-disbursements", { token })),
     safe(apiFetch("/cashier/member-fees", { token })),
+    safe(apiFetch("/product-reservations?limit=1", { token })),
   ]);
   return {
     treasury: tre?.pendingForMe || 0,
@@ -65,5 +74,6 @@ export async function cashierBadges(token) {
       (loans?.items?.length || 0) +
       (payroll?.items?.length || 0) +
       (fees?.items?.length || 0),
+    reservations: resv?.byStatus?.approved || 0,
   };
 }

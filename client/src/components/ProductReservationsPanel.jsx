@@ -6,6 +6,7 @@ import Card from "./Card";
 import { apiFetch } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { toast } from "./Toast";
+import { printReceiptSmart } from "../lib/printerSettings";
 import { RefreshCw, Phone, CheckCircle2, Banknote, PackageCheck, XCircle, Clock, PiggyBank, Wallet, ShoppingBag, Megaphone, Save } from "lucide-react";
 
 const peso = (n) => "₱" + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -81,6 +82,21 @@ export default function ProductReservationsPanel() {
     try {
       await apiFetch(`/product-reservations/${r._id}/${action}`, { method: "POST", token, body });
       toast.success(action === "approve" ? "Approved — send to cashier." : action === "pay" ? "Paid — ready for pickup." : action === "pickup" ? "Marked picked up." : "Cancelled.");
+      // Auto-print the OR receipt on payment (respects the cashier's printer
+      // settings; falls back to the default printer).
+      if (action === "pay") {
+        printReceiptSmart({
+          title: "STORE RESERVATION OR",
+          accountName: r.accountName,
+          pnNo: r.pnNo,
+          orNo: body.orNo,
+          cashierName: user?.fullName || user?.employeeId || "",
+          lines: r.items.map((it) => [`${it.quantity}x ${it.name}`.slice(0, 18), peso(it.lineTotal)]),
+          total: r.total,
+          totalLabel: r.paymentMethod === "savings" ? "PAID (SAVINGS)" : "PAID",
+          note: `Reservation ${r.code}. Show this for pickup.`,
+        }).then((pr) => { if (pr?.via === "thermal") toast.success("Receipt printed."); }).catch(() => {});
+      }
       load();
     } catch (e) { toast.error(e.message); } finally { setBusyId(""); }
   }
