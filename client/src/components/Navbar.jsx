@@ -11,6 +11,7 @@ const links = [
   { to: "/inquiry", label: "Bill Inquiry" },
   { to: "/check-balance", label: "Check Balance" },
   { to: "/calculator", label: "Tariff Calculator" },
+  { to: "/products", label: "Products" },
   { to: "/contact", label: "Contact Us" },
   { to: "/about", label: "About" },
 ];

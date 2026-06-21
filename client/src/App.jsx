@@ -30,6 +30,7 @@ const TariffCalculatorPage = lazy(() => import("./pages/public/TariffCalculatorP
 const CheckBalancePage = lazy(() => import("./pages/public/CheckBalancePage"));
 const AboutPage = lazy(() => import("./pages/public/AboutPage"));
 const ContactPage = lazy(() => import("./pages/public/ContactPage"));
+const ProductsPage = lazy(() => import("./pages/public/ProductsPage"));
 
 function PageLoader() {
   return (
@@ -97,6 +98,7 @@ export default function App() {
         <Route path="/check-balance" element={<CheckBalancePage />} />
         <Route path="/about" element={<AboutPage />} />
         <Route path="/contact" element={<ContactPage />} />
+        <Route path="/products" element={<ProductsPage />} />
 
         {/* Role-based home redirect for authenticated users */}
         <Route path="/dashboard" element={<RoleHome />} />
