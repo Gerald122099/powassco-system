@@ -454,7 +454,9 @@ router.get("/analytics", ...guard, async (req, res) => {
 // ----- Product loan catalogue -----
 // List excludes the heavy imageBase64 (thumbnails load via the image route);
 // hasImage tells the UI whether to show one. base64 never leaves the DB here.
-router.get("/product-catalog", ...productManageGuard, async (req, res) => {
+// READ allows the cashier too (the Sales screen needs the catalogue to sell);
+// create/edit/delete stay manager-only (productManageGuard).
+router.get("/product-catalog", ...productTxnGuard, async (req, res) => {
   const items = await ProductLoanCatalog.aggregate([
     { $sort: { isActive: -1, name: 1 } },
     { $addFields: { hasImage: { $gt: [{ $strLenCP: { $ifNull: ["$imageBase64", ""] } }, 0] } } },
@@ -520,7 +522,8 @@ router.delete("/product-catalog/:id", ...productManageGuard, async (req, res) =>
 });
 
 // ----- Product loan applications -----
-router.get("/product-applications", ...productManageGuard, async (req, res) => {
+// READ allows the cashier (their Sales screen shows recent sales).
+router.get("/product-applications", ...productTxnGuard, async (req, res) => {
   const status = String(req.query.status || "").trim();
   const filter = status ? { status } : {};
   const apps = await ProductLoanApplication.find(filter).sort({ createdAt: -1 }).limit(500).lean();
