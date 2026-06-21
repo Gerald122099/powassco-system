@@ -85,6 +85,8 @@ export default function ProductReservationsPanel() {
         body.savingsPin = pin.trim();
       }
     }
+    if (action === "approve" && !window.confirm(`Approve reservation ${r.code} for ${r.accountName}?\nVerify the order by phone first (${r.phone}).`)) return;
+    if (action === "pickup" && !window.confirm(`Mark ${r.code} (${r.accountName}) as PICKED UP?`)) return;
     if (action === "cancel" && !window.confirm(`Cancel ${r.code}? This releases the held stock.`)) return;
     setBusyId(r._id);
     try {

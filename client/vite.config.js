@@ -105,4 +105,22 @@ export default defineConfig({
       },
     }),
   ],
+  build: {
+    rollupOptions: {
+      output: {
+        // recharts (+ its d3/victory-vendor deps, ~300 KB) is used by two
+        // separate lazy panels (Analytics + Audit report). Without this it's
+        // duplicated in BOTH chunks. Splitting it into one shared "charts"
+        // chunk dedupes it and lets the browser cache it once. It stays lazy
+        // (only those panels import it), so initial page load is unaffected.
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('recharts') || id.includes('victory-vendor') || /[\\/]d3-[^\\/]+[\\/]/.test(id)) {
+              return 'charts';
+            }
+          }
+        },
+      },
+    },
+  },
 })
