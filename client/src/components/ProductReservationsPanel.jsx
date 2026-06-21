@@ -6,7 +6,7 @@ import Card from "./Card";
 import { apiFetch } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { toast } from "./Toast";
-import { RefreshCw, Phone, CheckCircle2, Banknote, PackageCheck, XCircle, Clock, PiggyBank, Wallet, ShoppingBag } from "lucide-react";
+import { RefreshCw, Phone, CheckCircle2, Banknote, PackageCheck, XCircle, Clock, PiggyBank, Wallet, ShoppingBag, Megaphone, Save } from "lucide-react";
 
 const peso = (n) => "₱" + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const when = (d) => (d ? new Date(d).toLocaleString() : "—");
@@ -37,6 +37,26 @@ export default function ProductReservationsPanel() {
   const [counts, setCounts] = useState({});
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState("");
+  const [ann, setAnn] = useState({ announcement: "", announcementActive: false });
+  const [annLoaded, setAnnLoaded] = useState(false);
+  const [savingAnn, setSavingAnn] = useState(false);
+
+  useEffect(() => {
+    if (!isOffice) return;
+    apiFetch("/product-reservations/store-settings", { token })
+      .then((r) => { setAnn({ announcement: r.announcement || "", announcementActive: !!r.announcementActive }); })
+      .catch(() => {})
+      .finally(() => setAnnLoaded(true));
+  }, [isOffice, token]);
+
+  async function saveAnn() {
+    setSavingAnn(true);
+    try {
+      const r = await apiFetch("/product-reservations/store-settings", { method: "PUT", token, body: ann });
+      setAnn({ announcement: r.announcement || "", announcementActive: !!r.announcementActive });
+      toast.success("Store announcement updated.");
+    } catch (e) { toast.error(e.message); } finally { setSavingAnn(false); }
+  }
 
   async function load() {
     setLoading(true);
@@ -82,6 +102,17 @@ export default function ProductReservationsPanel() {
           <RefreshCw size={16} className={loading ? "animate-spin" : ""} /> Reload
         </button>
       </div>
+
+      {isOffice && annLoaded && (
+        <div className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50/50 p-3">
+          <div className="flex items-center gap-2 text-sm font-bold text-indigo-800"><Megaphone size={16} /> Store announcement <span className="font-normal text-indigo-500">(shown on the public store)</span></div>
+          <textarea rows={2} value={ann.announcement} onChange={(e) => setAnn((a) => ({ ...a, announcement: e.target.value }))} placeholder="e.g. New rice stock in! Store open Mon–Sat, 8am–5pm." className="mt-2 w-full rounded-xl border border-indigo-200 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none" />
+          <div className="mt-2 flex items-center justify-between">
+            <label className="inline-flex items-center gap-2 text-sm font-semibold text-indigo-800"><input type="checkbox" checked={ann.announcementActive} onChange={(e) => setAnn((a) => ({ ...a, announcementActive: e.target.checked }))} /> Show on store</label>
+            <button onClick={saveAnn} disabled={savingAnn} className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-700 disabled:opacity-50"><Save size={13} /> {savingAnn ? "Saving…" : "Save"}</button>
+          </div>
+        </div>
+      )}
 
       <div className="mt-4 flex flex-wrap gap-2">
         {TABS.map(([k, label]) => (

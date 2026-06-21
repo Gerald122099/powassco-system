@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import Navbar from "../../components/Navbar";
 import Modal from "../../components/Modal";
 import { apiFetch } from "../../lib/api";
-import { Store, MapPin, Search, PackageOpen, Loader2, Tag, Boxes, ShoppingCart, Plus, Minus, Trash2, CheckCircle2, X } from "lucide-react";
+import { Store, MapPin, Search, PackageOpen, Loader2, Tag, Boxes, ShoppingCart, Plus, Minus, Trash2, CheckCircle2, X, Megaphone } from "lucide-react";
 
 const peso = (n) => "₱" + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -39,12 +39,13 @@ export default function ProductsPage() {
   const [q, setQ] = useState("");
   const [cart, setCart] = useState({}); // productId -> qty
   const [cartOpen, setCartOpen] = useState(false);
+  const [announcement, setAnnouncement] = useState("");
 
   // No synchronous setState — all updates happen in the async callbacks, so
   // calling this from the mount effect can't trigger cascading renders.
   function load() {
     apiFetch("/public/products")
-      .then((r) => setItems(r.items || []))
+      .then((r) => { setItems(r.items || []); setAnnouncement(r.announcement || ""); })
       .catch((e) => setErr(e.message || "Failed to load products."))
       .finally(() => setLoading(false));
   }
@@ -100,6 +101,13 @@ export default function ProductsPage() {
             </h1>
             <p className="mt-2 text-sm text-slate-500">Browse what's available and reserve for pickup. Prices and stocks are updated by the office.</p>
           </div>
+
+          {announcement && (
+            <div className="mt-5 flex items-start gap-3 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 shadow-sm">
+              <Megaphone className="mt-0.5 shrink-0 text-indigo-600" size={20} />
+              <div className="text-sm text-indigo-900 whitespace-pre-wrap">{announcement}</div>
+            </div>
+          )}
 
           <div className="mt-6 grid gap-3 sm:grid-cols-2">
             <div className="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-white px-4 py-3 shadow-sm">

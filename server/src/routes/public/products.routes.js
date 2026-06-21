@@ -4,6 +4,7 @@ import { ProductLoanCatalog } from "../../models/ProductLoan.js";
 import ProductReservation from "../../models/ProductReservation.js";
 import WaterMember from "../../models/WaterMember.js";
 import SavingsAccount from "../../models/SavingsAccount.js";
+import StoreSettings from "../../models/StoreSettings.js";
 
 const router = express.Router();
 
@@ -31,7 +32,8 @@ router.get("/", async (req, res) => {
     // Expose AVAILABLE (stock − onHold) so reserved-but-unpaid units don't
     // show as buyable; hide the raw onHold from the public payload.
     const items = raw.map(({ onHold, ...p }) => ({ ...p, available: Math.max(0, (Number(p.stock) || 0) - (Number(onHold) || 0)) }));
-    res.json({ items, now: new Date().toISOString() });
+    const s = await StoreSettings.findOne({ key: "store" }).lean();
+    res.json({ items, announcement: s?.announcementActive ? s.announcement : "", now: new Date().toISOString() });
   } catch (e) {
     res.status(500).json({ message: e.message || "Failed to load products." });
   }

@@ -8,6 +8,7 @@ import ProductReservation from "../models/ProductReservation.js";
 import { ProductLoanCatalog, ProductLoanApplication } from "../models/ProductLoan.js";
 import SavingsAccount from "../models/SavingsAccount.js";
 import SavingsTransaction from "../models/SavingsTransaction.js";
+import StoreSettings from "../models/StoreSettings.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
 const router = express.Router();
@@ -18,6 +19,26 @@ const read = [requireAuth, requireRole(["admin", "manager", "water_bill_officer"
 const actor = (req) => req.user?.fullName || req.user?.employeeId || "";
 const releaseHold = (items) => Promise.all(items.map((it) =>
   ProductLoanCatalog.updateOne({ _id: it.productId }, { $inc: { onHold: -it.quantity } })));
+
+// Store announcement shown on the public Products page (office-managed).
+router.get("/store-settings", read, async (_req, res) => {
+  try {
+    const s = await StoreSettings.findOne({ key: "store" }).lean();
+    res.json({ announcement: s?.announcement || "", announcementActive: !!s?.announcementActive });
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+router.put("/store-settings", office, async (req, res) => {
+  try {
+    const announcement = String(req.body?.announcement || "").trim().slice(0, 500);
+    const announcementActive = !!req.body?.announcementActive;
+    const s = await StoreSettings.findOneAndUpdate(
+      { key: "store" },
+      { announcement, announcementActive, updatedBy: actor(req) },
+      { new: true, upsert: true }
+    );
+    res.json({ announcement: s.announcement, announcementActive: s.announcementActive });
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
 
 // List reservations (filter by status / search). Newest first.
 router.get("/", read, async (req, res) => {
