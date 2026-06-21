@@ -4,7 +4,7 @@ import { apiFetch } from "../../lib/api";
 import Navbar from "../../components/Navbar";
 import PublicAppInstallBanner from "../../components/PublicAppInstallBanner";
 import logo from "../../assets/logo.png";
-import bg from "../../assets/bg.jpg";
+import building from "../../assets/powasscobuilding.jpg";
 import developerPhoto from "../../assets/developer.jpg";
 import {
   Droplets,
@@ -159,8 +159,13 @@ export default function HomePage() {
       {/* Hero */}
       <section className="relative overflow-hidden">
         <div className="absolute inset-0">
-          <img src={bg} alt="" className="h-full w-full object-cover" />
-          <div className="absolute inset-0 bg-gradient-to-br from-emerald-900/90 via-emerald-800/80 to-cyan-900/85" />
+          {/* POWASSCO office building — our home in Owak, Asturias, Cebu. */}
+          <img src={building} alt="POWASSCO Multipurpose Cooperative office building" className="h-full w-full object-cover object-center" />
+          {/* Professional fade: dark behind the headline (left), clearing over
+              the building (right) so the photo stays visible. */}
+          <div className="absolute inset-0 bg-gradient-to-r from-emerald-950/95 via-emerald-900/75 to-emerald-900/30" />
+          {/* Depth fade top→bottom so the overlapping stats blend cleanly. */}
+          <div className="absolute inset-0 bg-gradient-to-t from-slate-950/75 via-transparent to-emerald-950/35" />
         </div>
         <div className="relative mx-auto max-w-6xl px-5 pb-28 pt-32 sm:pt-40">
           <div className="max-w-2xl">
