@@ -42,6 +42,11 @@ const COLLECTION_TOPIC = {
   announcements: "announcements",
   assets: "assets",
   meetings: "meetings",
+  // Store: reservations (new orders/approvals/payments/pickups) + catalogue
+  // stock/price edits + store settings (announcement).
+  productreservations: "reservations",
+  productloancatalogs: "products",
+  storesettings: "products",
 };
 
 const ALLOWED_TOPICS = new Set(Object.values(COLLECTION_TOPIC));

@@ -67,7 +67,7 @@ export default function ProductLoansPanel() {
     } catch {/* ignore */} finally { setBusy(false); }
   }, [token]);
   useEffect(() => { load(); }, [load]);
-  useRealtime(["loans", "payments"], load);
+  useRealtime(["loans", "payments", "products"], load);
 
   // Debounced Account Number lookup — fires whenever the bookkeeper
   // types in the pnNo input of the apply modal. Hits the existing

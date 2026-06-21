@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import Card from "./Card";
 import { apiFetch } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
+import { useRealtime } from "../lib/realtime";
 import { toast } from "./Toast";
 import { printReceiptSmart } from "../lib/printerSettings";
 import { RefreshCw, Phone, CheckCircle2, Banknote, PackageCheck, XCircle, Clock, PiggyBank, Wallet, ShoppingBag, Megaphone, Save } from "lucide-react";
@@ -69,6 +70,8 @@ export default function ProductReservationsPanel() {
     } catch (e) { toast.error(e.message); } finally { setLoading(false); }
   }
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [status]);
+  // Live: any reservation change (new order, approval, payment, pickup) reloads.
+  useRealtime(["reservations"], load);
 
   async function act(r, action) {
     let body = {};

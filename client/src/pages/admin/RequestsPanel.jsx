@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import Card from "../../components/Card";
 import { apiFetch } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
+import { useRealtime } from "../../lib/realtime";
 import { RefreshCw, Phone, MapPin, CheckCircle2, Clock, Trash2, Droplet, PlugZap, MessageSquare } from "lucide-react";
 
 function when(d) {
@@ -47,6 +48,8 @@ export default function RequestsPanel() {
   useEffect(() => {
     load(); /* eslint-disable-next-line */
   }, [type, status]);
+  // Live: a new public request / concern appears without a manual reload.
+  useRealtime(["requests"], load);
 
   async function setReqStatus(row, next) {
     try {

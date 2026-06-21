@@ -40,7 +40,7 @@ export default function ProductAnalyticsPanel() {
     catch {/* ignore */} finally { setBusy(false); }
   }, [token]);
   useEffect(() => { load(); }, [load]);
-  useRealtime(["loans", "payments"], load);
+  useRealtime(["loans", "payments", "products"], load);
 
   const o = data?.overall || {};
   const inv = data?.inventory || {};
