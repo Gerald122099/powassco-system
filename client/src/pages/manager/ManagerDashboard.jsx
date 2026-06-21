@@ -16,6 +16,7 @@ import ExpensesPanel from "../admin/ExpensesPanel";
 import EmployeesPanel from "../admin/EmployeesPanel";
 import ReportsPanel from "../admin/ReportsPanel";
 import RequestsPanel from "../admin/RequestsPanel";
+import ProductReservationsPanel from "../../components/ProductReservationsPanel";
 import MeetingsPanel from "../admin/MeetingsPanel";
 import AssetsPanel from "../admin/AssetsPanel";
 import AnnouncementsPanel from "../admin/AnnouncementsPanel";
@@ -43,6 +44,7 @@ const items = [
   { key: "payroll-approvals", label: "Payroll Approvals", icon: Wallet, desc: "Sign payslips + cash advances before the cashier pays" },
   { key: "products", label: "Product Loans", icon: Boxes, desc: "Add products, adjust stocks directly (no approval needed)" },
   { key: "product-analytics", label: "Product Analytics", icon: Boxes, desc: "Capital + profit per product, sale vs loan, paid/unpaid" },
+  { key: "store-orders", label: "Store Reservations", icon: Boxes, desc: "Approve public-store reservations (verify by phone) + mark pickup" },
   { key: "expenses", label: "Expenses", icon: Wallet, desc: "File disbursement requests — cashier pays them out" },
   { key: "employees", label: "Employees", icon: UserCog, desc: "Register staff, profiles, positions, and salary rates" },
   { key: "reports", label: "Reports", icon: FileBarChart, desc: "Financial reports across expenses and loans" },
@@ -82,6 +84,7 @@ export default function ManagerDashboard() {
       {tab === "employees" && <EmployeesPanel />}
       {tab === "reports" && <ReportsPanel />}
       {tab === "requests" && <RequestsPanel />}
+      {tab === "store-orders" && <ProductReservationsPanel />}
       {tab === "meetings" && <MeetingsPanel />}
       {tab === "assets" && <AssetsPanel />}
       {tab === "metermap" && <MeterMapPanel />}

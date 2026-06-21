@@ -24,6 +24,7 @@ import TreasuryPanel from "../../components/TreasuryPanel";
 import CashDrawerPanel from "../../components/CashDrawerPanel";
 import PettyCashPanel from "./PettyCashPanel";
 import PrinterSettings from "../../components/PrinterSettings";
+import ProductReservationsPanel from "../../components/ProductReservationsPanel";
 import { apiFetch } from "../../lib/api";
 import { cashierBadges } from "../../lib/requestBadges";
 import { useAuth } from "../../context/AuthContext";
@@ -175,6 +176,7 @@ export default function CashierDashboard() {
             { key: "water", label: "Water Dues", icon: Droplets },
             { key: "loan", label: "Loan Dues", icon: Banknote },
             { key: "sales", label: "Sales", icon: ShoppingBag },
+            { key: "reservations", label: "Reservations", icon: ShoppingBag },
             { key: "savings", label: "Savings", icon: PiggyBank },
             { key: "disbursements", label: "Disbursements", icon: Receipt },
             { key: "drawer", label: "Cash Drawer", icon: Wallet },
@@ -212,6 +214,7 @@ export default function CashierDashboard() {
         {view === "water" && <WaterDuesLookup />}
         {view === "loan" && <LoanDuesLookup />}
         {view === "sales" && <CashierSalesPanel />}
+        {view === "reservations" && <ProductReservationsPanel />}
         {view === "savings" && <CashierSavingsPanel />}
         {view === "disbursements" && <CashierDisbursementsPanel />}
         {view === "drawer" && <CashDrawerPanel />}
