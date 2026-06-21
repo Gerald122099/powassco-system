@@ -34,8 +34,9 @@ const METHODS = [
 
 // Receipt descriptor for a sale (thermal or default-printer).
 function saleReceiptDesc(sale, cashierName) {
-  const customer = sale.borrowerPnNo
-    ? `${sale.borrowerName || ""} (${sale.borrowerPnNo})`
+  // Members carry pnNo + accountName; only true walk-ins use customerName.
+  const customer = sale.pnNo
+    ? `${sale.accountName || "Member"} (${sale.pnNo})`
     : (sale.customerName || "Walk-in");
   return {
     title: "SALES OR",
@@ -276,9 +277,9 @@ export default function CashierSalesPanel() {
                   <td className="px-3 py-2 font-mono text-xs">{s.orNo || s.payments?.[0]?.orNo || "—"}</td>
                   <td className="px-3 py-2 text-xs">{new Date(s.createdAt).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" })}</td>
                   <td className="px-3 py-2">
-                    {s.borrowerName || s.customerName || "—"}
-                    {s.borrowerPnNo && <div className="text-[10px] font-mono text-slate-500">{s.borrowerPnNo}</div>}
-                    {!s.borrowerPnNo && s.customerContact && <div className="text-[10px] text-slate-500">{s.customerContact}</div>}
+                    {s.accountName || s.customerName || "—"}
+                    {s.pnNo && <div className="text-[10px] font-mono text-slate-500">{s.pnNo}</div>}
+                    {!s.pnNo && s.customerContact && <div className="text-[10px] text-slate-500">{s.customerContact}</div>}
                   </td>
                   <td className="px-3 py-2">{s.productName || "—"}</td>
                   <td className="px-3 py-2 text-right font-mono">{s.quantity || 1}</td>

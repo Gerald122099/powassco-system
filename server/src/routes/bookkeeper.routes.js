@@ -750,7 +750,7 @@ router.post("/product-applications", ...productTxnGuard, async (req, res) => {
               method: b.method || "cash",
               paidAt: now,
               receivedBy: req.user?.fullName || req.user?.employeeId || "",
-              note: "Walk-in sale",
+              note: `${member ? `Member sale — ${member.accountName}` : "Walk-in sale"}${b.method === "savings" ? " (paid via savings)" : ""}`,
             }]
           : [],
       status:
