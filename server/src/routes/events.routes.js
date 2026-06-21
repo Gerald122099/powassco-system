@@ -1,6 +1,7 @@
 import express from "express";
 import EventPost, { EVENT_REACTIONS } from "../models/EventPost.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
+import { pushToAllAsync } from "../utils/push.js";
 
 const router = express.Router();
 const guard = [requireAuth, requireRole(["admin", "manager"])];
@@ -50,12 +51,24 @@ router.post("/", guard, async (req, res) => {
       published: req.body?.published !== false,
       createdBy: actor(req),
     });
+    // Notify subscribed members about a newly-published event (web push + FCM),
+    // fire-and-forget so we don't block the response. Drafts don't notify.
+    if (doc.published) {
+      pushToAllAsync({
+        title: `📣 ${doc.title}`.slice(0, 80),
+        body: (doc.description || "New event from POWASSCO").slice(0, 140),
+        url: `/events/${doc._id}`,
+        tag: `event-${doc._id}`,
+      });
+    }
     res.status(201).json(stats(doc.toObject()));
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
 router.put("/:id", guard, async (req, res) => {
   try {
+    const existing = await EventPost.findById(req.params.id).select("published").lean();
+    if (!existing) return res.status(404).json({ message: "Event not found." });
     const patch = {};
     if ("title" in req.body) patch.title = String(req.body.title || "").trim();
     if ("description" in req.body) patch.description = String(req.body.description || "").trim();
@@ -63,6 +76,16 @@ router.put("/:id", guard, async (req, res) => {
     if ("published" in req.body) patch.published = !!req.body.published;
     const p = await EventPost.findByIdAndUpdate(req.params.id, patch, { new: true }).lean();
     if (!p) return res.status(404).json({ message: "Event not found." });
+    // Notify only when a draft is published for the first time (edits to an
+    // already-public post don't re-notify).
+    if (patch.published === true && !existing.published) {
+      pushToAllAsync({
+        title: `📣 ${p.title}`.slice(0, 80),
+        body: (p.description || "New event from POWASSCO").slice(0, 140),
+        url: `/events/${p._id}`,
+        tag: `event-${p._id}`,
+      });
+    }
     res.json(stats(p));
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
