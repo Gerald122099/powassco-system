@@ -5,7 +5,7 @@ import { apiFetch } from "../../lib/api";
 import { useRealtime } from "../../lib/realtime";
 import { useAuth } from "../../context/AuthContext";
 import { toast } from "../../components/Toast";
-import { Package, Plus, RefreshCw, Trash2, Edit3, ShoppingBag, CheckCircle, XCircle } from "lucide-react";
+import { Package, Plus, RefreshCw, Trash2, Edit3, ShoppingBag, CheckCircle, XCircle, ImagePlus } from "lucide-react";
 
 const peso = (n) => "₱" + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -18,6 +18,32 @@ const CATEGORIES = [
   { value: "construction", label: "Construction" },
   { value: "other", label: "Other" },
 ];
+// Read an image file → a small JPEG data URL (≤~480px) so the catalog
+// thumbnail stays light (well under the 200 KB cap).
+function readImageAsThumb(file, maxSize = 480, quality = 0.82) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new window.Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxSize || height > maxSize) {
+          if (width >= height) { height = Math.round((height * maxSize) / width); width = maxSize; }
+          else { width = Math.round((width * maxSize) / height); height = maxSize; }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width; canvas.height = height;
+        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.onerror = reject;
+      img.src = reader.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 const EMPTY = {
   name: "",
   category: "other",
@@ -26,6 +52,7 @@ const EMPTY = {
   profit: 0,
   stock: 0,
   description: "",
+  imageBase64: "",
   minCbuRequired: 0,
   isRental: false,
   rentFee: 0,
@@ -177,9 +204,12 @@ export default function ProductLoansPanel() {
           {catalog.map((p) => (
             <div key={p._id} className={`rounded-2xl border p-4 ${p.isActive ? "border-slate-200" : "border-slate-100 bg-slate-50 opacity-70"}`}>
               <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="font-bold text-slate-900">{p.name}</div>
-                  <div className="text-xs text-slate-500">{p.category || "—"}</div>
+                <div className="flex min-w-0 items-start gap-2">
+                  {p.imageBase64 && <img src={p.imageBase64} alt="" className="h-10 w-10 shrink-0 rounded-lg border border-slate-200 object-cover" />}
+                  <div className="min-w-0">
+                    <div className="font-bold text-slate-900">{p.name}</div>
+                    <div className="text-xs text-slate-500">{p.category || "—"}</div>
+                  </div>
                 </div>
                 <div className="text-right">
                   <div className="text-lg font-extrabold text-blue-700">{peso(p.unitPrice)}</div>
@@ -234,6 +264,38 @@ export default function ProductLoansPanel() {
       {/* Catalogue add/edit modal */}
       <Modal open={catalogModalOpen} title={editing ? `Edit ${editing.name}` : "Add Product"} onClose={closeCatalog} size="sm">
         <form onSubmit={saveProduct} className="space-y-3">
+          {/* Item image (optional) — shown on the public store + analytics. */}
+          <div>
+            <label className="text-xs font-semibold">Item image</label>
+            <div className="mt-1 flex items-center gap-3">
+              {form.imageBase64 ? (
+                <img src={form.imageBase64} alt="" className="h-16 w-16 rounded-lg border border-slate-200 object-cover" />
+              ) : (
+                <div className="flex h-16 w-16 items-center justify-center rounded-lg border border-dashed border-slate-300 text-slate-300"><ImagePlus size={22} /></div>
+              )}
+              <div className="flex flex-col items-start gap-1">
+                <label className="cursor-pointer rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                  {form.imageBase64 ? "Change image" : "Upload image"}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const f = e.target.files?.[0];
+                      e.target.value = "";
+                      if (!f) return;
+                      try { const b64 = await readImageAsThumb(f); setForm((s) => ({ ...s, imageBase64: b64 })); }
+                      catch { toast.error("Couldn't read that image."); }
+                    }}
+                  />
+                </label>
+                {form.imageBase64 && (
+                  <button type="button" onClick={() => setForm((s) => ({ ...s, imageBase64: "" }))} className="text-xs font-semibold text-red-600 hover:underline">Remove image</button>
+                )}
+                <span className="text-[10px] text-slate-400">JPG/PNG — auto-resized for the store.</span>
+              </div>
+            </div>
+          </div>
           <div>
             <label className="text-xs font-semibold">Name *</label>
             <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" />
