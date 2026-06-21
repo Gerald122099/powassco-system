@@ -6,6 +6,10 @@ import { Store, MapPin, Search, PackageOpen, Loader2, Tag, Boxes, ShoppingCart, 
 
 const peso = (n) => "₱" + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+// Product images load lazily from their own endpoint (not in the list payload).
+const API_BASE = (import.meta.env.VITE_API_BASE || "http://localhost:5000/api").replace(/\/+$/, "");
+const imgSrc = (p) => (p?.hasImage ? `${API_BASE}/public/products/${p._id}/image` : null);
+
 const CATEGORY_LABELS = {
   materials: "Water Materials",
   frozen_goods: "Frozen Goods",
@@ -185,8 +189,8 @@ function ProductCard({ p, qty, onAdd, onSet }) {
   return (
     <div className={`group flex flex-col overflow-hidden rounded-2xl border bg-white shadow-sm transition ${out ? "border-slate-200 opacity-70" : "border-slate-200 hover:shadow-md"}`}>
       <div className="relative aspect-square w-full bg-slate-50">
-        {p.imageBase64 ? (
-          <img src={p.imageBase64} alt={p.name} className={`h-full w-full object-cover ${out ? "grayscale" : ""}`} loading="lazy" />
+        {imgSrc(p) ? (
+          <img src={imgSrc(p)} alt={p.name} className={`h-full w-full object-cover ${out ? "grayscale" : ""}`} loading="lazy" />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-slate-300"><Boxes size={40} /></div>
         )}
@@ -285,7 +289,7 @@ function CartModal({ open, onClose, lines, total, onSet, onReserved }) {
             {lines.map((l) => (
               <div key={l.p._id} className="flex items-center gap-3 rounded-xl border border-slate-200 p-2">
                 <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-slate-50">
-                  {l.p.imageBase64 ? <img src={l.p.imageBase64} alt="" className="h-full w-full object-cover" /> : <div className="flex h-full w-full items-center justify-center text-slate-300"><Boxes size={18} /></div>}
+                  {imgSrc(l.p) ? <img src={imgSrc(l.p)} alt="" className="h-full w-full object-cover" /> : <div className="flex h-full w-full items-center justify-center text-slate-300"><Boxes size={18} /></div>}
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-bold text-slate-800">{l.p.name}</div>

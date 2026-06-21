@@ -31,14 +31,33 @@ router.get("/", async (req, res) => {
       .select("name category unitPrice stock onHold imageBase64 description isRental rentFee")
       .sort({ category: 1, name: 1 })
       .lean();
-    // Expose AVAILABLE (stock − onHold) so reserved-but-unpaid units don't
-    // show as buyable; hide the raw onHold from the public payload.
-    const items = raw.map(({ onHold, ...p }) => ({ ...p, available: Math.max(0, (Number(p.stock) || 0) - (Number(onHold) || 0)) }));
+    // Strip the heavy imageBase64 from the LIST payload (images load lazily
+    // per-card via GET /:id/image, cached by the browser). Expose AVAILABLE
+    // (stock − onHold) and hide raw onHold.
+    const items = raw.map(({ onHold, imageBase64, ...p }) => ({
+      ...p,
+      hasImage: !!imageBase64,
+      available: Math.max(0, (Number(p.stock) || 0) - (Number(onHold) || 0)),
+    }));
     const s = await StoreSettings.findOne({ key: "store" }).lean();
     res.json({ items, announcement: s?.announcementActive ? s.announcement : "", now: new Date().toISOString() });
   } catch (e) {
     res.status(500).json({ message: e.message || "Failed to load products." });
   }
+});
+
+// Per-product image (decoded from the stored data URL). Cached by the
+// browser so each thumbnail loads once. 404 when there's no image.
+router.get("/:id/image", async (req, res) => {
+  try {
+    const p = await ProductLoanCatalog.findById(req.params.id).select("imageBase64 isActive").lean();
+    if (!p || !p.isActive || !p.imageBase64) return res.status(404).end();
+    const m = /^data:(.+?);base64,(.+)$/s.exec(p.imageBase64);
+    if (!m) return res.status(404).end();
+    res.set("Content-Type", m[1]);
+    res.set("Cache-Control", "public, max-age=86400");
+    res.send(Buffer.from(m[2], "base64"));
+  } catch { res.status(500).end(); }
 });
 
 // Verify a member account number before reserving — returns the name so the
