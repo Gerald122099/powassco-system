@@ -25,6 +25,7 @@ import CbuTransaction from "../models/CbuTransaction.js";
 import { ProductLoanCatalog, ProductLoanApplication } from "../models/ProductLoan.js";
 import LoanSettings from "../models/LoanSettings.js";
 import SavingsAccount from "../models/SavingsAccount.js";
+import SavingsTransaction from "../models/SavingsTransaction.js";
 import { freshenBill } from "../utils/penalty.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
@@ -688,7 +689,37 @@ router.post("/product-applications", ...productTxnGuard, async (req, res) => {
         : transactionType === "rental" ? rentFee
         : totalPrice;
 
-    const doc = await ProductLoanApplication.create({
+    // Pay-with-savings (member sales): debit the savings account now (race-
+    // safe) + write a withdrawal ledger entry. Rolled back if the sale fails.
+    let savingsRollback = null;
+    if (transactionType === "sale" && b.method === "savings") {
+      if (!member) return res.status(400).json({ message: "Savings payment needs a member Account Number." });
+      const acct = await SavingsAccount.findOne({ pnNo: member.pnNo });
+      if (!acct || acct.status === "closed") return res.status(400).json({ message: "Member has no active savings account." });
+      if (Number(acct.balance) < totalPrice) return res.status(400).json({ message: `Insufficient savings (₱${acct.balance} on file, needs ₱${totalPrice}).` });
+      const updated = await SavingsAccount.findOneAndUpdate(
+        { _id: acct._id, balance: { $gte: totalPrice } },
+        { $inc: { balance: -totalPrice } },
+        { new: true }
+      );
+      if (!updated) return res.status(409).json({ message: "Savings balance changed — please retry." });
+      try {
+        await SavingsTransaction.create({
+          pnNo: member.pnNo, type: "withdrawal", amount: totalPrice, orNo: saleOr, method: "other",
+          balanceAfter: round2(updated.balance), receivedBy: req.user?.fullName || req.user?.employeeId || "",
+          note: `Product sale: ${product.name} x${quantity}`,
+        });
+        savingsRollback = { acctId: acct._id, amount: totalPrice, orNo: saleOr };
+      } catch (e) {
+        await SavingsAccount.updateOne({ _id: acct._id }, { $inc: { balance: totalPrice } });
+        if (e.code === 11000) return res.status(409).json({ message: `OR ${saleOr} already used.` });
+        throw e;
+      }
+    }
+
+    let doc;
+    try {
+      doc = await ProductLoanApplication.create({
       pnNo: member?.pnNo || "",
       accountName: member?.accountName || "",
       customerName: member ? "" : customerName,
@@ -734,7 +765,15 @@ router.post("/product-applications", ...productTxnGuard, async (req, res) => {
           ? (req.user?.fullName || req.user?.employeeId || "")
           : "",
       remarks: String(b.remarks || ""),
-    });
+      });
+    } catch (e) {
+      // Refund the savings debit if the sale couldn't be recorded.
+      if (savingsRollback) {
+        await SavingsAccount.updateOne({ _id: savingsRollback.acctId }, { $inc: { balance: savingsRollback.amount } });
+        await SavingsTransaction.deleteOne({ orNo: savingsRollback.orNo });
+      }
+      throw e;
+    }
 
     // Stock decrement for sales / loans (rentals come back, so no
     // permanent stock loss).

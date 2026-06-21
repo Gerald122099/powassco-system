@@ -51,7 +51,7 @@ const ProductPaymentSchema = new mongoose.Schema(
   {
     orNo: { type: String, default: "" },
     amount: { type: Number, required: true, min: 0 },
-    method: { type: String, enum: ["cash", "gcash", "bank", "online", "cbu", "other"], default: "cash" },
+    method: { type: String, enum: ["cash", "gcash", "bank", "online", "cbu", "savings", "other"], default: "cash" },
     paidAt: { type: Date, default: Date.now },
     receivedBy: { type: String, default: "" },
     note: { type: String, default: "" },

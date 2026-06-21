@@ -71,6 +71,7 @@ export default function CashierSalesPanel() {
   const [quantity, setQuantity] = useState(1);
   const [orNo, setOrNo] = useState("");
   const [method, setMethod] = useState("cash");
+  const [savingsBal, setSavingsBal] = useState(null); // member's savings balance (null = none/unknown)
   const [remarks, setRemarks] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [lastSale, setLastSale] = useState(null);
@@ -153,9 +154,23 @@ export default function CashierSalesPanel() {
     return () => clearTimeout(t);
   }, [memberQ, mode, open, token]);
 
+  // Load the member's savings balance so "Pay with savings" can be offered.
+  useEffect(() => {
+    const pn = mode === "member" && member?.pnNo ? member.pnNo : "";
+    if (!pn) { setSavingsBal(null); return; }
+    let alive = true;
+    apiFetch(`/savings/${encodeURIComponent(pn)}`, { token })
+      .then((r) => { if (alive) setSavingsBal(r?.account?.status === "active" ? Number(r.account.balance) || 0 : null); })
+      .catch(() => { if (alive) setSavingsBal(null); }); // no account / no access
+    return () => { alive = false; };
+  }, [mode, member, token]);
+
   const product = catalog.find((p) => p._id === productId);
   const unitPrice = Number(product?.unitPrice) || 0;
   const total = unitPrice * Math.max(1, Number(quantity) || 1);
+  const savingsOk = savingsBal != null && savingsBal >= total && total > 0;
+  // If savings was selected but is no longer valid, fall back to cash.
+  useEffect(() => { if (method === "savings" && !savingsOk) setMethod("cash"); }, [method, savingsOk]);
 
   async function submit() {
     if (!product) { toast.error("Pick a product first."); return; }
@@ -437,7 +452,13 @@ export default function CashierSalesPanel() {
                   className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"
                 >
                   {METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                  {mode === "member" && member && savingsBal != null && (
+                    <option value="savings" disabled={!savingsOk}>Pay with Savings (₱{savingsBal.toLocaleString(undefined, { minimumFractionDigits: 2 })}){savingsOk ? "" : " — insufficient"}</option>
+                  )}
                 </select>
+                {method === "savings" && savingsOk && (
+                  <div className="mt-1 text-[11px] font-semibold text-pink-700">₱{total.toLocaleString(undefined, { minimumFractionDigits: 2 })} will be deducted from the member's savings.</div>
+                )}
               </div>
               <div>
                 <label className="text-xs font-semibold text-slate-600">Remarks (optional)</label>
