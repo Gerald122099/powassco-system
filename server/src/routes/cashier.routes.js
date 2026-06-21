@@ -212,6 +212,7 @@ router.get("/water", ...guard, async (req, res) => {
       pendingOnline,
       productLoans,
       savingsAccount,
+      cashierCanWaivePenalty: !!liveSettings?.cashierCanWaivePenalty,
     });
   } catch (e) {
     console.error("Cashier water lookup error:", e);
@@ -339,6 +340,13 @@ router.post("/pay-water", ...payGuard, async (req, res) => {
     if (bill.status === "paid") return res.status(409).json({ message: "This bill is already paid." });
 
     const totalDue = round2(Number(bill.totalDue) || 0);
+    // Penalty waiver: cashier UNticked "Apply penalty". Only honored when the
+    // admin enabled cashierCanWaivePenalty; reduces the water due by the
+    // bill's applied penalty.
+    const waiveSettings = await WaterSettings.findOne().lean();
+    const penaltyOnBill = round2(Number(bill.penaltyApplied) || 0);
+    const waivePenalty = !!req.body?.waivePenalty && !!waiveSettings?.cashierCanWaivePenalty && penaltyOnBill > 0;
+    const effectiveWaterDue = waivePenalty ? round2(totalDue - penaltyOnBill) : totalDue;
 
     // Validate + pre-load every product loan that's being bundled, so
     // we can fail fast (and atomically) before flipping the water
@@ -374,10 +382,10 @@ router.post("/pay-water", ...payGuard, async (req, res) => {
       }
     }
 
-    const totalExpected = round2(totalDue + productLoanTotal + savingsDeposit + cbuContribution);
+    const totalExpected = round2(effectiveWaterDue + productLoanTotal + savingsDeposit + cbuContribution);
     if (amountReceived < totalExpected) {
       return res.status(400).json({
-        message: `Amount received (₱${amountReceived}) is less than the combined total (₱${totalExpected}: water ₱${totalDue}${productLoanTotal > 0 ? ` + product loans ₱${productLoanTotal}` : ""}${savingsDeposit > 0 ? ` + savings ₱${savingsDeposit}` : ""}${cbuContribution > 0 ? ` + CBU ₱${cbuContribution}` : ""}).`,
+        message: `Amount received (₱${amountReceived}) is less than the combined total (₱${totalExpected}: water ₱${effectiveWaterDue}${waivePenalty ? ` (penalty ₱${penaltyOnBill} waived)` : ""}${productLoanTotal > 0 ? ` + product loans ₱${productLoanTotal}` : ""}${savingsDeposit > 0 ? ` + savings ₱${savingsDeposit}` : ""}${cbuContribution > 0 ? ` + CBU ₱${cbuContribution}` : ""}).`,
       });
     }
 
@@ -407,7 +415,11 @@ router.post("/pay-water", ...payGuard, async (req, res) => {
     // source of truth for "I have the right to post this payment".
     const claimed = await WaterBill.findOneAndUpdate(
       { _id: bill._id, status: { $ne: "paid" } },
-      { $set: { status: "paid", paidAt: new Date(), orNo, subjectForDisconnection: false } },
+      { $set: {
+        status: "paid", paidAt: new Date(), orNo, subjectForDisconnection: false,
+        // Penalty waived → reflect the reduced due on the bill itself.
+        ...(waivePenalty ? { penaltyApplied: 0, totalDue: effectiveWaterDue } : {}),
+      } },
       { new: true }
     );
     if (!claimed) return res.status(409).json({ message: "This bill is already paid (race lost)." });
@@ -423,7 +435,7 @@ router.post("/pay-water", ...payGuard, async (req, res) => {
         periodKey: claimed.periodKey,
         orNo,
         method,
-        amountPaid: totalDue,
+        amountPaid: effectiveWaterDue,
         amountReceived: round2(amountReceived),
         cbuExcess: excessCbuPart,
         discountApplied: claimed.discount || 0,
@@ -431,7 +443,10 @@ router.post("/pay-water", ...payGuard, async (req, res) => {
         classification: claimed.classification,
         receivedBy,
         paidAt: new Date(),
-        notes: note || (cbuExcess > 0 ? `Excess ₱${cbuExcess} credited to CBU` : ""),
+        notes: note || [
+          waivePenalty ? `Penalty ₱${penaltyOnBill} waived by ${receivedBy}` : "",
+          cbuExcess > 0 ? `Excess ₱${cbuExcess} credited to CBU` : "",
+        ].filter(Boolean).join(" • "),
       });
     } catch (e) {
       // Compensate: re-open the bill so the cashier can retry with a

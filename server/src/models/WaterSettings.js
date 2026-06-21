@@ -48,6 +48,11 @@ const WaterSettingsSchema = new mongoose.Schema(
     penaltyGraceDays: { type: Number, default: 5, min: 0, max: 30 },
     penaltyAfterGraceAmount: { type: Number, default: 200, min: 0 },
 
+    // When true, the cashier sees an "Apply penalty" checkbox on each bill
+    // payment (default ON) and may UNtick it to waive that bill's penalty.
+    // Admin-controlled — hidden from the cashier when false.
+    cashierCanWaivePenalty: { type: Boolean, default: false },
+
     // NEW-MEMBER FEES (Phase 9) — collected by the cashier when a new
     // member registers. Editable in admin Water Settings.
     membershipFee: { type: Number, default: 0, min: 0 },

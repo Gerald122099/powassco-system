@@ -90,15 +90,31 @@ export default function WaterDuesLookup() {
   const [paySavings, setPaySavings] = useState("");
   // Where any automatic excess (bill input > total due) routes.
   const [payExcessTo, setPayExcessTo] = useState("cbu");
+  // Penalty toggle (default ON = apply). Only shown when admin enabled it and
+  // the bill actually has a penalty. UNticking waives that bill's penalty.
+  const [applyPenalty, setApplyPenalty] = useState(true);
+
+  // The amount due after the penalty toggle (waived → minus the penalty).
+  const penaltyOf = (bill) => Number(bill?.penaltyApplied || 0);
+  const effectiveDue = (bill, apply) => {
+    const td = Number(bill?.totalDue || 0);
+    return apply ? td : Math.max(0, +(td - penaltyOf(bill)).toFixed(2));
+  };
 
   function openPay(bill) {
     setPayTarget(bill);
     setPayOR("");
+    setApplyPenalty(true);
     setPayReceived(String(bill.totalDue || ""));
     setPayCbu("");
     setPaySavings("");
     setPayExcessTo("cbu");
     setProductLoanPicks({});
+  }
+  // Re-toggling penalty re-fills the bill amount to the new effective due.
+  function togglePenalty(apply) {
+    setApplyPenalty(apply);
+    if (payTarget) setPayReceived(String(effectiveDue(payTarget, apply)));
   }
 
   // Sum of the cashier's product-loan picks — added to the bill
@@ -111,7 +127,8 @@ export default function WaterDuesLookup() {
   async function submitPay(e) {
     e?.preventDefault?.();
     if (!payTarget) return;
-    const due = Number(payTarget.totalDue) || 0;
+    const waive = data?.cashierCanWaivePenalty && !applyPenalty && penaltyOf(payTarget) > 0;
+    const due = effectiveDue(payTarget, !waive);
     const billPortion = Number(payReceived) || 0;
     const cbuPortion = Math.max(0, Number(payCbu) || 0);
     const savingsPortion = Math.max(0, Number(paySavings) || 0);
@@ -128,6 +145,7 @@ export default function WaterDuesLookup() {
     const totalReceived = billPortion + cbuPortion + savingsPortion + productLoanSum;
     if (!payOR.trim()) return toast.error("Enter the OR number.");
     if (billPortion < due) return toast.error(`Bill amount must be at least ₱${due.toFixed(2)}.`);
+    if (waive && !window.confirm(`Waive the ₱${penaltyOf(payTarget).toFixed(2)} penalty for this bill?\nThe member pays ₱${due.toFixed(2)} instead of ₱${Number(payTarget.totalDue).toFixed(2)}.`)) return;
     setPaying(true);
     const target = payTarget;
     const orNo = payOR.trim().toUpperCase();
@@ -146,6 +164,7 @@ export default function WaterDuesLookup() {
           savingsDeposit: savingsPortion,
           cbuContribution: cbuPortion,
           excessTo: payExcessTo,
+          waivePenalty: waive,
         },
       });
       toast.success(res.message || "Payment posted.");
@@ -561,8 +580,18 @@ export default function WaterDuesLookup() {
               <div>Account: <b>{data?.member?.accountName}</b> <span className="text-xs text-slate-500">({data?.member?.pnNo})</span></div>
               <div className="mt-1 flex items-center justify-between">
                 <span className="text-xs text-slate-500">Total due</span>
-                <span className="text-lg font-extrabold text-red-600">{peso(payTarget.totalDue)}</span>
+                <span className="text-lg font-extrabold text-red-600">{peso(effectiveDue(payTarget, applyPenalty))}</span>
               </div>
+              {/* Admin-gated penalty toggle — only when this bill has a penalty. */}
+              {data?.cashierCanWaivePenalty && penaltyOf(payTarget) > 0 && (
+                <label className="mt-2 flex items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5">
+                  <span className="inline-flex items-center gap-2 text-xs font-semibold text-amber-800">
+                    <input type="checkbox" checked={applyPenalty} onChange={(e) => togglePenalty(e.target.checked)} />
+                    Apply penalty ({peso(penaltyOf(payTarget))})
+                  </span>
+                  {!applyPenalty && <span className="text-[10px] font-bold uppercase text-amber-700">Waived</span>}
+                </label>
+              )}
             </div>
             <div>
               <label className="text-xs font-semibold text-slate-700">OR Number (paper receipt)</label>
@@ -574,12 +603,12 @@ export default function WaterDuesLookup() {
                 <input
                   type="number"
                   step="0.01"
-                  min={payTarget.totalDue}
+                  min={effectiveDue(payTarget, applyPenalty)}
                   value={payReceived}
                   onChange={(e) => setPayReceived(e.target.value)}
                   className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-mono text-right"
                 />
-                <div className="mt-1 text-[10px] text-slate-500">Pre-filled to total due. Must be ≥ ₱{Number(payTarget.totalDue).toFixed(2)}.</div>
+                <div className="mt-1 text-[10px] text-slate-500">Pre-filled to total due. Must be ≥ ₱{effectiveDue(payTarget, applyPenalty).toFixed(2)}.</div>
               </div>
               <div>
                 <label className="text-xs font-semibold text-slate-700">Add to CBU (₱)</label>
@@ -759,11 +788,11 @@ export default function WaterDuesLookup() {
                       <span className="text-xs text-violet-700">↳ Extracted to CBU</span>
                       <span className="font-mono text-sm font-bold text-violet-800">+{peso(cbuNum)}</span>
                     </div>
-                    {billNum > Number(payTarget.totalDue) && (
+                    {billNum > effectiveDue(payTarget, applyPenalty) && (
                       <div className="mt-1 rounded-lg border border-emerald-200 bg-white px-2 py-1.5">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="text-[11px] font-semibold text-emerald-800">
-                            Excess {peso(billNum - Number(payTarget.totalDue))} →
+                            Excess {peso(billNum - effectiveDue(payTarget, applyPenalty))} →
                           </span>
                           {[
                             ["cbu", "CBU"],
@@ -789,9 +818,9 @@ export default function WaterDuesLookup() {
                         </div>
                       </div>
                     )}
-                    {Number(payReceived) < Number(payTarget.totalDue) && (
+                    {Number(payReceived) < effectiveDue(payTarget, applyPenalty) && (
                       <div className="mt-1 rounded-lg bg-red-50 border border-red-200 px-2 py-1 text-[11px] font-semibold text-red-800">
-                        Bill amount must be ≥ ₱{Number(payTarget.totalDue).toFixed(2)}.
+                        Bill amount must be ≥ ₱{effectiveDue(payTarget, applyPenalty).toFixed(2)}.
                       </div>
                     )}
                   </div>
@@ -800,7 +829,7 @@ export default function WaterDuesLookup() {
             })()}
             <div className="flex justify-end gap-2 pt-2">
               <button type="button" onClick={() => setPayTarget(null)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold">Cancel</button>
-              <button disabled={paying || Number(payReceived) < Number(payTarget.totalDue) || !payOR.trim()} className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">
+              <button disabled={paying || Number(payReceived) < effectiveDue(payTarget, applyPenalty) || !payOR.trim()} className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">
                 {paying ? "Posting…" : "Post Payment"}
               </button>
             </div>

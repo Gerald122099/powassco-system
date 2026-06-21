@@ -152,6 +152,7 @@ router.put("/", ...adminGuard, async (req, res) => {
       penaltyDailyAmount,
       penaltyGraceDays,
       penaltyAfterGraceAmount,
+      cashierCanWaivePenalty,
       membershipFee,
       tappingFee,
       dueDayOfMonth,
@@ -175,6 +176,8 @@ router.put("/", ...adminGuard, async (req, res) => {
     if (penaltyType !== undefined) settings.penaltyType = penaltyType;
     if (penaltyValue !== undefined) settings.penaltyValue = Number(penaltyValue);
 
+    if (cashierCanWaivePenalty !== undefined)
+      settings.cashierCanWaivePenalty = !!cashierCanWaivePenalty;
     if (penaltyDailyAmount !== undefined)
       settings.penaltyDailyAmount = Math.max(0, Number(penaltyDailyAmount) || 0);
     if (penaltyGraceDays !== undefined)

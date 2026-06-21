@@ -33,6 +33,7 @@ export default function WaterSettingsPanel() {
   const [penaltyDailyAmount, setPenaltyDailyAmount] = useState(10);
   const [penaltyGraceDays, setPenaltyGraceDays] = useState(5);
   const [penaltyAfterGraceAmount, setPenaltyAfterGraceAmount] = useState(200);
+  const [cashierCanWaivePenalty, setCashierCanWaivePenalty] = useState(false);
 
   // TARIFF SETTINGS STATE
   const [tariffs, setTariffs] = useState({
@@ -70,6 +71,7 @@ export default function WaterSettingsPanel() {
       penaltyDailyAmount: Math.max(0, Number(penaltyDailyAmount) || 0),
       penaltyGraceDays: clamp(penaltyGraceDays, 0, 30),
       penaltyAfterGraceAmount: Math.max(0, Number(penaltyAfterGraceAmount) || 0),
+      cashierCanWaivePenalty: !!cashierCanWaivePenalty,
     };
   }, [
     penaltyType,
@@ -81,6 +83,7 @@ export default function WaterSettingsPanel() {
     penaltyDailyAmount,
     penaltyGraceDays,
     penaltyAfterGraceAmount,
+    cashierCanWaivePenalty,
   ]);
 
   // Tariff payload
@@ -164,7 +167,8 @@ export default function WaterSettingsPanel() {
       setPenaltyDailyAmount(data.penaltyDailyAmount ?? 10);
       setPenaltyGraceDays(data.penaltyGraceDays ?? 5);
       setPenaltyAfterGraceAmount(data.penaltyAfterGraceAmount ?? 200);
-      
+      setCashierCanWaivePenalty(!!data.cashierCanWaivePenalty);
+
       // Tariff settings with ensured fields
       setTariffs({
         residential: ensureTariffFields(data.tariffs?.residential || []),
@@ -354,16 +358,12 @@ export default function WaterSettingsPanel() {
     if (!confirm("Reset all settings to default values?")) return;
     
     try {
-      const data = await apiFetch("/water/settings/reset", {
-        method: "POST",
-        token,
-      });
-      
+      await apiFetch("/water/settings/reset", { method: "POST", token });
       // Reload settings
       await loadSettings();
       setToast("✅ Settings reset to defaults");
       setTimeout(() => setToast(""), 2000);
-    } catch (error) {
+    } catch {
       setErr("Failed to reset settings");
     }
   }
@@ -628,6 +628,14 @@ export default function WaterSettingsPanel() {
                 Example with current values — due day 17, daily ₱{penaltyDailyAmount}, grace {penaltyGraceDays} days, post-grace ₱{penaltyAfterGraceAmount}:
                 day-18 = ₱{penaltyDailyAmount}, day-19 = ₱{(penaltyDailyAmount || 0) * 2}, … day-{17 + (penaltyGraceDays || 0)} = ₱{(penaltyDailyAmount || 0) * (penaltyGraceDays || 0)}, then day-{17 + (penaltyGraceDays || 0) + 1} = ₱{(penaltyDailyAmount || 0) * (penaltyGraceDays || 0) + (penaltyAfterGraceAmount || 0)} + queued for disconnection.
               </div>
+              {/* Cashier waiver permission */}
+              <label className="mt-3 flex items-start gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+                <input type="checkbox" className="mt-0.5" checked={cashierCanWaivePenalty} onChange={(e) => setCashierCanWaivePenalty(e.target.checked)} />
+                <span className="text-sm">
+                  <span className="font-semibold text-slate-800">Let cashiers waive a bill's penalty</span>
+                  <span className="block text-[11px] text-slate-500">Shows an "Apply penalty" checkbox (default ticked) on each water payment. Unticking it waives that bill's penalty. Hidden from cashiers when off.</span>
+                </span>
+              </label>
             </div>
 
             {/* Basic Settings Actions */}
