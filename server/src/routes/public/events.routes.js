@@ -13,7 +13,7 @@ function shape(p) {
     _id: p._id,
     title: p.title,
     description: p.description,
-    imageCount: (p.images || []).length,
+    imageCount: p.imageCount != null ? p.imageCount : (p.images || []).length,
     reactions,
     views: Math.max(0, Number(p.views) || 0),
     createdBy: p.createdBy,
@@ -22,10 +22,16 @@ function shape(p) {
   };
 }
 
-// List published events (newest first).
+// List published events (newest first). Aggregation projects imageCount and
+// EXCLUDES the heavy images[] so base64 never leaves the database.
 router.get("/", async (req, res) => {
   try {
-    const items = await EventPost.find({ published: true }).sort({ createdAt: -1 }).limit(60).lean();
+    const items = await EventPost.aggregate([
+      { $match: { published: true } },
+      { $sort: { createdAt: -1 } },
+      { $limit: 60 },
+      { $project: { title: 1, description: 1, reactions: 1, views: 1, createdBy: 1, createdAt: 1, updatedAt: 1, imageCount: { $size: { $ifNull: ["$images", []] } } } },
+    ]);
     res.json({ items: items.map(shape) });
   } catch (e) { res.status(500).json({ message: e.message || "Failed to load events." }); }
 });

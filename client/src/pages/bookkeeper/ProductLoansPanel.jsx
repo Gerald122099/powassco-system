@@ -8,6 +8,10 @@ import { toast } from "../../components/Toast";
 import { Package, Plus, RefreshCw, Trash2, Edit3, ShoppingBag, CheckCircle, XCircle, ImagePlus } from "lucide-react";
 
 const peso = (n) => "₱" + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// Catalogue thumbnails load via the (cached, versioned) image endpoint instead
+// of shipping base64 in the list. Active products only (public endpoint).
+const API_BASE = (import.meta.env.VITE_API_BASE || "http://localhost:5000/api").replace(/\/+$/, "");
+const catalogImg = (p) => `${API_BASE}/public/products/${p._id}/image?v=${Date.parse(p.updatedAt) || 0}`;
 
 const CATEGORIES = [
   { value: "frozen_goods", label: "Frozen goods" },
@@ -126,7 +130,13 @@ export default function ProductLoansPanel() {
   }, [applyForm.pnNo, applyOpen, token]);
 
   function openAdd() { setEditing(null); setForm(EMPTY); setCatalogModalOpen(true); }
-  function openEdit(p) { setEditing(p); setForm({ ...EMPTY, ...p }); setCatalogModalOpen(true); }
+  async function openEdit(p) {
+    setEditing(p);
+    setForm({ ...EMPTY, ...p }); // list lacks imageBase64; load the full doc next
+    setCatalogModalOpen(true);
+    try { const full = await apiFetch(`/bookkeeper/product-catalog/${p._id}`, { token }); setForm({ ...EMPTY, ...full }); }
+    catch { /* keep the lightweight version */ }
+  }
   function closeCatalog() { setCatalogModalOpen(false); setEditing(null); setForm(EMPTY); }
 
   async function saveProduct(e) {
@@ -205,7 +215,7 @@ export default function ProductLoansPanel() {
             <div key={p._id} className={`rounded-2xl border p-4 ${p.isActive ? "border-slate-200" : "border-slate-100 bg-slate-50 opacity-70"}`}>
               <div className="flex items-start justify-between gap-2">
                 <div className="flex min-w-0 items-start gap-2">
-                  {p.imageBase64 && <img src={p.imageBase64} alt="" className="h-10 w-10 shrink-0 rounded-lg border border-slate-200 object-cover" />}
+                  {p.hasImage && p.isActive && <img src={catalogImg(p)} alt="" loading="lazy" decoding="async" className="h-10 w-10 shrink-0 rounded-lg border border-slate-200 object-cover" />}
                   <div className="min-w-0">
                     <div className="font-bold text-slate-900">{p.name}</div>
                     <div className="text-xs text-slate-500">{p.category || "—"}</div>

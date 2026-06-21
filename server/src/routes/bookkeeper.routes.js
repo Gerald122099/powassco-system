@@ -452,9 +452,22 @@ router.get("/analytics", ...guard, async (req, res) => {
 });
 
 // ----- Product loan catalogue -----
+// List excludes the heavy imageBase64 (thumbnails load via the image route);
+// hasImage tells the UI whether to show one. base64 never leaves the DB here.
 router.get("/product-catalog", ...productManageGuard, async (req, res) => {
-  const items = await ProductLoanCatalog.find().sort({ isActive: -1, name: 1 }).lean();
+  const items = await ProductLoanCatalog.aggregate([
+    { $sort: { isActive: -1, name: 1 } },
+    { $addFields: { hasImage: { $gt: [{ $strLenCP: { $ifNull: ["$imageBase64", ""] } }, 0] } } },
+    { $project: { imageBase64: 0 } },
+  ]);
   res.json(items);
+});
+
+// Single product WITH imageBase64 — loaded by the editor when editing.
+router.get("/product-catalog/:id", ...productManageGuard, async (req, res) => {
+  const p = await ProductLoanCatalog.findById(req.params.id).lean();
+  if (!p) return res.status(404).json({ message: "Product not found." });
+  res.json(p);
 });
 
 router.post("/product-catalog", ...productManageGuard, async (req, res) => {

@@ -27,18 +27,18 @@ async function noShowStatus(pnNo) {
 // strict public rate limit applies.
 router.get("/", async (req, res) => {
   try {
-    const raw = await ProductLoanCatalog.find({ isActive: true })
-      .select("name category unitPrice stock onHold imageBase64 description isRental rentFee updatedAt")
-      .sort({ category: 1, name: 1 })
-      .lean();
-    // Strip the heavy imageBase64 from the LIST payload (images load lazily
-    // per-card via GET /:id/image, cached by the browser). Expose AVAILABLE
-    // (stock − onHold) and hide raw onHold.
-    const items = raw.map(({ onHold, imageBase64, ...p }) => ({
-      ...p,
-      hasImage: !!imageBase64,
-      available: Math.max(0, (Number(p.stock) || 0) - (Number(onHold) || 0)),
-    }));
+    // Aggregation projects hasImage + AVAILABLE (stock − onHold) and EXCLUDES
+    // the heavy imageBase64, so base64 never leaves the database (images load
+    // lazily per-card via GET /:id/image).
+    const items = await ProductLoanCatalog.aggregate([
+      { $match: { isActive: true } },
+      { $sort: { category: 1, name: 1 } },
+      { $project: {
+        name: 1, category: 1, unitPrice: 1, stock: 1, description: 1, isRental: 1, rentFee: 1, updatedAt: 1,
+        hasImage: { $gt: [{ $strLenCP: { $ifNull: ["$imageBase64", ""] } }, 0] },
+        available: { $max: [0, { $subtract: [{ $ifNull: ["$stock", 0] }, { $ifNull: ["$onHold", 0] }] }] },
+      } },
+    ]);
     const s = await StoreSettings.findOne({ key: "store" }).lean();
     res.json({ items, announcement: s?.announcementActive ? s.announcement : "", now: new Date().toISOString() });
   } catch (e) {
