@@ -191,7 +191,12 @@ export default function HomePage() {
     const h = new Date().getHours();
     return h >= 18 || h < 6; // auto: night after 6pm, before 6am
   });
+  // "Tap me!" hint shows until the visitor has tried the toggle once.
+  const [hintSeen, setHintSeen] = useState(() => {
+    try { return localStorage.getItem("pow_hero_hint") === "1"; } catch { return false; }
+  });
   function toggleNight() {
+    if (!hintSeen) { setHintSeen(true); try { localStorage.setItem("pow_hero_hint", "1"); } catch { /* ignore */ } }
     setNight((n) => {
       const next = !n;
       try { localStorage.setItem("pow_hero_night", next ? "1" : "0"); } catch { /* ignore */ }
@@ -226,18 +231,26 @@ export default function HomePage() {
         <div className={`absolute inset-0 bg-gradient-to-r transition-all duration-700 ${night ? "from-slate-950/95 via-indigo-950/70 to-orange-900/20 lg:from-slate-950 lg:via-slate-950/85 lg:to-transparent" : "from-emerald-950/95 via-emerald-900/70 to-emerald-900/25 lg:from-emerald-950 lg:via-emerald-950/85 lg:to-transparent"}`} />
         <div className="absolute inset-0 bg-gradient-to-t from-slate-950/70 via-transparent to-slate-950/30" />
 
-        {/* Day / night toggle — labelled with the OPPOSITE action + a soft
-            glow so visitors are curious to try it. */}
-        <button
-          onClick={toggleNight}
-          aria-label={night ? "Switch to day view" : "Switch to night view"}
-          className="group absolute right-4 top-20 z-10 inline-flex items-center gap-2 rounded-full border border-white/25 bg-white/10 px-3.5 py-2 text-sm font-semibold text-white shadow-lg backdrop-blur transition hover:scale-105 hover:bg-white/20 sm:top-24"
-        >
-          <span className="absolute inset-0 -z-10 animate-pulse rounded-full bg-amber-300/25 blur-md" />
-          {night ? <Sun size={16} className="text-amber-300" /> : <Moon size={16} className="text-indigo-100" />}
-          <span>{night ? "See it by day" : "See it at night"}</span>
-          <span className="text-amber-200">✨</span>
-        </button>
+        {/* Day / night toggle — small, catchy, with a bouncing "Tap me!" hint
+            (shown until the visitor tries it once). */}
+        <div className="absolute right-4 top-20 z-10 flex flex-col items-end gap-1.5 sm:top-24">
+          {!hintSeen && (
+            <span className="animate-bounce rounded-full bg-amber-400 px-2.5 py-1 text-[11px] font-extrabold text-amber-950 shadow-lg">
+              👆 Tap me!
+            </span>
+          )}
+          <button
+            onClick={toggleNight}
+            aria-label={night ? "Switch to day view" : "Switch to night view"}
+            title={night ? "See it by day" : "See it at night"}
+            className={`group relative inline-flex items-center gap-1.5 rounded-full border border-white/30 bg-white/15 px-4 py-2 text-sm font-bold text-white shadow-lg backdrop-blur transition hover:scale-110 hover:bg-white/25 ${hintSeen ? "" : "animate-pulse"}`}
+          >
+            <span className="absolute inset-0 -z-10 rounded-full bg-amber-300/30 blur-md" />
+            {night ? <Sun size={16} className="text-amber-300" /> : <Moon size={16} className="text-indigo-100" />}
+            <span>{night ? "Day" : "Night"}</span>
+            <span className="text-amber-200">✨</span>
+          </button>
+        </div>
         <div className="relative mx-auto max-w-6xl px-5 pb-28 pt-32 sm:pt-40">
           <div className="max-w-2xl">
             <div className="mb-6 inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-1.5 text-sm font-medium text-emerald-50 ring-1 ring-white/20 backdrop-blur">
