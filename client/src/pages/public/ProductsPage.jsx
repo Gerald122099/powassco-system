@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import Navbar from "../../components/Navbar";
 import Modal from "../../components/Modal";
 import { apiFetch } from "../../lib/api";
+import { pickupOptions, ymd } from "../../lib/storeHelpers";
 import { Store, MapPin, Search, PackageOpen, Loader2, Tag, Boxes, ShoppingCart, Plus, Minus, Trash2, CheckCircle2, X, Megaphone, ClipboardList } from "lucide-react";
 
 const peso = (n) => "₱" + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -22,17 +23,6 @@ const CATEGORY_LABELS = {
 const catLabel = (c) => CATEGORY_LABELS[c] || "Product Items";
 const availOf = (p) => (p.available != null ? p.available : (Number(p.stock) || 0));
 
-// Next 2 non-Sunday days (starting tomorrow) for pickup.
-function pickupOptions() {
-  const out = [];
-  const d = new Date(); d.setHours(0, 0, 0, 0);
-  while (out.length < 2) {
-    d.setDate(d.getDate() + 1);
-    if (d.getDay() !== 0) out.push(new Date(d));
-  }
-  return out;
-}
-const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const niceDay = (d) => d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 
 export default function ProductsPage() {

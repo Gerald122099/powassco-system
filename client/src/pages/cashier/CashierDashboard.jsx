@@ -186,7 +186,9 @@ export default function CashierDashboard() {
             { key: "reports", label: "Reports", icon: FileDown },
             { key: "treasury", label: "Treasury", icon: Wallet },
             { key: "settings", label: "Printer", icon: Printer },
-          ].map(({ key, label, icon: Icon }) => (
+          ].map(({ key, label, icon }) => {
+            const Icon = icon;
+            return (
             <button
               key={key}
               type="button"
@@ -204,7 +206,8 @@ export default function CashierDashboard() {
                 </span>
               )}
             </button>
-          ))}
+            );
+          })}
         </div>
 
         {/* Selected panel. Each one still has its OWN module-specific

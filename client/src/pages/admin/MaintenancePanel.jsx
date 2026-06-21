@@ -24,7 +24,7 @@ const peso2 = (n) =>
 
 function ActionCard({
   title,
-  icon: Icon,
+  icon,
   iconClass,
   description,
   warnText,
@@ -33,6 +33,7 @@ function ActionCard({
   applyConfirmMsg,
   renderTable,
 }) {
+  const Icon = icon;
   const { token } = useAuth();
   const [all, setAll] = useState(false);
   const [result, setResult] = useState(null);
