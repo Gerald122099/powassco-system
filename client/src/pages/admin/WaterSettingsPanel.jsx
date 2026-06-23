@@ -5,6 +5,10 @@ import { useAuth } from "../../context/AuthContext";
 import Swal from "sweetalert2";
 import BillRemindersPanel from "./BillRemindersPanel";
 
+// Normalize a tier label for tolerant matching (mirrors the billing engine):
+// ignores dash style, "m³"/"m3", spaces and case.
+const normTier = (s) => String(s || "").toLowerCase().replace(/m³|m3|cu\.?\s*m|cubic/g, "").replace(/[–—−]/g, "-").replace(/\s+/g, "").trim();
+
 export default function WaterSettingsPanel() {
   const { token } = useAuth();
 
@@ -43,6 +47,21 @@ export default function WaterSettingsPanel() {
   const [seniorSettings, setSeniorSettings] = useState({
     discountRate: 5,
     applicableTiers: ["31-40", "41+"]
+  });
+
+  // Discount tier helpers: chips toggle a tier in/out of applicableTiers.
+  const tierOptions = useMemo(() => {
+    const out = []; const seen = new Set();
+    for (const t of [...(tariffs.residential || []), ...(tariffs.commercial || [])]) {
+      const label = String(t?.tier || "").trim();
+      if (label && !seen.has(normTier(label))) { seen.add(normTier(label)); out.push(label); }
+    }
+    return out;
+  }, [tariffs]);
+  const isTierSelected = (list, label) => (list || []).some((x) => normTier(x) === normTier(label));
+  const toggleTier = (label) => setSeniorSettings((s) => {
+    const has = (s.applicableTiers || []).some((x) => normTier(x) === normTier(label));
+    return { ...s, applicableTiers: has ? s.applicableTiers.filter((x) => normTier(x) !== normTier(label)) : [...(s.applicableTiers || []), label] };
   });
 
   // Snapshots for dirty tracking
@@ -712,20 +731,45 @@ export default function WaterSettingsPanel() {
                       
                       <div className="md:col-span-2">
                         <label className="text-sm font-semibold text-slate-700">
-                          Applicable Tiers (comma-separated)
+                          Applicable Tiers
                         </label>
+                        {/* Tap a tier to toggle it on/off — no typing needed. */}
+                        <div className="mt-1.5 flex flex-wrap gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setSeniorSettings({ ...seniorSettings, applicableTiers: [] })}
+                            className={`rounded-full px-3 py-1 text-xs font-semibold transition ${seniorSettings.applicableTiers.length === 0 ? "bg-emerald-600 text-white shadow-sm" : "border border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+                          >
+                            All tiers (everyone)
+                          </button>
+                          {tierOptions.map((label) => {
+                            const active = isTierSelected(seniorSettings.applicableTiers, label);
+                            return (
+                              <button
+                                key={label}
+                                type="button"
+                                onClick={() => toggleTier(label)}
+                                className={`rounded-full px-3 py-1 text-xs font-semibold transition ${active ? "bg-emerald-600 text-white shadow-sm" : "border border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+                              >
+                                {label}
+                              </button>
+                            );
+                          })}
+                          {tierOptions.length === 0 && <span className="text-xs text-slate-400">Add tariff tiers above first.</span>}
+                        </div>
+                        {/* Editable text field (round-trips exactly while typing). */}
                         <input
                           type="text"
-                          className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5"
-                          value={seniorSettings.applicableTiers.join(", ")}
+                          className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"
+                          value={seniorSettings.applicableTiers.join(",")}
                           onChange={(e) => setSeniorSettings({
                             ...seniorSettings,
-                            applicableTiers: e.target.value.split(",").map(t => t.trim()).filter(t => t)
+                            applicableTiers: e.target.value.split(","),
                           })}
-                          placeholder="31-40, 41+"
+                          placeholder="e.g. 0-5,6-10,11-20,21-30 — or leave blank for all"
                         />
                         <div className="mt-1 text-[11px] text-slate-500">
-                          Senior discount applies only to these tiers. <b>Leave blank (or type “all”)</b> to apply to every tier. Labels are matched flexibly — dashes, spaces and “m³” are ignored, so “31-40” = “31 – 40 m³”.
+                          Tap the tiers above, or type them comma-separated. <b>“All tiers” / blank</b> = discount for everyone. Labels match flexibly — dashes, spaces and “m³” are ignored, so “31-40” = “31 – 40 m³”.
                         </div>
                       </div>
                     </div>
@@ -1128,7 +1172,7 @@ export default function WaterSettingsPanel() {
                   <div>Residential Tiers: <b>{tariffs.residential.length}</b></div>
                   <div>Commercial Tiers: <b>{tariffs.commercial.length}</b></div>
                   <div>Senior Discount: <b>{seniorSettings.discountRate}%</b></div>
-                  <div>Applicable Tiers: <b>{seniorSettings.applicableTiers.join(", ")}</b></div>
+                  <div>Applicable Tiers: <b>{seniorSettings.applicableTiers.map((t) => String(t).trim()).filter(Boolean).join(", ") || "All tiers"}</b></div>
                   
                   {/* Show default tariff examples */}
                   <div className="mt-3 pt-3 border-t">
