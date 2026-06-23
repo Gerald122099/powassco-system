@@ -60,8 +60,9 @@ export default function LoanDuesLookup() {
       orNo: j.orNo,
       cashierName: user?.fullName || user?.employeeId || "",
       lines: [
-        ["Loan", j.loanId],
+        ["Loan", `${j.loanId} (Fixed Dim.)`],
         ["Periods", `${j.periodsCovered} mo.`],
+        ...(j.principalPaid > 0 || j.interestPaid > 0 ? [["Capital", peso(j.principalPaid)], ["Interest", peso(j.interestPaid)]] : []),
         ["Amount due", peso(j.amountDue)],
         ["Received", peso(j.amountReceived)],
         ...(j.cbuExcess > 0 ? [["Excess->CBU", peso(j.cbuExcess)], ["New CBU bal", peso(j.newCbu)]] : []),
@@ -149,6 +150,19 @@ export default function LoanDuesLookup() {
     return Number(sum.toFixed(2));
   }, [payLoan, periodsSet]);
 
+  // Capital (principal) vs interest split of the selected installments,
+  // summed from the diminishing-balance schedule rows.
+  const installmentSplit = useMemo(() => {
+    if (!payLoan) return { principal: 0, interest: 0 };
+    const sched = payLoan.amortizationSchedule || [];
+    let principal = 0, interest = 0;
+    for (const p of periodsSet) {
+      const row = sched.find((r, i) => Number(r.period ?? i + 1) === Number(p));
+      if (row) { principal += Number(row.principal) || 0; interest += Number(row.interest) || 0; }
+    }
+    return { principal: Number(principal.toFixed(2)), interest: Number(interest.toFixed(2)) };
+  }, [payLoan, periodsSet]);
+
   async function submitPay(e) {
     e?.preventDefault?.();
     if (!payLoan) return;
@@ -203,6 +217,8 @@ export default function LoanDuesLookup() {
         amountReceived: totalReceived,
         periodsCovered: res.periodsCovered || periodsArr.length,
         periodsPaid: periodsArr,
+        principalPaid: res.principalPaid ?? installmentSplit.principal,
+        interestPaid: res.interestPaid ?? installmentSplit.interest,
         cbuExcess: res.cbuExcess || 0,
         newCbu: res.newCbuBalance || 0,
         at: new Date(),
@@ -448,7 +464,10 @@ export default function LoanDuesLookup() {
               <div key={loan.loanId} className="rounded-2xl border border-slate-200 p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="text-base font-bold text-slate-900">{loan.borrowerName}</div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="text-base font-bold text-slate-900">{loan.borrowerName}</div>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-700">Fixed Diminishing</span>
+                    </div>
                     <div className="text-xs text-slate-500">
                       <span className="font-mono font-semibold">{loan.loanId}</span>
                       {loan.referenceCode ? <> • ref <span className="font-mono">{loan.referenceCode}</span></> : null}
@@ -612,7 +631,12 @@ export default function LoanDuesLookup() {
                         <span className="text-xs text-slate-500 flex-1">
                           {due ? due.toLocaleDateString("en-PH", { year: "numeric", month: "short", day: "numeric" }) : "—"}
                         </span>
-                        <span className="font-mono text-xs">{peso(row.payment)}</span>
+                        <span className="text-right leading-tight">
+                          <span className="font-mono text-xs block">{peso(row.payment)}</span>
+                          {(Number(row.principal) > 0 || Number(row.interest) > 0) && (
+                            <span className="block text-[9px] text-slate-400 font-mono">cap {peso(row.principal)} · int {peso(row.interest)}</span>
+                          )}
+                        </span>
                         {isPaid && <span className="rounded-full bg-emerald-100 text-emerald-700 px-2 py-0.5 text-[10px] font-bold">PAID</span>}
                       </label>
                     );
@@ -623,6 +647,24 @@ export default function LoanDuesLookup() {
                 <span className="text-slate-500">Tick the periods being paid with this OR.</span>
                 <span>Selected total = <b>{peso(installmentTotal)}</b></span>
               </div>
+              {/* Capital / interest split of the selected installments
+                  (fixed diminishing-balance). */}
+              {periodsSet.size > 0 && (
+                <div className="mt-2 grid grid-cols-3 gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-center">
+                  <div>
+                    <div className="text-[10px] uppercase tracking-wide text-indigo-500">Capital</div>
+                    <div className="text-sm font-bold text-indigo-800">{peso(installmentSplit.principal)}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] uppercase tracking-wide text-indigo-500">Interest</div>
+                    <div className="text-sm font-bold text-indigo-800">{peso(installmentSplit.interest)}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] uppercase tracking-wide text-indigo-500">Payment</div>
+                    <div className="text-sm font-bold text-indigo-900">{peso(installmentTotal)}</div>
+                  </div>
+                </div>
+              )}
             </div>
             <div>
               <label className="text-xs font-semibold text-slate-700">OR Number (paper receipt)</label>

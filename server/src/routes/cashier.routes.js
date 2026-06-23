@@ -719,6 +719,10 @@ router.post("/pay-loan", ...payGuard, async (req, res) => {
       periodNumbers = upcoming.map((r, i) => Number(r.period ?? paidApproxPeriods + i + 1));
     }
     const totalDue = round2(upcoming.reduce((s, r) => s + (Number(r.payment) || 0), 0));
+    // Capital (principal) vs interest split of this payment, summed from the
+    // diminishing-balance schedule rows being settled.
+    const principalPaid = round2(upcoming.reduce((s, r) => s + (Number(r.principal) || 0), 0));
+    const interestPaid = round2(upcoming.reduce((s, r) => s + (Number(r.interest) || 0), 0));
 
     // Same bundling trick as pay-water: cashier can include any open
     // product loans / rentals owned by the same borrower on this OR.
@@ -801,6 +805,8 @@ router.post("/pay-loan", ...payGuard, async (req, res) => {
         amountPaid: totalDue,
         amountReceived: round2(amountReceived),
         cbuExcess: excessCbuPart,
+        principalPaid,
+        interestPaid,
         periodsCovered: upcoming.length,
         periodsPaid: periodNumbers,
         paidAt: new Date(),
@@ -931,6 +937,15 @@ router.post("/pay-loan", ...payGuard, async (req, res) => {
         ? `Posted ₱${totalDue} for ${upcoming.length} period(s)${productLoanTotal > 0 ? ` + ₱${productLoanTotal} (product loans)` : ""}${savingsDeposit > 0 ? ` + ₱${savingsDeposit} (savings)` : ""}${cbuContribution > 0 ? ` + ₱${cbuContribution} (CBU)` : ""}. Excess ₱${cbuExcess} → CBU (new balance ₱${newCbuBalance}).`
         : `Posted ₱${totalDue} for ${upcoming.length} period(s)${productLoanTotal > 0 ? ` + ₱${productLoanTotal} (product loans)` : ""}${savingsDeposit > 0 ? ` + ₱${savingsDeposit} (savings)` : ""}${cbuContribution > 0 ? ` + ₱${cbuContribution} (CBU)` : ""}.`,
       payment, cbuExcess: excessCbuPart, totalExcess: cbuExcess, newCbuBalance, periodsCovered: upcoming.length, totalDue,
+      principalPaid, interestPaid,
+      // Per-period capital/interest split so the receipt can itemise it.
+      periodBreakdown: upcoming.map((r, i) => ({
+        period: Number(r.period ?? periodNumbers[i]),
+        payment: round2(Number(r.payment) || 0),
+        principal: round2(Number(r.principal) || 0),
+        interest: round2(Number(r.interest) || 0),
+        balance: round2(Number(r.balance) || 0),
+      })),
       excessSavings: excessSavingsResult,
       productLoanPayments: productLoanResults,
       productLoanTotal,
