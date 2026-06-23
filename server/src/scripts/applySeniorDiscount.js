@@ -1,33 +1,41 @@
-// Apply the senior-citizen discount to EXISTING unpaid / overdue water bills
-// WITHOUT re-pricing the base charge from the tariff. The base amount is
-// preserved exactly — only discount / amount / totalDue are recomputed as
-//   discount = base × rate%,  amount = base − discount,  totalDue = amount + penalty.
+// Apply the senior-citizen discount to EXISTING unpaid / overdue water bills.
 //
-// This is the "don't touch the bill, just add the 5% discount" path (as
-// opposed to recomputeWaterBills, which re-prices the whole bill from the
-// current tariff). Idempotent: a bill already at the right discount is left
-// alone. Non-senior bills are never touched. Paid bills are never touched.
+// The bill is re-derived from its OWN tariff snapshot (so the base / minimum
+// charge it was issued with is preserved — we do NOT move it onto a newer
+// tariff) but with the CURRENT senior-discount rules (rate + applicable
+// tiers). calculateWaterBill returns base, discount and net SEPARATELY, so:
+//   • the gross base is always correct (never has the discount baked in), and
+//   • bills whose discount had previously been folded into their base are
+//     REPAIRED (base restored, discount shown on its own line).
 //
-// Multi-meter accounts: the discount only lands on the designated meter
-// (same rule as the live billing engine, via discountAppliesToMeter).
+// This replaces an earlier "base-preserving" version that multiplied an
+// already-net amount by the rate again — double-discounting and corrupting
+// baseAmount (e.g. a ₱450.60 base showed as ₱428.07 = 450.60 × 0.95).
+//
+// Idempotent. Non-senior accounts + paid bills are never touched. Multi-meter
+// accounts discount the designated meter only (handled inside calculateWaterBill).
 
 import WaterBill from "../models/WaterBill.js";
 import WaterMember from "../models/WaterMember.js";
 import WaterSettings from "../models/WaterSettings.js";
-import { discountAppliesToMeter } from "../utils/waterBilling.js";
+import { calculateWaterBill } from "../utils/waterBilling.js";
 
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
 export async function applySeniorDiscountToUnpaidBills({ dry = true, rate: forcedRate = null, pnNo = null } = {}) {
-  const settings = await WaterSettings.findOne().lean();
-  const globalRate = Number(forcedRate ?? settings?.seniorDiscount?.discountRate ?? 5);
+  const settingsDoc = await WaterSettings.findOne();
+  const settings = settingsDoc ? settingsDoc.toObject() : {};
+  // Current discount rules: rate (optionally forced) + applicable tiers.
+  const seniorCtx = { ...(settings.seniorDiscount || {}) };
+  if (forcedRate != null) seniorCtx.discountRate = Number(forcedRate);
+  const curTariffs = settings.tariffs;
 
   const billFilter = { status: { $in: ["unpaid", "overdue"] } };
   if (pnNo) billFilter.pnNo = String(pnNo).toUpperCase().trim();
 
   const bills = await WaterBill.find(billFilter).lean();
   const pnNos = [...new Set(bills.map((b) => b.pnNo))];
-  const members = await WaterMember.find({ pnNo: { $in: pnNos } }).lean();
+  const members = await WaterMember.find({ pnNo: { $in: pnNos } });
   const byPn = new Map(members.map((m) => [m.pnNo, m]));
 
   const summary = { scanned: bills.length, updated: 0, cleared: 0, unchanged: 0, skipped: 0, changes: [] };
@@ -37,18 +45,26 @@ export async function applySeniorDiscountToUnpaidBills({ dry = true, rate: force
     // Only senior accounts are ever touched; everyone else is left alone.
     if (m?.personal?.isSeniorCitizen !== true) { summary.skipped++; continue; }
 
-    // Preserve the existing base charge — never re-priced here. Fall back to
-    // the current amount if an older bill never stored baseAmount.
-    const base = round2(Number(bill.baseAmount) > 0 ? bill.baseAmount : bill.amount);
-    if (!(base > 0)) { summary.skipped++; continue; }
+    // Re-price from the bill's OWN tariff era (preserve the base it was billed
+    // with) but with the CURRENT senior-discount rules. Force the per-member
+    // rate when a rate was supplied so it's authoritative over the member's
+    // stored rate.
+    const memberForCalc = forcedRate != null
+      ? { ...m.toObject(), personal: { ...m.toObject().personal, seniorDiscountRate: Number(forcedRate) } }
+      : m;
+    const ctx = { tariffs: bill.tariffSnapshot?.tariffs || curTariffs, seniorDiscount: seniorCtx };
 
-    // For multi-meter accounts the discount lands on the designated meter
-    // only; the OTHER meters' bills must have any stale discount removed.
-    const eligible = discountAppliesToMeter(m, bill.meterNumber);
-    const rate = eligible ? Number(m?.personal?.seniorDiscountRate || globalRate || 5) : 0;
-    const discount = eligible ? round2(base * (rate / 100)) : 0;
-    const amount = round2(base - discount);
+    let calc;
+    try {
+      calc = await calculateWaterBill(Number(bill.consumed) || 0, bill.classification || "residential", memberForCalc, bill.meterNumber, ctx);
+    } catch { summary.skipped++; continue; }
+
+    const base = round2(calc.baseAmount);
+    const discount = round2(calc.discount);
+    const amount = round2(calc.amount);
+    if (!(base > 0)) { summary.skipped++; continue; }
     const totalDue = round2(amount + (Number(bill.penaltyApplied) || 0));
+    const eligible = discount > 0;
 
     const moved =
       round2(bill.baseAmount || 0) !== base ||
@@ -66,7 +82,7 @@ export async function applySeniorDiscountToUnpaidBills({ dry = true, rate: force
       oldAmount: round2(bill.amount),
       newAmount: amount,
       discount,
-      rate,
+      rate: Number(seniorCtx.discountRate || 0),
       eligible,
     });
 
@@ -78,7 +94,7 @@ export async function applySeniorDiscountToUnpaidBills({ dry = true, rate: force
           $set: {
             baseAmount: base,
             discount,
-            discountReason: eligible ? `Senior Citizen (${rate}%)` : "",
+            discountReason: calc.discountReason || (eligible ? `Senior Citizen (${seniorCtx.discountRate}%)` : ""),
             amount,
             totalDue,
           },
