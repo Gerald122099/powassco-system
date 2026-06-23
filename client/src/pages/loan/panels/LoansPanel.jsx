@@ -26,6 +26,29 @@ function monthOptions(back = 18) {
   return out;
 }
 
+function monthEndStr(m) {
+  const [y, mo] = m.split("-").map(Number);
+  const last = new Date(y, mo, 0).getDate();
+  return `${m}-${String(last).padStart(2, "0")}`;
+}
+
+const TOTAL_TONE = {
+  blue: "border-blue-200 bg-blue-50 text-blue-700",
+  emerald: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  violet: "border-violet-200 bg-violet-50 text-violet-700",
+  slate: "border-slate-200 bg-slate-50 text-slate-700",
+  red: "border-red-200 bg-red-50 text-red-700",
+};
+function TotalCard({ tone, label, value, hint }) {
+  return (
+    <div className={`rounded-2xl border px-3 py-2.5 ${TOTAL_TONE[tone] || TOTAL_TONE.slate}`}>
+      <div className="text-[11px] font-semibold uppercase tracking-wide opacity-80">{label}</div>
+      <div className="mt-0.5 text-lg font-extrabold tabular-nums">₱ {money(value)}</div>
+      {hint && <div className="text-[10px] opacity-70">{hint}</div>}
+    </div>
+  );
+}
+
 const STATUS_TONE = {
   pending: "bg-amber-100 text-amber-700",
   approved: "bg-blue-100 text-blue-700",
@@ -58,6 +81,7 @@ export default function LoansPanel() {
   const [err, setErr] = useState("");
   const [toast, setToast] = useState("");
 
+  const [summary, setSummary] = useState(null);
   const [viewing, setViewing] = useState(null);
   const [releaseFor, setReleaseFor] = useState(null);
   const [disburseDate, setDisburseDate] = useState(new Date().toISOString().slice(0, 10));
@@ -67,7 +91,7 @@ export default function LoansPanel() {
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / PAGE_SIZE)), [total]);
 
-  useRealtime(["loans", "payments"], () => load());
+  useRealtime(["loans", "payments"], () => { load(); loadSummary(); });
   async function load() {
     setLoading(true);
     setErr("");
@@ -82,9 +106,23 @@ export default function LoansPanel() {
       setLoading(false);
     }
   }
+  // Totals (capital released / interest / deductions …) for the selected
+  // month, or all-time when no month is picked. Kept separate so a 403 here
+  // never breaks the list.
+  async function loadSummary() {
+    try {
+      const qs = new URLSearchParams();
+      if (month) { qs.set("from", `${month}-01`); qs.set("to", monthEndStr(month)); }
+      const s = await apiFetch(`/loan/summary${qs.toString() ? `?${qs}` : ""}`, { token });
+      setSummary(s);
+    } catch { setSummary(null); }
+  }
   useEffect(() => {
     load(); /* eslint-disable-next-line */
   }, [q, status, month, page]);
+  useEffect(() => {
+    loadSummary(); /* eslint-disable-next-line */
+  }, [month]);
 
   function flash(m) {
     setToast(m);
@@ -163,6 +201,22 @@ export default function LoansPanel() {
           <button onClick={load} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold hover:bg-slate-50">Refresh</button>
         </div>
       </div>
+
+      {/* Totals — released loans for the selected month (or all-time). */}
+      {summary && (
+        <div className="mt-4">
+          <div className="mb-1 text-xs font-semibold text-slate-500">
+            {month ? `Totals for ${month}` : "All-time totals"} · released loans
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+            <TotalCard tone="blue" label="Capital Released" value={summary.capitalReleased} hint="principal disbursed" />
+            <TotalCard tone="emerald" label="Total Interest" value={summary.expectedInterest} hint="interest / profit" />
+            <TotalCard tone="violet" label="Deductions" value={summary.totalCharges} hint="charges / fees" />
+            <TotalCard tone="slate" label="Collected" value={summary.totalCollected} hint="payments received" />
+            <TotalCard tone="red" label="Outstanding" value={summary.outstanding} hint="balance to collect" />
+          </div>
+        </div>
+      )}
 
       {toast && <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">{toast}</div>}
       {err && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{err}</div>}
