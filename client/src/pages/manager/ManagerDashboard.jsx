@@ -34,15 +34,17 @@ import ProductLoansPanel from "../bookkeeper/ProductLoansPanel";
 import ProductAnalyticsPanel from "../../components/ProductAnalyticsPanel";
 import CashDrawerPanel from "../../components/CashDrawerPanel";
 import PettyCashPanel from "../cashier/PettyCashPanel";
+import AdjustmentsPanel from "../../components/AdjustmentsPanel";
 import {
   Wallet, UserCog, FileBarChart, Inbox, CalendarClock, Boxes,
-  MapPin, BarChart3, Banknote, ReceiptText, Megaphone, Landmark, Coins,
+  MapPin, BarChart3, Banknote, ReceiptText, Megaphone, Landmark, Coins, Scale,
 } from "lucide-react";
 
 const items = [
   { key: "treasury", label: "Treasury", icon: Landmark, desc: "Approve bank + Cash Vault movements (you sign first)" },
   { key: "loan-approvals", label: "Loan Approvals", icon: Banknote, desc: "First signature on new loan applications" },
   { key: "payroll-approvals", label: "Payroll Approvals", icon: Wallet, desc: "Sign payslips + cash advances before the cashier pays" },
+  { key: "adjustments", label: "Adjustments", icon: Scale, desc: "Approve CBU / savings balance adjustments filed by the bookkeeper" },
   { key: "products", label: "Product Loans", icon: Boxes, desc: "Add products, adjust stocks directly (no approval needed)" },
   { key: "product-analytics", label: "Product Analytics", icon: Boxes, desc: "Capital + profit per product, sale vs loan, paid/unpaid" },
   { key: "store-orders", label: "Store Reservations", icon: Boxes, desc: "Approve public-store reservations (verify by phone) + mark pickup" },
@@ -80,6 +82,7 @@ export default function ManagerDashboard() {
       {tab === "treasury" && <TreasuryPanel />}
       {tab === "loan-approvals" && <LoanApprovalsPanel />}
       {tab === "payroll-approvals" && <PayrollApprovalsPanel />}
+      {tab === "adjustments" && <AdjustmentsPanel />}
       {tab === "products" && <ProductLoansPanel />}
       {tab === "product-analytics" && <ProductAnalyticsPanel />}
       {tab === "expenses" && <ExpensesPanel />}

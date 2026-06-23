@@ -23,9 +23,11 @@ import LoanApplication from "../models/LoanApplication.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
 const router = express.Router();
-const requestGuard = [requireAuth, requireRole(["admin"])];
-const reviewGuard = [requireAuth, requireRole(["bookkeeper"])];
-const listGuard = [requireAuth, requireRole(["admin", "bookkeeper"])];
+// Dual-control: the BOOKKEEPER files a CBU/savings adjustment, the MANAGER
+// approves before any balance moves (requester ≠ approver). Admin can do both.
+const requestGuard = [requireAuth, requireRole(["admin", "bookkeeper"])];
+const reviewGuard = [requireAuth, requireRole(["admin", "manager"])];
+const listGuard = [requireAuth, requireRole(["admin", "bookkeeper", "manager", "audit_committee"])];
 
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 const normPN = (s) => String(s || "").toUpperCase().trim();

@@ -29,12 +29,16 @@ const STATUS_BADGE = {
 
 export default function AdjustmentsPanel() {
   const { token, user } = useAuth();
-  const isAdmin = user?.role === "admin";
-  const isBookkeeper = user?.role === "bookkeeper";
+  // Bookkeeper (or admin) FILES; manager (or admin) APPROVES.
+  const isRequester = ["admin", "bookkeeper"].includes(user?.role);
+  const isReviewer = ["admin", "manager"].includes(user?.role);
 
   const [items, setItems] = useState([]);
   const [busy, setBusy] = useState(false);
   const [statusFilter, setStatusFilter] = useState("");
+  const [reviewTarget, setReviewTarget] = useState(null); // { row, action }
+  const [reviewRemark, setReviewRemark] = useState("");
+  const [reviewing, setReviewing] = useState(false);
 
   // New-request modal (admin)
   const [open, setOpen] = useState(false);
@@ -95,7 +99,7 @@ export default function AdjustmentsPanel() {
           reason: form.reason.trim(),
         },
       });
-      toast.success("Adjustment filed — awaiting bookkeeper approval.");
+      toast.success("Adjustment filed — awaiting manager approval.");
       setOpen(false);
       setForm({ module: "cbu", pnNo: "", refId: "", type: "credit", amount: "", reason: "" });
       load();
@@ -106,24 +110,22 @@ export default function AdjustmentsPanel() {
     }
   }
 
-  async function review(row, action) {
-    const note = prompt(
-      action === "approve"
-        ? `Approve ${row.type.toUpperCase()} of ${peso(row.amount)} to ${row.accountName} (${row.module.toUpperCase()})?\nOptional note:`
-        : "Reason for rejecting:",
-      ""
-    );
-    if (note === null) return;
+  function openReview(row, action) { setReviewTarget({ row, action }); setReviewRemark(""); }
+  async function submitReview() {
+    if (!reviewTarget) return;
+    const { row, action } = reviewTarget;
+    if (action === "reject" && !reviewRemark.trim()) return toast.error("A remark is required to reject.");
+    setReviewing(true);
     try {
-      const res = await apiFetch(`/adjustments/${row._id}/${action}`, { method: "POST", token, body: { note } });
-      if (action === "approve") {
-        toast.success(`Applied. New balance: ${peso(res.balanceAfter)}`);
-      } else {
-        toast.success("Rejected — no money moved.");
-      }
+      const res = await apiFetch(`/adjustments/${row._id}/${action}`, { method: "POST", token, body: { note: reviewRemark.trim() } });
+      if (action === "approve") toast.success(`Applied. New balance: ${peso(res.balanceAfter)}`);
+      else toast.success("Rejected — no money moved.");
+      setReviewTarget(null);
       load();
     } catch (e) {
       toast.error(e.message);
+    } finally {
+      setReviewing(false);
     }
   }
 
@@ -135,7 +137,7 @@ export default function AdjustmentsPanel() {
             <Scale size={20} className="text-indigo-600" /> Balance Adjustments
           </div>
           <div className="mt-0.5 text-sm text-slate-500">
-            Dual-control: admin files a CBU / savings adjustment, bookkeeper approves before the balance moves.
+            Dual-control: the bookkeeper files a CBU / savings adjustment, the manager approves before the balance moves.
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -154,7 +156,7 @@ export default function AdjustmentsPanel() {
           <button onClick={load} disabled={busy} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold hover:bg-slate-50">
             <RefreshCw size={14} className={busy ? "animate-spin" : ""} />
           </button>
-          {isAdmin && (
+          {isRequester && (
             <button
               onClick={() => setOpen(true)}
               className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white hover:bg-indigo-700"
@@ -165,7 +167,7 @@ export default function AdjustmentsPanel() {
         </div>
       </div>
 
-      {isBookkeeper && items.some((i) => i.status === "pending") && (
+      {isReviewer && items.some((i) => i.status === "pending") && (
         <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 flex items-center gap-2">
           <AlertCircle size={14} />
           {items.filter((i) => i.status === "pending").length} adjustment(s) awaiting your review. Money moves only after you approve.
@@ -187,12 +189,12 @@ export default function AdjustmentsPanel() {
                 <th className="px-3 py-2">Requested by</th>
                 <th className="px-3 py-2">Reviewed by</th>
                 <th className="px-3 py-2 text-right">Balance after</th>
-                {isBookkeeper && <th className="px-3 py-2 text-right">Action</th>}
+                {isReviewer && <th className="px-3 py-2 text-right">Action</th>}
               </tr>
             </thead>
             <tbody>
               {!items.length ? (
-                <tr><td colSpan={isBookkeeper ? 11 : 10} className="py-10 text-center text-slate-500">No adjustments{statusFilter ? ` with status "${statusFilter}"` : ""}.</td></tr>
+                <tr><td colSpan={isReviewer ? 11 : 10} className="py-10 text-center text-slate-500">No adjustments{statusFilter ? ` with status "${statusFilter}"` : ""}.</td></tr>
               ) : items.map((row) => (
                 <tr key={row._id} className="border-t">
                   <td className="px-3 py-2 text-xs">{fmtDateTime(row.requestedAt || row.createdAt)}</td>
@@ -228,14 +230,14 @@ export default function AdjustmentsPanel() {
                   <td className="px-3 py-2 text-right font-mono text-xs">
                     {row.balanceAfter !== null && row.balanceAfter !== undefined ? peso(row.balanceAfter) : "—"}
                   </td>
-                  {isBookkeeper && (
+                  {isReviewer && (
                     <td className="px-3 py-2 text-right whitespace-nowrap">
                       {row.status === "pending" ? (
                         <>
-                          <button onClick={() => review(row, "approve")} className="mr-1 inline-flex items-center justify-center rounded-lg border border-emerald-200 p-2 text-emerald-700 hover:bg-emerald-50" title="Approve & apply">
+                          <button onClick={() => openReview(row, "approve")} className="mr-1 inline-flex items-center justify-center rounded-lg border border-emerald-200 p-2 text-emerald-700 hover:bg-emerald-50" title="Approve & apply">
                             <Check size={14} />
                           </button>
-                          <button onClick={() => review(row, "reject")} className="inline-flex items-center justify-center rounded-lg border border-rose-200 p-2 text-rose-700 hover:bg-rose-50" title="Reject">
+                          <button onClick={() => openReview(row, "reject")} className="inline-flex items-center justify-center rounded-lg border border-rose-200 p-2 text-rose-700 hover:bg-rose-50" title="Reject">
                             <X size={14} />
                           </button>
                         </>
@@ -255,7 +257,7 @@ export default function AdjustmentsPanel() {
       <Modal open={open} title="File Balance Adjustment" onClose={() => setOpen(false)}>
         <div className="space-y-3">
           <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-900">
-            This files a REQUEST. The balance does not change until a bookkeeper approves it.
+            This files a REQUEST. The balance does not change until a manager approves it.
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -335,6 +337,35 @@ export default function AdjustmentsPanel() {
             </button>
           </div>
         </div>
+      </Modal>
+
+      {/* Manager: approve / reject with a remark */}
+      <Modal open={!!reviewTarget} title={reviewTarget?.action === "approve" ? "Approve adjustment" : "Reject adjustment"} onClose={() => setReviewTarget(null)} size="sm">
+        {reviewTarget && (
+          <div className="space-y-3">
+            <div className={`rounded-xl border px-3 py-2.5 text-sm ${reviewTarget.action === "approve" ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-rose-200 bg-rose-50 text-rose-900"}`}>
+              {reviewTarget.action === "approve"
+                ? <>Apply <b>{reviewTarget.row.type === "credit" ? "+ CREDIT" : "− DEBIT"} {peso(reviewTarget.row.amount)}</b> to <b>{reviewTarget.row.accountName}</b>'s {reviewTarget.row.module.toUpperCase()}. This moves the balance immediately.</>
+                : <>Reject this {reviewTarget.row.module.toUpperCase()} {reviewTarget.row.type} of <b>{peso(reviewTarget.row.amount)}</b> — no money moves.</>}
+            </div>
+            <div className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              Filed by <b>{reviewTarget.row.requestedBy || "—"}</b> · reason: {reviewTarget.row.reason}
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-600">Remarks {reviewTarget.action === "reject" ? "(required)" : "(optional)"}</label>
+              <textarea value={reviewRemark} onChange={(e) => setReviewRemark(e.target.value)} rows={2}
+                placeholder={reviewTarget.action === "approve" ? "e.g. Verified against legacy ledger" : "e.g. Amount doesn't match the source document"}
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm" />
+            </div>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setReviewTarget(null)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold hover:bg-slate-50">Cancel</button>
+              <button onClick={submitReview} disabled={reviewing || (reviewTarget.action === "reject" && !reviewRemark.trim())}
+                className={`rounded-xl px-5 py-2 text-sm font-bold text-white disabled:opacity-50 ${reviewTarget.action === "approve" ? "bg-emerald-600 hover:bg-emerald-700" : "bg-rose-600 hover:bg-rose-700"}`}>
+                {reviewing ? "Working…" : reviewTarget.action === "approve" ? "Approve & apply" : "Reject"}
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
     </Card>
   );
