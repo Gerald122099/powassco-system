@@ -71,6 +71,19 @@ export function computeDailyPenalty(dueDate, settings = {}, now = new Date()) {
   };
 }
 
+// Penalty amount for an explicit number of overdue working days — same
+// formula as computeDailyPenalty, but for a chosen day count (used when the
+// cashier charges only N of the days overdue, or waives some). N=0 → 0.
+export function penaltyForDays(days, settings = {}) {
+  const daily = Number(settings.penaltyDailyAmount ?? 10);
+  const grace = Math.max(0, Number(settings.penaltyGraceDays ?? 5));
+  const after = Number(settings.penaltyAfterGraceAmount ?? 200);
+  const d = Math.max(0, Math.floor(Number(days) || 0));
+  if (d <= 0) return 0;
+  if (d <= grace) return round2(d * daily);
+  return round2(grace * daily + after);
+}
+
 // Brings a bill's penaltyApplied / totalDue / subjectForDisconnection /
 // daysOverdue fields up to date against the current calendar day. Used
 // by every read path that must show the "live" totalDue (water bill
