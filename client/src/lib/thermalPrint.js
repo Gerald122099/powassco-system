@@ -261,8 +261,11 @@ export async function printPaymentReceipt({
   const parts = [
     CMD.init, CMD.center, CMD.big, CMD.boldOn,
     t("POWASSCO\n"),
-    CMD.normal, CMD.boldOff,
+    CMD.normal,
+    t("Multipurpose Cooperative\n"),
+    CMD.boldOff,
     t("Brgy. Owak, Asturias, Cebu\n"),
+    t("CDA Reg. No. 9520-07014753\n"),
     LINE(),
     CMD.boldOn, t(String(title).toUpperCase() + "\n"), CMD.boldOff,
     CMD.left,
@@ -273,7 +276,13 @@ export async function printPaymentReceipt({
   parts.push(row("Date", new Date().toLocaleString()));
   if (cashierName) parts.push(row("Cashier", String(cashierName).slice(0, 20)));
   parts.push(LINE());
-  for (const [label, value] of lines) parts.push(row(String(label), String(value)));
+  for (const [label, value] of lines) {
+    const l = String(label ?? ""), v = String(value ?? "");
+    // A label with no value (e.g. "— ON CREDIT (LOAN) —") prints as a centered
+    // sub-heading; the usual label/value pair prints as a justified row.
+    if (l && !v) { parts.push(CMD.center, CMD.boldOn, t(l + "\n"), CMD.boldOff, CMD.left); }
+    else parts.push(row(l, v));
+  }
   parts.push(LINE());
   if (total != null) {
     parts.push(CMD.boldOn, CMD.big, row(totalLabel, money(total).replace("PHP ", "P")), CMD.normal, CMD.boldOff);
@@ -281,7 +290,8 @@ export async function printPaymentReceipt({
   }
   parts.push(CMD.center);
   if (note) parts.push(t(note + "\n"));
-  parts.push(t(new Date().toLocaleString() + "\n"), CMD.feed3);
+  parts.push(t("This serves as your official receipt.\n"));
+  parts.push(CMD.feed3);
   await write(join(parts));
 }
 
@@ -303,7 +313,14 @@ export function printReceiptHTML({
 }) {
   const esc = (s) => String(s ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
   const peso = (n) => "P" + Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const r = (l, v) => `<div class="r"><span>${esc(l)}</span><span>${esc(v)}</span></div>`;
+  // A label-only entry is a centered sub-heading; a value-only entry is a
+  // right-aligned amount; otherwise it's a justified label/value row.
+  const r = (l, v) => {
+    const ls = esc(l), vs = esc(v);
+    if (l && !v) return `<div class="sec">${ls}</div>`;
+    if (!l && v) return `<div class="r amt"><span></span><span>${vs}</span></div>`;
+    return `<div class="r"><span>${ls}</span><span>${vs}</span></div>`;
+  };
   const meta = [];
   if (orNo) meta.push(r("OR No.", orNo));
   if (accountName) meta.push(r("Name", accountName));
@@ -315,25 +332,34 @@ export function printReceiptHTML({
     <style>
       @page { size: 58mm auto; margin: 0; }
       * { box-sizing: border-box; }
-      body { width: 58mm; margin: 0; padding: 3mm 2mm; font-family: 'Courier New', monospace; font-size: 11px; color: #000; }
+      body { width: 58mm; margin: 0; padding: 3mm 2mm; font-family: 'Courier New', monospace; font-size: 11px; color: #000; line-height: 1.35; }
       .c { text-align: center; }
-      h1 { font-size: 16px; margin: 0; }
-      .sub { font-size: 10px; margin: 0; }
-      .ttl { font-weight: bold; margin: 3px 0; }
+      h1 { font-size: 17px; margin: 0; letter-spacing: 1px; }
+      .sub { font-size: 9.5px; margin: 0; }
+      .ttl { font-weight: bold; margin: 3px 0; letter-spacing: 1px; }
       .line { border-top: 1px dashed #000; margin: 4px 0; }
       .r { display: flex; justify-content: space-between; gap: 6px; }
       .r span:last-child { text-align: right; }
-      .total { display: flex; justify-content: space-between; font-weight: bold; font-size: 14px; margin-top: 3px; }
+      .amt span:last-child { font-weight: bold; }
+      .sec { text-align: center; font-weight: bold; font-size: 10px; margin: 3px 0 1px; }
+      .total { display: flex; justify-content: space-between; font-weight: bold; font-size: 15px; margin-top: 3px; border: 1.5px solid #000; border-radius: 4px; padding: 3px 5px; }
+      .foot { font-size: 9px; margin-top: 6px; }
     </style></head><body>
-    <div class="c"><h1>POWASSCO</h1><div class="sub">Brgy. Owak, Asturias, Cebu</div></div>
+    <div class="c">
+      <h1>POWASSCO</h1>
+      <div class="sub">Multipurpose Cooperative</div>
+      <div class="sub">Brgy. Owak, Asturias, Cebu</div>
+      <div class="sub">CDA Reg. No. 9520-07014753</div>
+    </div>
     <div class="line"></div>
     <div class="c ttl">${esc(String(title).toUpperCase())}</div>
     ${meta.join("")}
     <div class="line"></div>
     ${body}
     <div class="line"></div>
-    ${total != null ? `<div class="total"><span>${esc(totalLabel)}</span><span>${peso(total)}</span></div><div class="line"></div>` : ""}
-    ${note ? `<div class="c sub">${esc(note)}</div>` : ""}
+    ${total != null ? `<div class="total"><span>${esc(totalLabel)}</span><span>${peso(total)}</span></div>` : ""}
+    ${note ? `<div class="c sub" style="margin-top:5px">${esc(note)}</div>` : ""}
+    <div class="c foot">This serves as your official receipt.<br/>Printed ${esc(new Date().toLocaleString())}</div>
     </body></html>`;
 
   const iframe = document.createElement("iframe");
