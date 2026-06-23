@@ -93,8 +93,18 @@ export default function MemberInquiryPage() {
     }
   }
 
-  // Online payment
+  // Online payment — only offered when the admin has ENABLED and SET UP
+  // online payment (manual QR uploaded, or a realtime PSP activated). Until
+  // then the coop accepts physical/walk-in payment only and no "Pay Online"
+  // button is shown.
   const [payTarget, setPayTarget] = useState(null);
+  const [payInfo, setPayInfo] = useState(null);
+  useEffect(() => {
+    apiFetch("/public/payments/info").then(setPayInfo).catch(() => setPayInfo(null));
+  }, []);
+  const onlineReady = !!payInfo
+    && payInfo.onlineEnabled !== false
+    && (payInfo.realtime === true || (payInfo.mode === "manual" && !!payInfo.qrImage));
 
   // UI toggles
   const [showAccountDetails, setShowAccountDetails] = useState(false);
@@ -749,7 +759,7 @@ export default function MemberInquiryPage() {
                                   >
                                     {b.status}
                                   </span>
-                                  {b.status !== "paid" &&
+                                  {b.status !== "paid" && onlineReady &&
                                     (b.onlinePending ? (
                                       <span className="mt-1 block rounded-lg bg-blue-50 px-2.5 py-1 text-center text-xs font-semibold text-blue-700">Pending review</span>
                                     ) : (
@@ -851,7 +861,7 @@ export default function MemberInquiryPage() {
                                 >
                                   {ln.status}
                                 </span>
-                                {(ln.balance || 0) > 0 && ln.status === "released" &&
+                                {(ln.balance || 0) > 0 && ln.status === "released" && onlineReady &&
                                   (ln.onlinePending ? (
                                     <span className="mt-1 block rounded-lg bg-blue-50 px-2.5 py-1 text-center text-xs font-semibold text-blue-700">Pending review</span>
                                   ) : (
