@@ -38,25 +38,37 @@ function saleReceiptDesc(sale, cashierName) {
   const customer = sale.pnNo
     ? `${sale.accountName || "Member"} (${sale.pnNo})`
     : (sale.customerName || "Walk-in");
-  // Multi-item cart sale → one line per product; legacy single-item falls back.
-  const items = Array.isArray(sale.items) && sale.items.length
-    ? sale.items
-    : [{ productName: sale.productName, quantity: sale.quantity || 1, unitPrice: sale.unitPrice, total: Number(sale.principal) || 0 }];
+  // Cash (paid-now) items + loan (on-credit) items. Legacy single-item falls back.
+  const cashItems = sale.cashItems || sale.items || (sale.productName ? [{ productName: sale.productName, quantity: sale.quantity || 1, unitPrice: sale.unitPrice, total: Number(sale.principal) || 0 }] : []);
+  const loanItems = sale.loanItems || [];
   const lines = [];
-  for (const it of items) {
+  for (const it of cashItems) {
     lines.push([String(it.productName || "Product").slice(0, 18), `${it.quantity} × ${peso(it.unitPrice)}`]);
     lines.push(["", peso(it.total)]);
   }
-  if (sale.method === "savings") lines.push(["Paid via", "Savings"]);
+  // Split tender breakdown.
+  if (Number(sale.savingsAmount) > 0) {
+    lines.push(["Cash", peso(sale.cashAmount)]);
+    lines.push(["Savings", peso(sale.savingsAmount)]);
+  }
+  // On-credit (product loan) items — receivable, not paid on this OR.
+  if (loanItems.length) {
+    lines.push(["— ON CREDIT (LOAN) —", ""]);
+    for (const it of loanItems) {
+      lines.push([String(it.productName || "Product").slice(0, 18), `${it.quantity} × ${peso(it.unitPrice)}`]);
+      lines.push(["", peso(it.total)]);
+    }
+    lines.push(["Loan balance", peso(sale.loanTotal)]);
+  }
   return {
     title: "SALES OR",
     accountName: customer,
     orNo: sale.orNo,
     cashierName,
     lines,
-    total: Number(sale.principal) || 0,
-    totalLabel: "PAID",
-    note: "Thank you for your purchase!",
+    total: Number(sale.cashTotal ?? sale.principal) || 0,
+    totalLabel: loanItems.length ? "PAID (CASH)" : "PAID",
+    note: loanItems.length ? "Product loan posted to your account — please settle by the due date." : "Thank you for your purchase!",
   };
 }
 
@@ -78,7 +90,7 @@ export default function CashierSalesPanel() {
   const [pickId, setPickId] = useState("");
   const [pickQty, setPickQty] = useState(1);
   const [orNo, setOrNo] = useState("");
-  const [method, setMethod] = useState("cash");
+  const [savingsUsed, setSavingsUsed] = useState(""); // ₱ from savings toward the cash portion
   const [savingsBal, setSavingsBal] = useState(null); // member's savings balance (null = none/unknown)
   const [remarks, setRemarks] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -114,7 +126,7 @@ export default function CashierSalesPanel() {
     setPickId("");
     setPickQty(1);
     setOrNo("");
-    setMethod("cash");
+    setSavingsUsed("");
     setRemarks("");
     setLastSale(null);
   }
@@ -174,11 +186,21 @@ export default function CashierSalesPanel() {
     return () => { alive = false; };
   }, [mode, member, token]);
 
-  const total = cart.reduce((s, l) => s + l.unitPrice * l.qty, 0);
+  // Cash vs loan split. Loan lines become product-loan receivables; cash
+  // lines are paid now (cash and/or savings).
+  const cashTotal = +cart.filter((l) => l.mode !== "loan").reduce((s, l) => s + l.unitPrice * l.qty, 0).toFixed(2);
+  const loanTotal = +cart.filter((l) => l.mode === "loan").reduce((s, l) => s + l.unitPrice * l.qty, 0).toFixed(2);
+  const total = +(cashTotal + loanTotal).toFixed(2);
   const cartCount = cart.reduce((s, l) => s + l.qty, 0);
-  const savingsOk = savingsBal != null && savingsBal >= total && total > 0;
-  // If savings was selected but is no longer valid, fall back to cash.
-  useEffect(() => { if (method === "savings" && !savingsOk) setMethod("cash"); }, [method, savingsOk]);
+  const hasLoan = loanTotal > 0;
+  // Savings can cover up to the CASH portion (and the member's balance).
+  const savingsMax = +Math.min(Number(savingsBal) || 0, cashTotal).toFixed(2);
+  const savingsUsedNum = +Math.min(Math.max(0, Number(savingsUsed) || 0), savingsMax).toFixed(2);
+  const cashDue = +Math.max(0, cashTotal - savingsUsedNum).toFixed(2);
+  // Clamp savings if the cash portion shrinks below the entered amount.
+  useEffect(() => { if ((Number(savingsUsed) || 0) > savingsMax) setSavingsUsed(savingsMax > 0 ? String(savingsMax) : ""); /* eslint-disable-next-line */ }, [savingsMax]);
+  // Walk-ins can't loan — force every line to cash + clear savings.
+  useEffect(() => { if (mode === "walkin") { setCart((prev) => prev.map((l) => ({ ...l, mode: "cash" }))); setSavingsUsed(""); } /* eslint-disable-next-line */ }, [mode]);
 
   // ── Cart actions ──
   function addToCart() {
@@ -192,7 +214,7 @@ export default function CashierSalesPanel() {
         next[i] = { ...next[i], qty: next[i].qty + qty };
         return next;
       }
-      return [...prev, { productId: p._id, name: p.name, unitPrice: Number(p.unitPrice) || 0, qty, stock: p.stock }];
+      return [...prev, { productId: p._id, name: p.name, unitPrice: Number(p.unitPrice) || 0, qty, stock: p.stock, category: p.category, mode: "cash" }];
     });
     setPickId(""); setPickQty(1);
   }
@@ -200,20 +222,24 @@ export default function CashierSalesPanel() {
     const q = Math.max(1, Math.floor(Number(qty) || 1));
     setCart((prev) => prev.map((l) => (l.productId === productId ? { ...l, qty: q } : l)));
   }
+  function setLineMode(productId, m) {
+    setCart((prev) => prev.map((l) => (l.productId === productId ? { ...l, mode: m } : l)));
+  }
   function removeLine(productId) { setCart((prev) => prev.filter((l) => l.productId !== productId)); }
 
   async function submit() {
     if (cart.length === 0) { toast.error("Add at least one product to the cart."); return; }
     if (mode === "member" && !member) { toast.error("Pick a member or switch to Walk-in."); return; }
     if (mode === "walkin" && !customerName.trim()) { toast.error("Enter the walk-in customer name."); return; }
-    if (!orNo.trim()) { toast.error("Enter the OR number from the receipt booklet."); return; }
+    if (hasLoan && mode !== "member") { toast.error("Product loans require a member — switch to Member."); return; }
+    if (cashTotal > 0 && !orNo.trim()) { toast.error("Enter the OR number for the cash portion."); return; }
     setSubmitting(true);
     const saleOr = orNo.trim().toUpperCase();
     try {
       const body = {
-        items: cart.map((l) => ({ productId: l.productId, quantity: l.qty })),
+        items: cart.map((l) => ({ productId: l.productId, quantity: l.qty, mode: l.mode === "loan" ? "loan" : "cash" })),
         orNo: saleOr,
-        method,
+        savingsAmount: savingsUsedNum,
         remarks: remarks.trim(),
       };
       if (mode === "member") {
@@ -226,15 +252,19 @@ export default function CashierSalesPanel() {
       // Capture for the receipt + show the success state in the modal.
       const sale = {
         orNo: saleOr,
-        method,
-        principal: res.total ?? total,
-        items: res.items || cart.map((l) => ({ productName: l.name, quantity: l.qty, unitPrice: l.unitPrice, total: l.unitPrice * l.qty })),
+        cashTotal: res.cashTotal ?? cashTotal,
+        cashAmount: res.cashAmount ?? cashDue,
+        savingsAmount: res.savingsAmount ?? savingsUsedNum,
+        loanTotal: res.loanTotal ?? loanTotal,
+        principal: res.grandTotal ?? total,
+        cashItems: res.cashItems || cart.filter((l) => l.mode !== "loan").map((l) => ({ productName: l.name, quantity: l.qty, unitPrice: l.unitPrice, total: l.unitPrice * l.qty })),
+        loanItems: res.loanItems || cart.filter((l) => l.mode === "loan").map((l) => ({ productName: l.name, quantity: l.qty, unitPrice: l.unitPrice, total: l.unitPrice * l.qty })),
         pnNo: mode === "member" ? member?.pnNo : "",
         accountName: mode === "member" ? member?.accountName : "",
         customerName: mode === "walkin" ? customerName.trim() : "",
       };
       setLastSale(sale);
-      toast.success(`Sale posted • OR ${saleOr}`);
+      toast.success(loanTotal > 0 ? `Posted • cash ${peso(res.cashTotal ?? cashTotal)} + loan ${peso(res.loanTotal ?? loanTotal)}` : `Sale posted • OR ${saleOr}`);
       // Auto-print: thermal printer if ready, else the OS default printer.
       const pr = await printReceiptSmart(saleReceiptDesc(sale, cashierName));
       if (pr.needConnect) setPrinterPrompt({ printFn: () => printPaymentReceipt(saleReceiptDesc(sale, cashierName)) });
@@ -323,18 +353,27 @@ export default function CashierSalesPanel() {
               </div>
               <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
                 <div><span className="text-slate-500">OR No.</span> <span className="font-mono font-bold">{lastSale.orNo || "—"}</span></div>
-                <div><span className="text-slate-500">Total paid</span> <span className="font-bold text-emerald-700">{peso(lastSale.principal)}</span></div>
-                <div className="col-span-2">
-                  <span className="text-slate-500">Items</span>
-                  <ul className="mt-0.5 space-y-0.5">
-                    {(lastSale.items || []).map((it, i) => (
-                      <li key={i} className="flex justify-between font-mono text-xs">
-                        <span className="truncate">{it.productName} × {it.quantity}</span>
-                        <span>{peso(it.total)}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+                <div><span className="text-slate-500">Cash paid</span> <span className="font-bold text-emerald-700">{peso(lastSale.cashTotal)}</span>{Number(lastSale.savingsAmount) > 0 ? <span className="text-[11px] text-slate-500"> (cash {peso(lastSale.cashAmount)} + savings {peso(lastSale.savingsAmount)})</span> : null}</div>
+                {(lastSale.cashItems || []).length > 0 && (
+                  <div className="col-span-2">
+                    <span className="text-slate-500">Cash items</span>
+                    <ul className="mt-0.5 space-y-0.5">
+                      {lastSale.cashItems.map((it, i) => (
+                        <li key={i} className="flex justify-between font-mono text-xs"><span className="truncate">{it.productName} × {it.quantity}</span><span>{peso(it.total)}</span></li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {(lastSale.loanItems || []).length > 0 && (
+                  <div className="col-span-2 rounded-lg bg-indigo-50 px-2 py-1.5">
+                    <span className="text-indigo-700 font-semibold">On credit (product loan) — {peso(lastSale.loanTotal)}</span>
+                    <ul className="mt-0.5 space-y-0.5">
+                      {lastSale.loanItems.map((it, i) => (
+                        <li key={i} className="flex justify-between font-mono text-xs text-indigo-800"><span className="truncate">{it.productName} × {it.quantity}{it.dueDate ? ` · due ${new Date(it.dueDate).toLocaleDateString()}` : ""}</span><span>{peso(it.total)}</span></li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
                 <div className="col-span-2">
                   <span className="text-slate-500">Customer</span> {mode === "member" ? `${member?.accountName} (${member?.pnNo})` : `${customerName} (walk-in)`}
                 </div>
@@ -477,6 +516,12 @@ export default function CashierSalesPanel() {
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-semibold text-slate-800">{l.name}</div>
                     <div className="text-[11px] text-slate-500">{peso(l.unitPrice)} each{l.stock > 0 ? ` • stock ${l.stock}` : ""}</div>
+                    {mode === "member" && (
+                      <div className="mt-1 inline-flex rounded-lg border border-slate-200 p-0.5 text-[10px] font-bold">
+                        <button type="button" onClick={() => setLineMode(l.productId, "cash")} className={`rounded px-2 py-0.5 ${l.mode !== "loan" ? "bg-emerald-600 text-white" : "text-slate-500 hover:bg-slate-50"}`}>Cash</button>
+                        <button type="button" onClick={() => setLineMode(l.productId, "loan")} className={`rounded px-2 py-0.5 ${l.mode === "loan" ? "bg-indigo-600 text-white" : "text-slate-500 hover:bg-slate-50"}`}>Loan</button>
+                      </div>
+                    )}
                   </div>
                   <div className="flex items-center gap-1">
                     <button type="button" onClick={() => setLineQty(l.productId, l.qty - 1)} disabled={l.qty <= 1} className="grid h-7 w-7 place-items-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40"><Minus size={13} /></button>
@@ -493,31 +538,33 @@ export default function CashierSalesPanel() {
               ))}
             </div>
 
-            {/* OR + method + remarks */}
+            {/* OR + split payment + remarks */}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div>
-                <label className="text-xs font-semibold text-slate-600">OR number *</label>
+                <label className="text-xs font-semibold text-slate-600">OR number {cashTotal > 0 ? "*" : "(cash portion only)"}</label>
                 <input
                   value={orNo}
                   onChange={(e) => setOrNo(e.target.value)}
-                  placeholder="from receipt booklet"
-                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-mono uppercase"
+                  disabled={cashTotal <= 0}
+                  placeholder={cashTotal > 0 ? "from receipt booklet" : "— no cash portion —"}
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-mono uppercase disabled:bg-slate-50 disabled:text-slate-400"
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-slate-600">Payment method</label>
-                <select
-                  value={method}
-                  onChange={(e) => setMethod(e.target.value)}
-                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"
-                >
-                  {METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-                  {mode === "member" && member && savingsBal != null && (
-                    <option value="savings" disabled={!savingsOk}>Pay with Savings (₱{savingsBal.toLocaleString(undefined, { minimumFractionDigits: 2 })}){savingsOk ? "" : " — insufficient"}</option>
-                  )}
-                </select>
-                {method === "savings" && savingsOk && (
-                  <div className="mt-1 text-[11px] font-semibold text-pink-700">₱{total.toLocaleString(undefined, { minimumFractionDigits: 2 })} will be deducted from the member's savings.</div>
+                <label className="text-xs font-semibold text-slate-600">Pay from savings (₱)</label>
+                <input
+                  type="number" min="0" step="0.01" max={savingsMax}
+                  value={savingsUsed}
+                  onChange={(e) => setSavingsUsed(e.target.value)}
+                  disabled={mode !== "member" || savingsBal == null || cashTotal <= 0}
+                  placeholder={savingsBal == null ? "no savings account" : "0.00"}
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-mono disabled:bg-slate-50 disabled:text-slate-400"
+                />
+                {mode === "member" && savingsBal != null && (
+                  <div className="mt-1 flex items-center justify-between text-[11px]">
+                    <button type="button" onClick={() => setSavingsUsed(savingsMax > 0 ? String(savingsMax) : "")} className="font-semibold text-pink-700 hover:underline">Use max (₱{savingsMax.toLocaleString(undefined, { minimumFractionDigits: 2 })})</button>
+                    <span className="text-slate-500">Bal ₱{Number(savingsBal).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                  </div>
                 )}
               </div>
               <div>
@@ -531,13 +578,28 @@ export default function CashierSalesPanel() {
               </div>
             </div>
 
-            {/* Total */}
-            <div className="rounded-2xl border-2 border-orange-300 bg-orange-50 px-4 py-3 flex items-center justify-between">
-              <div className="text-sm text-orange-900">
-                {cart.length > 0 ? `${cart.length} item${cart.length === 1 ? "" : "s"} • ${cartCount} unit${cartCount === 1 ? "" : "s"}` : "Cart is empty"}
+            {/* Totals — cash (paid now, split into cash + savings) and loan
+                (posted to the member's account as a product-loan receivable). */}
+            <div className="rounded-2xl border-2 border-orange-300 bg-orange-50 px-4 py-3 space-y-1.5">
+              <div className="flex items-center justify-between text-sm text-orange-900">
+                <span>Cash to pay now</span>
+                <span className="font-mono font-bold">{peso(cashTotal)}</span>
               </div>
-              <div className="text-xl font-bold text-orange-700 font-mono">
-                {peso(total)}
+              {savingsUsedNum > 0 && (
+                <div className="flex items-center justify-between text-[12px] text-orange-700">
+                  <span className="pl-3">↳ cash {peso(cashDue)} + savings {peso(savingsUsedNum)}</span>
+                  <span />
+                </div>
+              )}
+              {loanTotal > 0 && (
+                <div className="flex items-center justify-between text-sm text-indigo-800">
+                  <span>On credit (product loan)</span>
+                  <span className="font-mono font-bold">{peso(loanTotal)}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between border-t border-orange-200 pt-1.5">
+                <span className="text-sm font-semibold text-slate-700">{cartCount} unit{cartCount === 1 ? "" : "s"} • total</span>
+                <span className="text-xl font-extrabold text-orange-700 font-mono">{peso(total)}</span>
               </div>
             </div>
 
@@ -550,10 +612,10 @@ export default function CashierSalesPanel() {
               </button>
               <button
                 onClick={submit}
-                disabled={submitting || cart.length === 0 || total <= 0 || !orNo.trim() || (mode === "member" && !member) || (mode === "walkin" && !customerName.trim())}
+                disabled={submitting || cart.length === 0 || total <= 0 || (cashTotal > 0 && !orNo.trim()) || (mode === "member" && !member) || (mode === "walkin" && !customerName.trim()) || (hasLoan && mode !== "member")}
                 className="inline-flex items-center gap-2 rounded-xl bg-orange-600 px-5 py-2 text-sm font-bold text-white hover:bg-orange-700 disabled:opacity-50"
               >
-                <Receipt size={14} /> {submitting ? "Posting…" : `Post Sale ${peso(total)}`}
+                <Receipt size={14} /> {submitting ? "Posting…" : (loanTotal > 0 ? `Post — cash ${peso(cashTotal)} + loan ${peso(loanTotal)}` : `Post Sale ${peso(total)}`)}
               </button>
             </div>
           </div>
