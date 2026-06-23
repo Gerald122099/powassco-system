@@ -18,32 +18,35 @@ import { discountAppliesToMeter } from "../utils/waterBilling.js";
 
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
-export async function applySeniorDiscountToUnpaidBills({ dry = true, rate: forcedRate = null } = {}) {
+export async function applySeniorDiscountToUnpaidBills({ dry = true, rate: forcedRate = null, pnNo = null } = {}) {
   const settings = await WaterSettings.findOne().lean();
   const globalRate = Number(forcedRate ?? settings?.seniorDiscount?.discountRate ?? 5);
 
-  const bills = await WaterBill.find({ status: { $in: ["unpaid", "overdue"] } }).lean();
+  const billFilter = { status: { $in: ["unpaid", "overdue"] } };
+  if (pnNo) billFilter.pnNo = String(pnNo).toUpperCase().trim();
+
+  const bills = await WaterBill.find(billFilter).lean();
   const pnNos = [...new Set(bills.map((b) => b.pnNo))];
   const members = await WaterMember.find({ pnNo: { $in: pnNos } }).lean();
   const byPn = new Map(members.map((m) => [m.pnNo, m]));
 
-  const summary = { scanned: bills.length, updated: 0, unchanged: 0, skipped: 0, changes: [] };
+  const summary = { scanned: bills.length, updated: 0, cleared: 0, unchanged: 0, skipped: 0, changes: [] };
 
   for (const bill of bills) {
     const m = byPn.get(bill.pnNo);
-    const isSenior = m?.personal?.isSeniorCitizen === true;
-    // Eligible only if senior AND (for multi-meter) this is the discount meter.
-    if (!isSenior || !discountAppliesToMeter(m, bill.meterNumber)) { summary.skipped++; continue; }
+    // Only senior accounts are ever touched; everyone else is left alone.
+    if (m?.personal?.isSeniorCitizen !== true) { summary.skipped++; continue; }
 
-    // Effective rate: the member's own senior rate (defaults to 5) else the
-    // global / forced rate.
-    const rate = Number(m?.personal?.seniorDiscountRate || globalRate || 5);
     // Preserve the existing base charge — never re-priced here. Fall back to
     // the current amount if an older bill never stored baseAmount.
     const base = round2(Number(bill.baseAmount) > 0 ? bill.baseAmount : bill.amount);
     if (!(base > 0)) { summary.skipped++; continue; }
 
-    const discount = round2(base * (rate / 100));
+    // For multi-meter accounts the discount lands on the designated meter
+    // only; the OTHER meters' bills must have any stale discount removed.
+    const eligible = discountAppliesToMeter(m, bill.meterNumber);
+    const rate = eligible ? Number(m?.personal?.seniorDiscountRate || globalRate || 5) : 0;
+    const discount = eligible ? round2(base * (rate / 100)) : 0;
     const amount = round2(base - discount);
     const totalDue = round2(amount + (Number(bill.penaltyApplied) || 0));
 
@@ -64,6 +67,7 @@ export async function applySeniorDiscountToUnpaidBills({ dry = true, rate: force
       newAmount: amount,
       discount,
       rate,
+      eligible,
     });
 
     if (!dry) {
@@ -74,13 +78,13 @@ export async function applySeniorDiscountToUnpaidBills({ dry = true, rate: force
           $set: {
             baseAmount: base,
             discount,
-            discountReason: `Senior Citizen (${rate}%)`,
+            discountReason: eligible ? `Senior Citizen (${rate}%)` : "",
             amount,
             totalDue,
           },
         }
       );
-      summary.updated++;
+      if (eligible) summary.updated++; else summary.cleared++;
     }
   }
 

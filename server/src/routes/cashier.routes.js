@@ -30,6 +30,7 @@ import MemberFeeRequest from "../models/MemberFeeRequest.js";
 import { BankAccount } from "../models/Treasury.js";
 import { TreasuryTransaction } from "../models/Treasury.js";
 import { freshenBill, penaltyForDays } from "../utils/penalty.js";
+import { applySeniorDiscountToUnpaidBills } from "../scripts/applySeniorDiscount.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
 const router = express.Router();
@@ -141,6 +142,7 @@ router.get("/water", ...guard, async (req, res) => {
       presentReading: b.presentReading,
       baseAmount: b.baseAmount,
       discount: b.discount,
+      discountReason: b.discountReason || "",
       penaltyApplied: b.penaltyApplied,
       totalDue: b.totalDue,
       status: b.status,
@@ -193,18 +195,32 @@ router.get("/water", ...guard, async (req, res) => {
       .lean();
 
     res.json({
-      member: {
-        pnNo: member.pnNo,
-        accountName: member.accountName,
-        accountStatus: member.accountStatus,
-        cbuBalance: Number(member.cbuBalance) || 0,
-        classification: member.billing?.classification,
-        address: [member.address?.houseLotNo, member.address?.streetSitioPurok, member.address?.barangay, member.address?.municipalityCity].filter(Boolean).join(", "),
-        contact: member.contact?.mobileNumber || "",
-        meters: (member.meters || [])
-          .filter((m) => m.meterStatus === "active")
-          .map((m) => ({ meterNumber: m.meterNumber, meterBrand: m.meterBrand, meterSize: m.meterSize, lastReading: m.lastReading })),
-      },
+      member: (() => {
+        const activeMeters = (member.meters || []).filter((m) => m.meterStatus === "active");
+        // Effective discount meter: the flagged one, else the first active meter.
+        const discountMeterNumber = (activeMeters.find((m) => m.isDiscountMeter) || activeMeters[0])?.meterNumber || "";
+        return {
+          pnNo: member.pnNo,
+          accountName: member.accountName,
+          accountStatus: member.accountStatus,
+          cbuBalance: Number(member.cbuBalance) || 0,
+          classification: member.billing?.classification,
+          address: [member.address?.houseLotNo, member.address?.streetSitioPurok, member.address?.barangay, member.address?.municipalityCity].filter(Boolean).join(", "),
+          contact: member.contact?.mobileNumber || "",
+          // Senior / PWD discount status, surfaced so the cashier sees the
+          // indicator and the discount that's baked into each bill.
+          isSeniorCitizen: !!member.personal?.isSeniorCitizen,
+          seniorDiscountRate: Number(member.personal?.seniorDiscountRate || 0),
+          hasPWD: !!member.billing?.hasPWD,
+          // Which meter carries the discount (multi-meter accounts). The cashier
+          // can change this via POST /cashier/water/discount-meter.
+          discountMeterNumber,
+          meters: activeMeters.map((m) => ({
+            meterNumber: m.meterNumber, meterBrand: m.meterBrand, meterSize: m.meterSize, lastReading: m.lastReading,
+            isDiscountMeter: m.meterNumber === discountMeterNumber,
+          })),
+        };
+      })(),
       bills,
       unpaidCount: unpaid.length,
       totalDue,
@@ -222,6 +238,41 @@ router.get("/water", ...guard, async (req, res) => {
   } catch (e) {
     console.error("Cashier water lookup error:", e);
     res.status(500).json({ message: "Lookup failed. Please try again." });
+  }
+});
+
+// Choose which meter carries the senior/PWD discount for a MULTI-METER
+// account, then re-apply the discount to that member's unpaid bills (moves it
+// to the chosen meter and clears it from the others). Single-meter accounts
+// always use their one meter, so this is only needed when meters.length > 1.
+//   body: { pnNo, meterNumber }
+router.post("/water/discount-meter", ...payGuard, async (req, res) => {
+  try {
+    const pnNo = String(req.body?.pnNo || "").toUpperCase().trim();
+    const meterNumber = String(req.body?.meterNumber || "").toUpperCase().trim();
+    if (!pnNo || !meterNumber) return res.status(400).json({ message: "pnNo and meterNumber are required." });
+
+    const member = await WaterMember.findOne({ pnNo });
+    if (!member) return res.status(404).json({ message: "Member not found." });
+    if (!member.personal?.isSeniorCitizen && !member.billing?.hasPWD) {
+      return res.status(400).json({ message: "This member has no senior/PWD discount." });
+    }
+    const active = (member.meters || []).filter((m) => m.meterStatus === "active");
+    const target = active.find((m) => String(m.meterNumber).toUpperCase() === meterNumber);
+    if (!target) return res.status(400).json({ message: "Meter not found or not active." });
+
+    // Flag the chosen meter; clear the flag on all others.
+    for (const m of member.meters) {
+      m.isDiscountMeter = String(m.meterNumber).toUpperCase() === meterNumber;
+    }
+    await member.save();
+
+    // Re-apply (base-preserving) so the discount moves to the chosen meter.
+    const applied = await applySeniorDiscountToUnpaidBills({ dry: false, pnNo });
+    res.json({ ok: true, discountMeter: target.meterNumber, applied });
+  } catch (e) {
+    console.error("Set discount meter error:", e);
+    res.status(500).json({ message: "Could not update the discount meter." });
   }
 });
 

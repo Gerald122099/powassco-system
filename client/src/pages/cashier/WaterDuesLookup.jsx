@@ -7,7 +7,7 @@ import { toast } from "../../components/Toast";
 import PrinterPrompt from "../../components/PrinterPrompt";
 import { printPaymentReceipt } from "../../lib/thermalPrint";
 import { printReceiptSmart, printReceiptManual } from "../../lib/printerSettings";
-import { Search, Droplets, Printer, AlertTriangle, MapPin, CheckCircle, Hourglass, Gauge, Banknote, History, Wallet, TrendingUp, ReceiptText } from "lucide-react";
+import { Search, Droplets, Printer, AlertTriangle, MapPin, CheckCircle, Hourglass, Gauge, Banknote, History, Wallet, TrendingUp, ReceiptText, BadgeCheck, Loader2 } from "lucide-react";
 
 // Recently-looked-up PNs are kept in localStorage so the cashier can
 // re-open a customer with one tap (e.g. when they walk back after
@@ -37,6 +37,7 @@ export default function WaterDuesLookup() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   // Payment modal: { bill, totalDue }
+  const [settingMeter, setSettingMeter] = useState(false);
   const [payTarget, setPayTarget] = useState(null);
   const [payOR, setPayOR] = useState("");
   // Two-input cash-collected model:
@@ -67,6 +68,7 @@ export default function WaterDuesLookup() {
       lines: [
         ["Meter", j.meter],
         ["Period", j.period],
+        ...(j.discount > 0 ? [["Base charge", peso(j.baseAmount)], [j.discountReason || "Senior disc.", `-${peso(j.discount)}`]] : []),
         ["Amount due", peso(j.amountDue)],
         ["Received", peso(j.amountReceived)],
         ...(j.cbuExcess > 0 ? [["Excess->CBU", peso(j.cbuExcess)], ["New CBU bal", peso(j.newCbu)]] : []),
@@ -188,6 +190,9 @@ export default function WaterDuesLookup() {
         amountReceived: totalReceived,
         cbuExcess: res.cbuExcess || 0,
         newCbu: res.newCbuBalance || 0,
+        baseAmount: Number(target.baseAmount) || 0,
+        discount: Number(target.discount) || 0,
+        discountReason: target.discountReason || "",
         accountName: data.member.accountName,
         pnNo: data.member.pnNo,
         at: new Date(),
@@ -254,6 +259,25 @@ export default function WaterDuesLookup() {
       setData(null);
     } finally {
       setBusy(false);
+    }
+  }
+
+  // Cashier picks which meter carries the senior/PWD discount (multi-meter
+  // accounts). The server moves the discount to that meter + re-prices the
+  // member's unpaid bills; we re-fetch to show the new amounts.
+  async function setDiscountMeter(meterNumber) {
+    if (!data?.member?.pnNo || !meterNumber || meterNumber === data.member.discountMeterNumber) return;
+    setSettingMeter(true);
+    try {
+      const res = await apiFetch("/cashier/water/discount-meter", {
+        method: "POST", token, body: { pnNo: data.member.pnNo, meterNumber },
+      });
+      toast.success(`Discount moved to meter ${res.discountMeter}.`);
+      await lookup(null, data.member.pnNo);
+    } catch (e2) {
+      toast.error(e2.message);
+    } finally {
+      setSettingMeter(false);
     }
   }
 
@@ -477,7 +501,19 @@ export default function WaterDuesLookup() {
           <div className="rounded-2xl border border-slate-200 p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
-                <div className="text-base font-bold text-slate-900">{data.member.accountName}</div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="text-base font-bold text-slate-900">{data.member.accountName}</div>
+                  {data.member.isSeniorCitizen && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-bold text-violet-700">
+                      <BadgeCheck size={12} /> Senior{data.member.seniorDiscountRate > 0 ? ` ${data.member.seniorDiscountRate}%` : ""}
+                    </span>
+                  )}
+                  {data.member.hasPWD && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-bold text-sky-700">
+                      <BadgeCheck size={12} /> PWD
+                    </span>
+                  )}
+                </div>
                 <div className="font-mono text-xs text-slate-500">{data.member.pnNo}</div>
                 {data.member.address && (
                   <div className="mt-1 flex items-start gap-1 text-xs text-slate-600">
@@ -501,10 +537,39 @@ export default function WaterDuesLookup() {
             {data.member.meters?.length > 0 && (
               <div className="mt-3 flex flex-wrap gap-2 text-xs">
                 {data.member.meters.map((m) => (
-                  <span key={m.meterNumber} className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 font-mono">
+                  <span key={m.meterNumber} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 font-mono">
                     {m.meterNumber}{m.meterBrand ? ` • ${m.meterBrand}` : ""}
+                    {(data.member.isSeniorCitizen || data.member.hasPWD) && m.isDiscountMeter && (
+                      <span className="ml-1 inline-flex items-center gap-0.5 rounded bg-violet-100 px-1 text-[10px] font-bold text-violet-700"><BadgeCheck size={10} /> discount</span>
+                    )}
                   </span>
                 ))}
+              </div>
+            )}
+
+            {/* Senior/PWD discount meter — applies to ONE meter per account.
+                Multi-meter: cashier picks which. Single-meter: that meter. */}
+            {(data.member.isSeniorCitizen || data.member.hasPWD) && data.member.meters?.length > 1 && (
+              <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-xs">
+                <BadgeCheck size={14} className="text-violet-600" />
+                <span className="font-semibold text-violet-800">Discount applies to meter:</span>
+                <select
+                  value={data.member.discountMeterNumber || ""}
+                  disabled={settingMeter}
+                  onChange={(e) => setDiscountMeter(e.target.value)}
+                  className="rounded-lg border border-violet-300 bg-white px-2 py-1 font-mono text-xs disabled:opacity-50"
+                >
+                  {data.member.meters.map((m) => (
+                    <option key={m.meterNumber} value={m.meterNumber}>{m.meterNumber}</option>
+                  ))}
+                </select>
+                {settingMeter && <Loader2 size={13} className="animate-spin text-violet-600" />}
+                <span className="text-[11px] text-violet-600">The {data.member.seniorDiscountRate || 5}% discount is given on this meter only.</span>
+              </div>
+            )}
+            {(data.member.isSeniorCitizen || data.member.hasPWD) && data.member.meters?.length === 1 && (
+              <div className="mt-3 text-[11px] text-violet-600">
+                <BadgeCheck size={12} className="inline -mt-0.5" /> Senior/PWD discount applies to this account's meter automatically.
               </div>
             )}
           </div>
@@ -586,7 +651,16 @@ export default function WaterDuesLookup() {
         {payTarget && (
           <form onSubmit={submitPay} className="space-y-3">
             <div className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-2 text-sm">
-              <div>Account: <b>{data?.member?.accountName}</b> <span className="text-xs text-slate-500">({data?.member?.pnNo})</span></div>
+              <div>Account: <b>{data?.member?.accountName}</b> <span className="text-xs text-slate-500">({data?.member?.pnNo})</span>
+                {data?.member?.isSeniorCitizen && <span className="ml-1 inline-flex items-center gap-0.5 rounded-full bg-violet-100 px-1.5 align-middle text-[10px] font-bold text-violet-700"><BadgeCheck size={10} /> Senior</span>}
+                {data?.member?.hasPWD && <span className="ml-1 inline-flex items-center gap-0.5 rounded-full bg-sky-100 px-1.5 align-middle text-[10px] font-bold text-sky-700"><BadgeCheck size={10} /> PWD</span>}
+              </div>
+              {Number(payTarget?.discount) > 0 && (
+                <div className="mt-1 flex items-center justify-between text-xs">
+                  <span className="text-slate-500">Base {peso(payTarget.baseAmount || 0)} · {payTarget.discountReason || "Senior discount"}</span>
+                  <span className="font-semibold text-violet-700">−{peso(payTarget.discount)}</span>
+                </div>
+              )}
               <div className="mt-1 flex items-center justify-between">
                 <span className="text-xs text-slate-500">Total due</span>
                 <span className="text-lg font-extrabold text-red-600">{peso(effectiveDue(payTarget, penaltyDays))}</span>
@@ -936,7 +1010,12 @@ function MeterGroups({ data, printSlip, onPay, justPaidPeriod }) {
                     <tr key={b._id} className={`border-t ${isJustPaid ? "bg-emerald-100 animate-pulse" : b.status !== "paid" ? "bg-red-50/30" : ""}`}>
                       <td className="px-3 py-2 font-mono">{b.periodCovered || b.periodKey}</td>
                       <td className="px-3 py-2 text-xs">{Number(b.consumed || 0).toFixed(2)} m³</td>
-                      <td className="px-3 py-2 text-right font-bold text-slate-800">{peso(b.totalDue)}</td>
+                      <td className="px-3 py-2 text-right font-bold text-slate-800">
+                        {peso(b.totalDue)}
+                        {Number(b.discount) > 0 && (
+                          <span className="ml-1 inline-block rounded bg-violet-100 px-1 text-[9px] font-bold text-violet-700" title={b.discountReason || "Senior discount"}>−{peso(b.discount)}</span>
+                        )}
+                      </td>
                       <td className="px-3 py-2 text-center">
                         {b.status === "paid" ? (
                           <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700"><CheckCircle size={10}/> PAID</span>
