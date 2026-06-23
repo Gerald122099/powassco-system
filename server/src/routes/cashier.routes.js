@@ -1040,6 +1040,22 @@ router.post("/sale-cart", ...payGuard, async (req, res) => {
     const savingsAmount = Math.min(savingsAmountReq, cashTotal);
     const cashAmount = round2(cashTotal - savingsAmount);
 
+    // Overpayment handling: cashReceived ≥ cashAmount; the excess is routed to
+    // the member's CBU or savings (cashier's choice — never automatic).
+    const excessTo = ["cbu", "savings"].includes(b.excessTo) ? b.excessTo : "cbu";
+    const cashReceived = b.cashReceived != null ? Math.max(0, round2(Number(b.cashReceived))) : cashAmount;
+    if (cashReceived + 0.005 < cashAmount) {
+      return res.status(400).json({ message: `Cash received (₱${cashReceived}) is less than the cash due (₱${cashAmount}).` });
+    }
+    const cashExcess = round2(cashReceived - cashAmount);
+    if (cashExcess > 0 && !member) {
+      return res.status(400).json({ message: "Excess can only be kept for a member (CBU / savings). Collect the exact amount for walk-ins." });
+    }
+    if (cashExcess > 0 && excessTo === "savings") {
+      const acct = await SavingsAccount.findOne({ pnNo: member.pnNo }).select("status").lean();
+      if (!acct || acct.status === "closed") return res.status(400).json({ message: "Excess can't go to savings — member has no active savings account." });
+    }
+
     const receivedBy = req.user?.fullName || req.user?.employeeId || "";
     const now = new Date();
 
@@ -1074,6 +1090,8 @@ router.post("/sale-cart", ...payGuard, async (req, res) => {
     }
 
     const cashMethod = savingsAmount <= 0 ? "cash" : cashAmount <= 0 ? "savings" : "split";
+    let excessResult = null;
+    let excessRollback = null;
     const created = []; // { doc, product, qty }
     try {
       // CASH lines → fully-paid sale docs (first keeps OR; rest get "#n").
@@ -1118,6 +1136,31 @@ router.post("/sale-cart", ...payGuard, async (req, res) => {
         created.push({ doc, product: l.product, qty: l.qty });
         if (l.product.stock > 0) await ProductLoanCatalog.findByIdAndUpdate(l.product._id, { $inc: { stock: -l.qty } });
       }
+
+      // Route any cash overpayment to the member's CBU or savings, with a
+      // transaction note that says exactly where it came from.
+      if (cashExcess > 0 && member) {
+        const src = `Excess change from cash sale OR ${orNo} (received ₱${cashReceived} vs ₱${cashAmount} due)`;
+        if (excessTo === "savings") {
+          const updated = await SavingsAccount.findOneAndUpdate(
+            { pnNo: member.pnNo, status: { $ne: "closed" } },
+            { $inc: { balance: cashExcess } },
+            { new: true }
+          );
+          excessRollback = { acctId: updated._id, amount: cashExcess, orNo: `${orNo}-EXC` };
+          await SavingsTransaction.create({
+            pnNo: member.pnNo, type: "deposit", amount: cashExcess, orNo: `${orNo}-EXC`, method: "cash",
+            balanceAfter: round2(updated.balance), receivedBy, note: src, bundledWithOr: orNo,
+          });
+          excessResult = { to: "savings", amount: cashExcess, newBalance: round2(updated.balance) };
+        } else {
+          const newBal = await creditCbu({
+            member, amount: cashExcess, source: "sale_overpay", refOrNo: orNo,
+            postedBy: receivedBy, note: src,
+          });
+          excessResult = { to: "cbu", amount: cashExcess, newBalance: newBal };
+        }
+      }
     } catch (e) {
       // Rollback: restore stock, delete created docs, refund savings.
       for (const c of created) {
@@ -1128,13 +1171,18 @@ router.post("/sale-cart", ...payGuard, async (req, res) => {
         await SavingsAccount.updateOne({ _id: savingsRollback.acctId }, { $inc: { balance: savingsRollback.amount } });
         if (savingsRollback.orNo) await SavingsTransaction.deleteOne({ orNo: savingsRollback.orNo, type: "withdrawal" });
       }
+      if (excessRollback) {
+        await SavingsAccount.updateOne({ _id: excessRollback.acctId }, { $inc: { balance: -excessRollback.amount } });
+        await SavingsTransaction.deleteOne({ orNo: excessRollback.orNo, type: "deposit" });
+      }
       if (e?.code === 11000) return res.status(409).json({ message: `OR ${orNo} already used.` });
       throw e;
     }
 
     res.status(201).json({
       ok: true, orNo,
-      cashTotal, cashAmount, savingsAmount, loanTotal,
+      cashTotal, cashAmount, cashReceived, savingsAmount, loanTotal,
+      excess: excessResult,
       grandTotal: round2(cashTotal + loanTotal),
       customer: member ? { pnNo: member.pnNo, accountName: member.accountName } : { customerName },
       cashItems: cashLines.map((l) => ({ productName: l.product.name, quantity: l.qty, unitPrice: l.unitPrice, total: l.total })),

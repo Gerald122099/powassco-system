@@ -578,7 +578,7 @@ export default function LoanDuesLookup() {
         </div>
       )}
 
-      <Modal open={!!payLoan} title="Receive Loan Payment" subtitle={payLoan ? `${payLoan.loanId} • ${payLoan.borrowerName}` : ""} onClose={() => setPayLoan(null)} size="sm">
+      <Modal open={!!payLoan} title="Receive Loan Payment" subtitle={payLoan ? `${payLoan.loanId} • ${payLoan.borrowerName}` : ""} onClose={() => setPayLoan(null)} size="lg">
         {payLoan && (
           <form onSubmit={submitPay} className="space-y-3">
             <div className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-2 text-sm space-y-1">

@@ -36,6 +36,8 @@ const CbuTransactionSchema = new mongoose.Schema(
         // every direct contribution silently 500'd AFTER the bill was
         // already marked paid — leaving split state.
         "cashier_contribution",
+        // Excess change from a counter product SALE routed to CBU (2026-06-24).
+        "sale_overpay",
         // Reserved for the upcoming interest-accrual cron (Phase 6).
         "interest",
       ],

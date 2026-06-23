@@ -647,7 +647,7 @@ export default function WaterDuesLookup() {
         </div>
       )}
 
-      <Modal open={!!payTarget} title="Receive Payment" subtitle={payTarget ? `Meter ${payTarget.meterNumber} • ${payTarget.periodCovered || payTarget.periodKey}` : ""} onClose={() => setPayTarget(null)} size="sm">
+      <Modal open={!!payTarget} title="Receive Payment" subtitle={payTarget ? `Meter ${payTarget.meterNumber} • ${payTarget.periodCovered || payTarget.periodKey}` : ""} onClose={() => setPayTarget(null)} size="lg">
         {payTarget && (
           <form onSubmit={submitPay} className="space-y-3">
             <div className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-2 text-sm">

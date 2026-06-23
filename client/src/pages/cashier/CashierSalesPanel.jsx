@@ -60,6 +60,10 @@ function saleReceiptDesc(sale, cashierName) {
     }
     lines.push(["Loan balance", peso(sale.loanTotal)]);
   }
+  // Overpayment routed to the member's account.
+  if (sale.excess && Number(sale.excess.amount) > 0) {
+    lines.push([`Excess -> ${sale.excess.to === "savings" ? "Savings" : "CBU"}`, peso(sale.excess.amount)]);
+  }
   return {
     title: "SALES OR",
     accountName: customer,
@@ -91,6 +95,8 @@ export default function CashierSalesPanel() {
   const [pickQty, setPickQty] = useState(1);
   const [orNo, setOrNo] = useState("");
   const [savingsUsed, setSavingsUsed] = useState(""); // ₱ from savings toward the cash portion
+  const [cashReceived, setCashReceived] = useState(""); // cash tendered ("" = exact)
+  const [saleExcessTo, setSaleExcessTo] = useState("cbu"); // where overpayment goes
   const [savingsBal, setSavingsBal] = useState(null); // member's savings balance (null = none/unknown)
   const [remarks, setRemarks] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -127,6 +133,8 @@ export default function CashierSalesPanel() {
     setPickQty(1);
     setOrNo("");
     setSavingsUsed("");
+    setCashReceived("");
+    setSaleExcessTo("cbu");
     setRemarks("");
     setLastSale(null);
   }
@@ -197,6 +205,9 @@ export default function CashierSalesPanel() {
   const savingsMax = +Math.min(Number(savingsBal) || 0, cashTotal).toFixed(2);
   const savingsUsedNum = +Math.min(Math.max(0, Number(savingsUsed) || 0), savingsMax).toFixed(2);
   const cashDue = +Math.max(0, cashTotal - savingsUsedNum).toFixed(2);
+  // Cash tendered + overpayment routing (member only).
+  const cashReceivedNum = cashReceived === "" ? cashDue : +Math.max(0, Number(cashReceived) || 0).toFixed(2);
+  const saleExcess = +Math.max(0, cashReceivedNum - cashDue).toFixed(2);
   // Clamp savings if the cash portion shrinks below the entered amount.
   useEffect(() => { if ((Number(savingsUsed) || 0) > savingsMax) setSavingsUsed(savingsMax > 0 ? String(savingsMax) : ""); /* eslint-disable-next-line */ }, [savingsMax]);
   // Walk-ins can't loan — force every line to cash + clear savings.
@@ -240,6 +251,8 @@ export default function CashierSalesPanel() {
         items: cart.map((l) => ({ productId: l.productId, quantity: l.qty, mode: l.mode === "loan" ? "loan" : "cash" })),
         orNo: saleOr,
         savingsAmount: savingsUsedNum,
+        cashReceived: cashReceivedNum,
+        excessTo: saleExcessTo,
         remarks: remarks.trim(),
       };
       if (mode === "member") {
@@ -256,6 +269,8 @@ export default function CashierSalesPanel() {
         cashAmount: res.cashAmount ?? cashDue,
         savingsAmount: res.savingsAmount ?? savingsUsedNum,
         loanTotal: res.loanTotal ?? loanTotal,
+        excess: res.excess || (saleExcess > 0 ? { to: saleExcessTo, amount: saleExcess } : null),
+        cashReceived: res.cashReceived ?? cashReceivedNum,
         principal: res.grandTotal ?? total,
         cashItems: res.cashItems || cart.filter((l) => l.mode !== "loan").map((l) => ({ productName: l.name, quantity: l.qty, unitPrice: l.unitPrice, total: l.unitPrice * l.qty })),
         loanItems: res.loanItems || cart.filter((l) => l.mode === "loan").map((l) => ({ productName: l.name, quantity: l.qty, unitPrice: l.unitPrice, total: l.unitPrice * l.qty })),
@@ -372,6 +387,12 @@ export default function CashierSalesPanel() {
                         <li key={i} className="flex justify-between font-mono text-xs text-indigo-800"><span className="truncate">{it.productName} × {it.quantity}{it.dueDate ? ` · due ${new Date(it.dueDate).toLocaleDateString()}` : ""}</span><span>{peso(it.total)}</span></li>
                       ))}
                     </ul>
+                  </div>
+                )}
+                {lastSale.excess && Number(lastSale.excess.amount) > 0 && (
+                  <div className="col-span-2 text-emerald-700">
+                    <span className="text-slate-500">Excess</span> {peso(lastSale.excess.amount)} → <b>{lastSale.excess.to === "savings" ? "Savings" : "CBU"}</b>
+                    {lastSale.excess.newBalance != null ? ` (new balance ${peso(lastSale.excess.newBalance)})` : ""}
                   </div>
                 )}
                 <div className="col-span-2">
@@ -602,6 +623,33 @@ export default function CashierSalesPanel() {
                 <span className="text-xl font-extrabold text-orange-700 font-mono">{peso(total)}</span>
               </div>
             </div>
+
+            {/* Cash tendered + overpayment routing (member only). */}
+            {mode === "member" && cashDue > 0 && (
+              <div className="rounded-2xl border border-slate-200 px-4 py-3">
+                <div className="flex flex-wrap items-start gap-4">
+                  <div className="min-w-[150px] flex-1">
+                    <label className="text-xs font-semibold text-slate-600">Cash tendered (₱)</label>
+                    <input type="number" min={cashDue} step="0.01" value={cashReceived} onChange={(e) => setCashReceived(e.target.value)} placeholder={cashDue.toFixed(2)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-mono" />
+                    <div className="mt-0.5 text-[10px] text-slate-500">Cash due {peso(cashDue)} — leave blank for exact.</div>
+                  </div>
+                  {saleExcess > 0 && (
+                    <div className="min-w-[190px] flex-1">
+                      <div className="text-xs font-semibold text-emerald-700">Change / excess {peso(saleExcess)} → keep in</div>
+                      <div className="mt-1 flex gap-2">
+                        {[{ k: "cbu", label: "CBU" }, { k: "savings", label: "Savings" }].map((o) => (
+                          <label key={o.k} className={`inline-flex cursor-pointer items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold ${saleExcessTo === o.k ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-700"} ${o.k === "savings" && savingsBal == null ? "opacity-40 cursor-not-allowed" : ""}`}>
+                            <input type="radio" name="saleExcessTo" className="hidden" checked={saleExcessTo === o.k} disabled={o.k === "savings" && savingsBal == null} onChange={() => setSaleExcessTo(o.k)} />
+                            {o.label}
+                          </label>
+                        ))}
+                      </div>
+                      <div className="mt-0.5 text-[10px] text-slate-500">Cashier chooses — not automatic.</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             <div className="flex gap-2 justify-end">
               <button
