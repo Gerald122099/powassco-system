@@ -38,6 +38,10 @@ export default function WaterSettingsPanel() {
   const [penaltyGraceDays, setPenaltyGraceDays] = useState(5);
   const [penaltyAfterGraceAmount, setPenaltyAfterGraceAmount] = useState(200);
   const [cashierCanWaivePenalty, setCashierCanWaivePenalty] = useState(false);
+  // Coop fees (collected by the cashier).
+  const [reconnectionFee, setReconnectionFee] = useState(200);
+  const [membershipFee, setMembershipFee] = useState(0);
+  const [tappingFee, setTappingFee] = useState(200);
 
   // TARIFF SETTINGS STATE
   const [tariffs, setTariffs] = useState({
@@ -91,6 +95,9 @@ export default function WaterSettingsPanel() {
       penaltyGraceDays: clamp(penaltyGraceDays, 0, 30),
       penaltyAfterGraceAmount: Math.max(0, Number(penaltyAfterGraceAmount) || 0),
       cashierCanWaivePenalty: !!cashierCanWaivePenalty,
+      reconnectionFee: Math.max(0, Number(reconnectionFee) || 0),
+      membershipFee: Math.max(0, Number(membershipFee) || 0),
+      tappingFee: Math.max(0, Number(tappingFee) || 0),
     };
   }, [
     penaltyType,
@@ -103,6 +110,9 @@ export default function WaterSettingsPanel() {
     penaltyGraceDays,
     penaltyAfterGraceAmount,
     cashierCanWaivePenalty,
+    reconnectionFee,
+    membershipFee,
+    tappingFee,
   ]);
 
   // Tariff payload
@@ -187,6 +197,9 @@ export default function WaterSettingsPanel() {
       setPenaltyGraceDays(data.penaltyGraceDays ?? 5);
       setPenaltyAfterGraceAmount(data.penaltyAfterGraceAmount ?? 200);
       setCashierCanWaivePenalty(!!data.cashierCanWaivePenalty);
+      setReconnectionFee(data.reconnectionFee ?? 200);
+      setMembershipFee(data.membershipFee ?? 0);
+      setTappingFee(data.tappingFee ?? 200);
 
       // Tariff settings with ensured fields
       setTariffs({
@@ -655,6 +668,28 @@ export default function WaterSettingsPanel() {
                   <span className="block text-[11px] text-slate-500">Shows an "Apply penalty" checkbox (default ticked) on each water payment. Unticking it waives that bill's penalty. Hidden from cashiers when off.</span>
                 </span>
               </label>
+
+              {/* Coop fees collected by the cashier */}
+              <div className="mt-4 rounded-xl border border-slate-200 bg-white p-3">
+                <div className="text-sm font-semibold text-slate-800">Coop fees (₱)</div>
+                <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div>
+                    <label className="text-xs font-semibold text-slate-600">Reconnection fee (per meter)</label>
+                    <input type="number" min={0} step="0.01" value={reconnectionFee} onChange={(e) => setReconnectionFee(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" />
+                    <div className="mt-0.5 text-[10px] text-slate-500">Charged when a plumber disconnects a meter.</div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-slate-600">Membership fee</label>
+                    <input type="number" min={0} step="0.01" value={membershipFee} onChange={(e) => setMembershipFee(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" />
+                    <div className="mt-0.5 text-[10px] text-slate-500">Collected before a new member is enrolled.</div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-slate-600">Tapping fee</label>
+                    <input type="number" min={0} step="0.01" value={tappingFee} onChange={(e) => setTappingFee(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" />
+                    <div className="mt-0.5 text-[10px] text-slate-500">New service connection fee.</div>
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* Basic Settings Actions */}

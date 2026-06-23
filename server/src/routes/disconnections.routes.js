@@ -16,6 +16,7 @@
 import express from "express";
 import WaterBill from "../models/WaterBill.js";
 import WaterMember from "../models/WaterMember.js";
+import WaterSettings from "../models/WaterSettings.js";
 import LoanApplication from "../models/LoanApplication.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
@@ -179,6 +180,10 @@ router.post("/mark-disconnected", ...actGuard, async (req, res) => {
   const meter = (member.meters || []).find((m) => up(m.meterNumber) === up(meterNumber));
   if (!meter) return res.status(404).json({ message: "Meter not found on this account." });
 
+  // Snapshot the reconnection fee owed for this meter (unless already set).
+  const settings = await WaterSettings.findOne().select("reconnectionFee").lean();
+  const fee = Math.max(0, Number(settings?.reconnectionFee ?? 200));
+
   meter.meterStatus = "disconnected";
   meter.isBillingActive = false;
   meter.disconnectionRemarks = remarks || "Subject for disconnection (unpaid)";
@@ -187,8 +192,9 @@ router.post("/mark-disconnected", ...actGuard, async (req, res) => {
   meter.reconnectionRequested = false;
   meter.reconnectionRequestedAt = null;
   meter.reconnectionRequestedBy = "";
+  if (!(Number(meter.reconnectionFeeDue) > 0)) meter.reconnectionFeeDue = fee;
   await member.save();
-  res.json({ ok: true, message: `Meter ${meterNumber} marked as disconnected.` });
+  res.json({ ok: true, message: `Meter ${meterNumber} marked as disconnected.`, reconnectionFeeDue: meter.reconnectionFeeDue });
 });
 
 // Officer activates the account → ALL meters linked are queued for reconnection.
@@ -229,6 +235,7 @@ router.post("/mark-reconnected", ...actGuard, async (req, res) => {
   meter.reconnectedAt = new Date();
   meter.reconnectedBy = req.user?.fullName || req.user?.employeeId || "";
   meter.disconnectionRemarks = "";
+  meter.reconnectionFeeDue = 0; // cleared on reconnection
   await member.save();
   res.json({ ok: true, message: `Meter ${meterNumber} reconnected.` });
 });

@@ -209,6 +209,11 @@ const MeterSchema = new mongoose.Schema(
     reconnectionRequestedBy: { type: String, default: "" },
     reconnectedAt: { type: Date, default: null },
     reconnectedBy: { type: String, default: "" },
+    // ₱ reconnection fee owed for THIS meter once a plumber disconnects it
+    // (snapshot of WaterSettings.reconnectionFee at disconnect time). The
+    // cashier collects it, then the meter is queued for reconnection; cleared
+    // to 0 once collected / reconnected.
+    reconnectionFeeDue: { type: Number, default: 0, min: 0 },
     
     // FIXED: Detailed location information
     location: {

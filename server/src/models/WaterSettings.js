@@ -48,6 +48,12 @@ const WaterSettingsSchema = new mongoose.Schema(
     penaltyGraceDays: { type: Number, default: 5, min: 0, max: 30 },
     penaltyAfterGraceAmount: { type: Number, default: 200, min: 0 },
 
+    // One-shot RECONNECTION fee charged per meter when a plumber physically
+    // disconnects it. Collected at the cashier before the meter is queued for
+    // reconnection. Distinct from the after-grace penalty above — set to 0 to
+    // disable. Applies per meter (multi-meter accounts pay it for each).
+    reconnectionFee: { type: Number, default: 200, min: 0 },
+
     // When true, the cashier sees an "Apply penalty" checkbox on each bill
     // payment (default ON) and may UNtick it to waive that bill's penalty.
     // Admin-controlled — hidden from the cashier when false.

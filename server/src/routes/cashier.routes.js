@@ -286,8 +286,13 @@ router.get("/receivables", ...guard, async (req, res) => {
   try {
     const pnNo = String(req.query.pnNo || "").toUpperCase().trim();
     if (!pnNo) return res.status(400).json({ message: "Account number (pnNo) is required." });
-    const member = await WaterMember.findOne({ pnNo }).select("pnNo accountName").lean();
+    const member = await WaterMember.findOne({ pnNo }).select("pnNo accountName accountStatus meters").lean();
     if (!member) return res.status(404).json({ message: "Member not found." });
+
+    // Per-meter reconnection fees owed (a plumber disconnected the meter).
+    const reconnections = (member.meters || [])
+      .filter((m) => m.meterStatus === "disconnected" && Number(m.reconnectionFeeDue) > 0)
+      .map((m) => ({ meterNumber: m.meterNumber, fee: round2(m.reconnectionFeeDue), disconnectedAt: m.disconnectedAt, remarks: m.disconnectionRemarks || "" }));
 
     const liveSettings = await WaterSettings.findOne();
     const waterDocs = await WaterBill.find({ pnNo, status: { $in: ["unpaid", "overdue"] } }).sort({ periodKey: 1 });
@@ -311,16 +316,18 @@ router.get("/receivables", ...guard, async (req, res) => {
       water: sum(water, (b) => b.totalDue),
       productLoans: sum(productLoans, (p) => p.balance),
       loans: sum(loans, (l) => l.balance),
+      reconnection: sum(reconnections, (r) => r.fee),
     };
-    const grandTotal = round2(totals.water + totals.productLoans + totals.loans);
+    const grandTotal = round2(totals.water + totals.productLoans + totals.loans + totals.reconnection);
 
     res.json({
-      member, water, productLoans, loans, totals, grandTotal,
+      member: { pnNo: member.pnNo, accountName: member.accountName, accountStatus: member.accountStatus },
+      water, productLoans, loans, reconnections, totals, grandTotal,
       overdue: {
         water: water.filter((b) => b.status === "overdue").length,
         productLoans: productLoans.filter((p) => p.overdue).length,
       },
-      hasAny: water.length + productLoans.length + loans.length > 0,
+      hasAny: water.length + productLoans.length + loans.length + reconnections.length > 0,
     });
   } catch (e) {
     console.error("Receivables error:", e);

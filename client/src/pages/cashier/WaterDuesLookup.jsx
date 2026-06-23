@@ -718,6 +718,20 @@ export default function WaterDuesLookup() {
               </div>
             )}
 
+            {receivables.reconnections?.length > 0 && (
+              <div>
+                <div className="mb-1 flex items-center gap-2 text-sm font-bold text-slate-800"><AlertTriangle size={15} className="text-red-500" /> Reconnection fees <span className="text-slate-400">· {peso(receivables.totals.reconnection)}</span></div>
+                <div className="rounded-xl border border-red-200 divide-y divide-red-100">
+                  {receivables.reconnections.map((r) => (
+                    <div key={r.meterNumber} className="flex items-center justify-between px-3 py-2 text-sm">
+                      <span className="font-mono">{r.meterNumber} <span className="text-red-500">• disconnected{r.disconnectedAt ? ` ${fmtDate(r.disconnectedAt)}` : ""}</span></span>
+                      <span className="font-mono font-bold text-red-700">{peso(r.fee)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
               Remind the member of these balances. Settle water bills + bundled product loans in the <b>Receive Payment</b> screen; cash loans under <b>Loan Dues</b>.
             </div>
