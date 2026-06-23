@@ -86,13 +86,19 @@ const BillingSchema = new mongoose.Schema(
       max: 100 
     },
     
-    // Discount applicable tiers
+    // Per-member override of the eligible discount tiers. Left UNSET by
+    // default so the member INHERITS the global Water Settings →
+    // seniorDiscount.applicableTiers (single source of truth). A previous
+    // default of ["31-40","41+"] silently shadowed the global setting on
+    // every member, so admin changes never took effect — see the
+    // "Apply discount setting to members" maintenance tool which clears
+    // this field on existing members.
     discountApplicableTiers: {
       type: [String],
-      default: ["31-40", "41+"],
+      default: undefined,
       validate: {
         validator: function(tiers) {
-          return tiers.every(tier => /^[\d+-]+$/.test(tier));
+          return !tiers || tiers.every(tier => /^[\d+-]+$/.test(tier));
         },
         message: "Tier format should be like '31-40' or '41+'"
       }

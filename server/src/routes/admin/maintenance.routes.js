@@ -23,6 +23,8 @@ import { recomputeWaterBills } from "../../scripts/recomputeWaterBills.js";
 import { importLegacyWater, LEGACY_WATER_AREAS, importWaterRoster, WATER_ROSTER_AREAS, importMemberPuroks, purokImportAreas, dedupeWaterMembers, mergeSplitMeterDuplicates, findDuplicateMembers, purgeArchivedDuplicates } from "../../utils/legacyWaterImport.js";
 import { emitJobProgress } from "../../realtime.js";
 import WaterMember from "../../models/WaterMember.js";
+import WaterBill from "../../models/WaterBill.js";
+import WaterSettings from "../../models/WaterSettings.js";
 
 const router = express.Router();
 const guard = [requireAuth, requireRole(["admin"])];
@@ -98,6 +100,41 @@ router.post("/recompute-water-bills", guard, async (req, res) => {
       dry: Boolean(dry),
     });
     res.json({ mode: { dry: Boolean(dry), months, classification: classification || null }, ...summary });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Apply the GLOBAL senior-discount setting to existing members. Every member
+// historically carried a per-member discountApplicableTiers override (old
+// default ["31-40","41+"]) that SHADOWED the global Water Settings value, so
+// admin changes never took effect. This clears that override so all members
+// INHERIT the global setting, then (unless dry) re-prices unpaid/overdue
+// bills so the corrected discount applies immediately.
+//   body: { confirm: "SYNC MEMBER DISCOUNT", dry }
+router.post("/sync-member-discount", guard, async (req, res) => {
+  const { confirm, dry = true } = req.body || {};
+  if (confirm !== "SYNC MEMBER DISCOUNT") {
+    return res.status(400).json({ error: 'Pass { confirm: "SYNC MEMBER DISCOUNT" } to proceed.' });
+  }
+  try {
+    const settings = await WaterSettings.findOne().lean();
+    const globalTiers = settings?.seniorDiscount?.applicableTiers || [];
+    const globalRate = Number(settings?.seniorDiscount?.discountRate ?? 5);
+    const membersWithOverride = await WaterMember.countDocuments({ "billing.discountApplicableTiers": { $exists: true } });
+    const seniorCount = await WaterMember.countDocuments({ "personal.isSeniorCitizen": true });
+    const unpaidBills = await WaterBill.countDocuments({ status: { $in: ["unpaid", "overdue"] } });
+
+    if (dry) {
+      return res.json({ dry: true, globalTiers, globalRate, membersWithOverride, seniorCount, unpaidBills });
+    }
+
+    // Clear the per-member override so every member inherits the global tiers.
+    const r = await WaterMember.updateMany({}, { $unset: { "billing.discountApplicableTiers": "" } });
+    const membersUpdated = r.modifiedCount ?? r.nModified ?? 0;
+    // Re-price unpaid/overdue bills so the discount takes effect now.
+    const recompute = await recomputeWaterBills({ dry: false });
+    res.json({ dry: false, globalTiers, globalRate, membersUpdated, seniorCount, recompute });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

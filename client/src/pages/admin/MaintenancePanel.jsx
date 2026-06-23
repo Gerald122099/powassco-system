@@ -239,6 +239,7 @@ export default function MaintenancePanel() {
 
       <LegacyLoanImportCard />
 
+      <SyncMemberDiscountCard />
       <RecomputeWaterBillsCard />
 
       <LegacyWaterImportCard />
@@ -1173,6 +1174,121 @@ function LegacyRosterImportCard() {
 // bills keep the tariff they were created with (so tariff changes aren't
 // retroactive); this is the deliberate, dry-run-first opt-out for unpaid
 // bills — e.g. after raising the residential minimum.
+// Apply the GLOBAL senior-discount tiers to existing members + recalc bills.
+// Every member historically carried a per-member tier override that shadowed
+// the global Water Settings value, so admin changes never took effect. This
+// clears that override (members inherit the global) then re-prices unpaid bills.
+function SyncMemberDiscountCard() {
+  const { token } = useAuth();
+  const [result, setResult] = useState(null);
+  const [working, setWorking] = useState(false);
+
+  async function call(dry) {
+    if (!dry && !window.confirm(
+      `Apply the global discount setting to ALL members and recalculate their unpaid bills?\n\nThis clears each member's own tier override so they follow the Water Settings discount, then re-prices unpaid/overdue bills. Paid bills are never touched.`
+    )) return;
+    setWorking(true);
+    try {
+      const res = await apiFetch("/admin/maintenance/sync-member-discount", {
+        method: "POST", token, body: { confirm: "SYNC MEMBER DISCOUNT", dry },
+      });
+      setResult(res);
+      toast.success(dry
+        ? `Dry run: ${res.membersWithOverride} member(s) carry an override; ${res.unpaidBills} unpaid bill(s) would be re-priced.`
+        : `Applied to ${res.membersUpdated} member(s); re-priced ${res.recompute?.updated || 0} bill(s).`);
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  const tiers = result?.globalTiers || [];
+  const changes = (result?.recompute?.changes || []).filter((c) => !c.error);
+
+  return (
+    <Card>
+      <div className="flex items-center gap-2 text-lg font-bold tracking-tight text-slate-900">
+        <Users size={20} className="text-emerald-600" /> Maintenance — Apply Discount Setting to Members
+      </div>
+      <div className="mt-0.5 text-sm text-slate-600">
+        Makes existing members follow the <b>global</b> Water Settings senior-discount tiers, then
+        recalculates their unpaid bills so the discount applies. Run this once after changing the
+        discount tiers — members created before carried their own copy of the old tiers, which
+        silently overrode your setting.
+      </div>
+
+      <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900 flex items-start gap-2">
+        <AlertCircle size={16} className="mt-0.5 shrink-0" />
+        <div>
+          <b>Dry-run first.</b> Apply clears every member's per-member tier override (so they inherit
+          the global setting) and re-prices <b>unpaid / overdue</b> bills. Paid bills are never touched.
+          Set the tiers in <b>Water Settings → Senior Discount</b> first.
+        </div>
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <div className="flex-1" />
+        <button onClick={() => call(true)} disabled={working}
+          className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50">
+          {working ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />} Dry run
+        </button>
+        <button onClick={() => call(false)} disabled={working || !result}
+          className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
+          title={!result ? "Dry-run first" : ""}>
+          <CheckCircle2 size={14} /> Apply
+        </button>
+      </div>
+
+      {result && (
+        <div className="mt-4 rounded-2xl border border-slate-200">
+          <div className="bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-700">
+            {result.dry ? "Dry run" : "Applied"} — global tiers:{" "}
+            <b>{tiers.map((t) => String(t).trim()).filter(Boolean).join(", ") || "All tiers (everyone)"}</b>
+            {" "}@ <b>{result.globalRate}%</b> · seniors: <b>{result.seniorCount}</b>
+            {result.dry
+              ? <> · members with override: <b>{result.membersWithOverride}</b> · unpaid bills: <b>{result.unpaidBills}</b></>
+              : <> · members updated: <b>{result.membersUpdated}</b> · bills re-priced: <b>{result.recompute?.updated || 0}</b></>}
+          </div>
+          {!result.dry && changes.length > 0 && (
+            <div className="max-h-80 overflow-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-white sticky top-0 text-left text-xs text-slate-500">
+                  <tr>
+                    <th className="px-3 py-2">Account</th>
+                    <th className="px-3 py-2">Period</th>
+                    <th className="px-3 py-2 text-right">m³</th>
+                    <th className="px-3 py-2 text-right">Old → New</th>
+                    <th className="px-3 py-2 text-right">Δ</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {changes.map((c, i) => (
+                    <tr key={i} className="border-t border-slate-100">
+                      <td className="px-3 py-2"><span className="font-mono">{c.pnNo}</span> <span className="text-slate-400">{c.accountName}</span></td>
+                      <td className="px-3 py-2">{c.periodKey}</td>
+                      <td className="px-3 py-2 text-right">{c.consumed}</td>
+                      <td className="px-3 py-2 text-right font-mono">{peso2(c.oldAmount)} → {peso2(c.newAmount)}</td>
+                      <td className={`px-3 py-2 text-right font-mono ${c.delta >= 0 ? "text-amber-700" : "text-emerald-700"}`}>
+                        {c.delta >= 0 ? "+" : ""}{peso2(c.delta)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {result.dry && (
+            <div className="px-4 py-3 text-xs text-slate-500">
+              Click <b>Apply</b> to clear the {result.membersWithOverride} override(s) and re-price the {result.unpaidBills} unpaid bill(s).
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function RecomputeWaterBillsCard() {
   const { token } = useAuth();
   const [months, setMonths] = useState("");
