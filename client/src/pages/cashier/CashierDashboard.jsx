@@ -25,10 +25,11 @@ import CashDrawerPanel from "../../components/CashDrawerPanel";
 import PettyCashPanel from "./PettyCashPanel";
 import PrinterSettings from "../../components/PrinterSettings";
 import ProductReservationsPanel from "../../components/ProductReservationsPanel";
+import OnlinePaymentsPanel from "../../components/OnlinePaymentsPanel";
 import { apiFetch } from "../../lib/api";
 import { cashierBadges } from "../../lib/requestBadges";
 import { useAuth } from "../../context/AuthContext";
-import { Droplets, Banknote, ReceiptText, Wallet, CheckCircle, TrendingUp, History, ShoppingBag, FileDown, Receipt, PiggyBank, Coins, Printer } from "lucide-react";
+import { Droplets, Banknote, ReceiptText, Wallet, CheckCircle, TrendingUp, History, ShoppingBag, FileDown, Receipt, PiggyBank, Coins, Printer, Smartphone } from "lucide-react";
 
 const peso = (n) =>
   "₱" + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -65,6 +66,15 @@ export default function CashierDashboard() {
   const [view, setView] = useState("water"); // "water" | "loan" | "collections"
   const [todayStats, setTodayStats] = useState(null);
   const [pillBadges, setPillBadges] = useState({});
+  // Online/GCash queue is only shown when online payments are enabled.
+  const [onlineStatus, setOnlineStatus] = useState({ enabled: false, pendingCount: 0 });
+  useEffect(() => {
+    let alive = true;
+    const tick = () => apiFetch("/payments/online-status", { token }).then((d) => { if (alive) setOnlineStatus(d); }).catch(() => {});
+    tick();
+    const t = setInterval(tick, 60000);
+    return () => { alive = false; clearInterval(t); };
+  }, [token]);
   useEffect(() => {
     const tick = () => cashierBadges(token).then(setPillBadges).catch(() => {});
     tick();
@@ -178,6 +188,8 @@ export default function CashierDashboard() {
             { key: "sales", label: "Sales", icon: ShoppingBag },
             { key: "reservations", label: "Reservations", icon: ShoppingBag },
             { key: "savings", label: "Savings", icon: PiggyBank },
+            // Shown only when online payments (GCash / PayMongo) are enabled.
+            ...(onlineStatus.enabled ? [{ key: "online", label: "Online / GCash", icon: Smartphone, badge: onlineStatus.pendingCount }] : []),
             { key: "disbursements", label: "Disbursements", icon: Receipt },
             { key: "drawer", label: "Cash Drawer", icon: Wallet },
             { key: "pettycash", label: "Petty Cash", icon: Coins },
@@ -186,7 +198,7 @@ export default function CashierDashboard() {
             { key: "reports", label: "Reports", icon: FileDown },
             { key: "treasury", label: "Treasury", icon: Wallet },
             { key: "settings", label: "Printer", icon: Printer },
-          ].map(({ key, label, icon }) => {
+          ].map(({ key, label, icon, badge }) => {
             const Icon = icon;
             return (
             <button
@@ -200,11 +212,11 @@ export default function CashierDashboard() {
               }`}
             >
               <Icon size={14} /> {label}
-              {Number(pillBadges[key]) > 0 && (
+              {(() => { const n = Number(badge ?? pillBadges[key]) || 0; return n > 0 ? (
                 <span className="ml-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
-                  {pillBadges[key] > 99 ? "99+" : pillBadges[key]}
+                  {n > 99 ? "99+" : n}
                 </span>
-              )}
+              ) : null; })()}
             </button>
             );
           })}
@@ -217,6 +229,7 @@ export default function CashierDashboard() {
         {view === "water" && <WaterDuesLookup />}
         {view === "loan" && <LoanDuesLookup />}
         {view === "sales" && <CashierSalesPanel />}
+        {view === "online" && onlineStatus.enabled && <OnlinePaymentsPanel />}
         {view === "reservations" && <ProductReservationsPanel />}
         {view === "savings" && <CashierSavingsPanel />}
         {view === "disbursements" && <CashierDisbursementsPanel />}

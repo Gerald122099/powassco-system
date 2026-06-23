@@ -45,14 +45,33 @@ router.get("/webhook-events", ...adminGuard, async (req, res) => {
   res.json(items);
 });
 
-// ---- Officers: pending online payments to verify ----
-const officerGuard = [requireAuth, requireRole(["admin", "water_bill_officer", "loan_officer"])];
+// ---- Officers + cashier: pending online payments to verify ----
+// Cashier is included so the counter can issue the OR + post a GCash/online
+// payment (realtime-marks the account paid). Scope still limits officers to
+// their own module; admin + cashier see all.
+const officerGuard = [requireAuth, requireRole(["admin", "cashier", "water_bill_officer", "loan_officer"])];
 
 function scopeModule(req) {
   if (req.user.role === "water_bill_officer") return "water";
   if (req.user.role === "loan_officer") return "loan";
-  return null; // admin: any
+  return null; // admin / cashier: any
 }
+
+// Non-secret status flag so the cashier UI knows whether to SHOW the online /
+// GCash queue at all. Returns no keys — only whether online is accepted, the
+// mode, and the pending count (scoped to the caller's module).
+router.get("/online-status", ...officerGuard, async (req, res) => {
+  const s = await getSettings();
+  const enabled = s.onlineEnabled !== false;
+  let pendingCount = 0;
+  if (enabled) {
+    const scoped = scopeModule(req);
+    const f = { status: "pending" };
+    if (scoped) f.module = scoped;
+    pendingCount = await OnlinePayment.countDocuments(f);
+  }
+  res.json({ enabled, mode: s.mode, pspActive: !!s.pspActive, payeeName: s.payeeName || "", pendingCount });
+});
 
 router.get("/online", ...officerGuard, async (req, res) => {
   const { status = "pending", module = "" } = req.query;
