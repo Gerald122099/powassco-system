@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Card from "../../components/Card";
 import Modal from "../../components/Modal";
+import OverdueProductLoansCard from "../../components/OverdueProductLoansCard";
 import { apiFetch } from "../../lib/api";
 import { useRealtime } from "../../lib/realtime";
 import { useAuth } from "../../context/AuthContext";
@@ -176,6 +177,8 @@ export default function ProductLoansPanel() {
   }
 
   return (
+    <div className="space-y-4">
+    <OverdueProductLoansCard />
     <Card>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -461,5 +464,6 @@ export default function ProductLoansPanel() {
         )}
       </Modal>
     </Card>
+    </div>
   );
 }

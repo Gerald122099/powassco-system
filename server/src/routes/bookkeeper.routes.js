@@ -531,6 +531,27 @@ router.get("/product-applications", ...productTxnGuard, async (req, res) => {
   res.json(apps);
 });
 
+// Overdue product loans / rentals — open balances past their due date. Used by
+// the loan-officer dashboard + manager/bookkeeper to flag members with an
+// unsettled product-loan receivable (a "pending disconnection" candidate).
+// Read access widened to include the loan officer.
+const overdueReadGuard = [requireAuth, requireRole(["admin", "manager", "bookkeeper", "loan_officer", "water_bill_officer", "cashier"])];
+router.get("/product-loans/overdue", ...overdueReadGuard, async (req, res) => {
+  const now = new Date();
+  const items = await ProductLoanApplication.find({
+    transactionType: { $in: ["loan", "rental"] },
+    balance: { $gt: 0 },
+    dueDate: { $ne: null, $lt: now },
+    status: { $nin: ["fully_paid", "returned", "cancelled", "rejected"] },
+  }).select("pnNo accountName productName transactionType balance dueDate status").sort({ dueDate: 1 }).limit(500).lean();
+  const out = items.map((p) => ({
+    ...p,
+    daysOverdue: Math.max(0, Math.floor((now - new Date(p.dueDate)) / 86400000)),
+  }));
+  const total = round2(out.reduce((s, p) => s + (Number(p.balance) || 0), 0));
+  res.json({ items: out, count: out.length, total });
+});
+
 // Create a product transaction (sale / loan / rental). The shape of
 // the request body determines which:
 //   transactionType: "sale"   — pnNo OR (customerName + customerContact)

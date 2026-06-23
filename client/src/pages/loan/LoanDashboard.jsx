@@ -12,6 +12,7 @@ import LoanCollectionsPanel from "../../components/LoanCollectionsPanel";
 // accounts at the counter and view balances; deposit/withdrawal
 // remains cashier-only.
 import CashierSavingsPanel from "../cashier/CashierSavingsPanel";
+import OverdueProductLoansCard from "../../components/OverdueProductLoansCard";
 import { FilePlus2, Landmark, BarChart3, Settings, Smartphone, Wallet, PiggyBank } from "lucide-react";
 
 const items = [
@@ -29,7 +30,7 @@ export default function LoanDashboard() {
   return (
     <DashboardLayout title="Loan System" accent="blue" items={items} active={tab} onSelect={setTab}>
       {tab === "apply" && <LoanApplyPanel />}
-      {tab === "loans" && <LoansPanel />}
+      {tab === "loans" && <div className="space-y-4"><OverdueProductLoansCard /><LoansPanel /></div>}
       {tab === "savings" && <CashierSavingsPanel />}
       {tab === "collections" && <CollectionTodayPanel module="loan" defaultMine />}
       {tab === "period" && <LoanCollectionsPanel />}
