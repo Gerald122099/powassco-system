@@ -500,6 +500,34 @@ export default function LoanDuesLookup() {
                   </div>
                 </div>
 
+                {/* Loan release disclosure — what was availed, the interest,
+                    the deductions, and the net amount actually released. */}
+                <div className="mt-3 rounded-xl border border-indigo-200 bg-indigo-50/60 px-3 py-2.5">
+                  <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-indigo-600">Loan Release Disclosure</div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm sm:grid-cols-5">
+                    <div>
+                      <div className="text-[11px] text-slate-500">Loan Availed (Capital)</div>
+                      <div className="font-bold text-slate-900">{peso(loan.principal)}</div>
+                    </div>
+                    <div>
+                      <div className="text-[11px] text-slate-500">Interest ({loan.interestRatePerMonth}%/mo)</div>
+                      <div className="font-bold text-slate-900">{peso(loan.totalInterest)}</div>
+                    </div>
+                    <div>
+                      <div className="text-[11px] text-slate-500">Total Payable</div>
+                      <div className="font-bold text-slate-900">{peso(loan.totalPayment)}</div>
+                    </div>
+                    <div>
+                      <div className="text-[11px] text-slate-500">Deductions</div>
+                      <div className="font-bold text-red-600">−{peso(loan.totalCharges)}</div>
+                    </div>
+                    <div>
+                      <div className="text-[11px] text-slate-500">Net Released</div>
+                      <div className="font-extrabold text-emerald-700">{peso(loan.netProceeds || (Number(loan.principal) || 0) - (Number(loan.totalCharges) || 0))}</div>
+                    </div>
+                  </div>
+                </div>
+
                 {pendingForThis.length > 0 && (
                   <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                     <div className="flex items-center gap-2 font-semibold"><Hourglass size={14}/> Online payment(s) pending review</div>

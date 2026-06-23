@@ -298,7 +298,7 @@ router.get("/loan", ...guard, async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(20)
       .select(
-        "loanId referenceCode borrowerPnNo borrowerName borrowerType principal monthlyPayment totalPayment totalPaid balance status releasedAt maturityDate firstPaymentDate termMonths interestRatePerMonth amortizationSchedule createdAt"
+        "loanId referenceCode borrowerPnNo borrowerName borrowerType principal monthlyPayment totalPayment totalPaid balance status releasedAt maturityDate firstPaymentDate termMonths interestRatePerMonth totalInterest totalCharges netProceeds charges amortizationSchedule createdAt"
       )
       .lean();
 
