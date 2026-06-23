@@ -18,7 +18,7 @@ import WaterBill from "../models/WaterBill.js";
 import WaterPayment from "../models/WaterPayment.js";
 import LoanApplication from "../models/LoanApplication.js";
 import LoanPayment from "../models/LoanPayment.js";
-import { ProductLoanApplication } from "../models/ProductLoan.js";
+import { ProductLoanApplication, ProductLoanCatalog } from "../models/ProductLoan.js";
 import OnlinePayment from "../models/OnlinePayment.js";
 import CbuTransaction from "../models/CbuTransaction.js";
 import SavingsAccount from "../models/SavingsAccount.js";
@@ -956,6 +956,152 @@ router.post("/pay-loan", ...payGuard, async (req, res) => {
     if (e?.code === 11000) return res.status(409).json({ message: "OR number is already in use." });
     console.error("pay-loan error:", e);
     res.status(500).json({ message: e.message || "Payment failed." });
+  }
+});
+
+// ----------------------------------------------------------------------
+// POST /api/cashier/sale-cart — multi-product counter sale on ONE OR.
+// Body: { items: [{ productId, quantity }], orNo, method, remarks,
+//         pnNo | (customerName, customerContact) }
+// Creates one sale record per line (sharing the OR — line 2+ get an
+// internal "#n" suffix so each row stays uniquely traceable), decrements
+// stock per line, and (for member savings) debits the grand total once.
+// ----------------------------------------------------------------------
+router.post("/sale-cart", ...payGuard, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const rawItems = Array.isArray(b.items) ? b.items : [];
+    const orNo = String(b.orNo || "").toUpperCase().trim();
+    const method = String(b.method || "cash").toLowerCase();
+    const remarks = String(b.remarks || "");
+    if (rawItems.length === 0) return res.status(400).json({ message: "Add at least one product to the cart." });
+    if (!orNo) return res.status(400).json({ message: "OR number is required for sales." });
+
+    // Member vs walk-in.
+    const pnNo = String(b.pnNo || "").toUpperCase().trim();
+    let member = null;
+    if (pnNo) {
+      member = await WaterMember.findOne({ pnNo });
+      if (!member) return res.status(404).json({ message: `Member ${pnNo} not found.` });
+    }
+    const customerName = String(b.customerName || "").trim();
+    const customerContact = String(b.customerContact || "").trim();
+    if (!member && !customerName) return res.status(400).json({ message: "Enter a member Account Number or a walk-in customer name." });
+
+    // OR must be unused across all product transactions.
+    const dup = await ProductLoanApplication.findOne({ "payments.orNo": orNo }).select("_id").lean();
+    if (dup) return res.status(409).json({ message: `OR ${orNo} already used on a product transaction.` });
+
+    // Resolve + validate every line (merge duplicate productIds, check stock).
+    const merged = new Map();
+    for (const it of rawItems) {
+      const id = String(it?.productId || "");
+      const qty = Math.max(1, Math.floor(Number(it?.quantity) || 1));
+      if (!id) continue;
+      merged.set(id, (merged.get(id) || 0) + qty);
+    }
+    const lines = [];
+    for (const [id, qty] of merged.entries()) {
+      const product = await ProductLoanCatalog.findById(id);
+      if (!product) return res.status(404).json({ message: "A product in the cart no longer exists." });
+      if (!product.isActive) return res.status(400).json({ message: `${product.name} is inactive.` });
+      if (product.stock > 0 && qty > product.stock) return res.status(400).json({ message: `Insufficient stock for ${product.name} (only ${product.stock} left).` });
+      const unitPrice = round2(product.unitPrice);
+      lines.push({ product, qty, unitPrice, total: round2(unitPrice * qty) });
+    }
+    const grandTotal = round2(lines.reduce((s, l) => s + l.total, 0));
+
+    const receivedBy = req.user?.fullName || req.user?.employeeId || "";
+    const now = new Date();
+
+    // Member savings payment: debit the grand total ONCE (race-safe) + ledger.
+    let savingsRollback = null;
+    if (method === "savings") {
+      if (!member) return res.status(400).json({ message: "Savings payment needs a member Account Number." });
+      const acct = await SavingsAccount.findOne({ pnNo: member.pnNo });
+      if (!acct || acct.status === "closed") return res.status(400).json({ message: "Member has no active savings account." });
+      const updated = await SavingsAccount.findOneAndUpdate(
+        { _id: acct._id, balance: { $gte: grandTotal } },
+        { $inc: { balance: -grandTotal } },
+        { new: true }
+      );
+      if (!updated) return res.status(409).json({ message: `Insufficient savings (needs ₱${grandTotal}).` });
+      try {
+        await SavingsTransaction.create({
+          pnNo: member.pnNo, type: "withdrawal", amount: grandTotal, orNo, method: "other",
+          balanceAfter: round2(updated.balance), receivedBy,
+          note: `Cart sale (${lines.length} item${lines.length === 1 ? "" : "s"})`,
+        });
+        savingsRollback = { acctId: acct._id, amount: grandTotal, orNo };
+      } catch (e) {
+        await SavingsAccount.updateOne({ _id: acct._id }, { $inc: { balance: grandTotal } });
+        throw e;
+      }
+    }
+
+    // Create one sale doc per line. First line keeps the exact OR; the rest
+    // get a "#n" suffix so payments.orNo stays unique but ties to the receipt.
+    const created = [];
+    try {
+      let i = 0;
+      for (const l of lines) {
+        i += 1;
+        const lineOr = i === 1 ? orNo : `${orNo}#${i}`;
+        const unitCapital = round2(l.product.capital || 0);
+        const doc = await ProductLoanApplication.create({
+          pnNo: member?.pnNo || "",
+          accountName: member?.accountName || "",
+          customerName: member ? "" : customerName,
+          customerContact: member ? "" : customerContact,
+          transactionType: "sale",
+          productId: l.product._id,
+          productName: l.product.name,
+          productCategory: l.product.category,
+          quantity: l.qty,
+          unitPrice: l.unitPrice,
+          totalPrice: l.total,
+          unitCapital,
+          totalCapital: round2(unitCapital * l.qty),
+          profitRecorded: round2(l.total - round2(unitCapital * l.qty)),
+          balance: 0,
+          totalPaid: l.total,
+          payments: [{
+            orNo: lineOr, amount: l.total, method, paidAt: now, receivedBy,
+            note: `${member ? `Member cart sale — ${member.accountName}` : "Walk-in cart sale"}${method === "savings" ? " (paid via savings)" : ""}${i > 1 ? ` [OR ${orNo}]` : ""}`,
+          }],
+          status: "fully_paid",
+          approvedAt: now, approvedBy: receivedBy, releasedAt: now, releasedBy: receivedBy,
+          remarks,
+        });
+        created.push(doc);
+        if (l.product.stock > 0) await ProductLoanCatalog.findByIdAndUpdate(l.product._id, { $inc: { stock: -l.qty } });
+      }
+    } catch (e) {
+      // Best-effort rollback: remove any docs created + refund savings.
+      for (const d of created) {
+        try { if (d.product?.stock > 0) await ProductLoanCatalog.findByIdAndUpdate(d.productId, { $inc: { stock: d.quantity } }); } catch { /* ignore */ }
+        try { await ProductLoanApplication.deleteOne({ _id: d._id }); } catch { /* ignore */ }
+      }
+      if (savingsRollback) {
+        await SavingsAccount.updateOne({ _id: savingsRollback.acctId }, { $inc: { balance: savingsRollback.amount } });
+        await SavingsTransaction.deleteOne({ orNo: savingsRollback.orNo, type: "withdrawal" });
+      }
+      if (e?.code === 11000) return res.status(409).json({ message: `OR ${orNo} already used.` });
+      throw e;
+    }
+
+    res.status(201).json({
+      ok: true,
+      orNo,
+      method,
+      total: grandTotal,
+      itemCount: lines.length,
+      customer: member ? { pnNo: member.pnNo, accountName: member.accountName } : { customerName },
+      items: lines.map((l) => ({ productName: l.product.name, quantity: l.qty, unitPrice: l.unitPrice, total: l.total })),
+    });
+  } catch (e) {
+    console.error("sale-cart error:", e);
+    res.status(500).json({ message: e.message || "Failed to post sale." });
   }
 });
 

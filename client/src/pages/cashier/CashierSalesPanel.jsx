@@ -19,7 +19,7 @@ import PrinterPrompt from "../../components/PrinterPrompt";
 import { printPaymentReceipt } from "../../lib/thermalPrint";
 import { printReceiptSmart, printReceiptManual } from "../../lib/printerSettings";
 import {
-  ShoppingBag, Plus, Search, User, UserPlus, Receipt, RefreshCw, Printer,
+  ShoppingBag, Plus, Minus, Trash2, Search, User, UserPlus, Receipt, RefreshCw, Printer,
 } from "lucide-react";
 
 const peso = (n) =>
@@ -38,16 +38,22 @@ function saleReceiptDesc(sale, cashierName) {
   const customer = sale.pnNo
     ? `${sale.accountName || "Member"} (${sale.pnNo})`
     : (sale.customerName || "Walk-in");
+  // Multi-item cart sale → one line per product; legacy single-item falls back.
+  const items = Array.isArray(sale.items) && sale.items.length
+    ? sale.items
+    : [{ productName: sale.productName, quantity: sale.quantity || 1, unitPrice: sale.unitPrice, total: Number(sale.principal) || 0 }];
+  const lines = [];
+  for (const it of items) {
+    lines.push([String(it.productName || "Product").slice(0, 18), `${it.quantity} × ${peso(it.unitPrice)}`]);
+    lines.push(["", peso(it.total)]);
+  }
+  if (sale.method === "savings") lines.push(["Paid via", "Savings"]);
   return {
     title: "SALES OR",
     accountName: customer,
     orNo: sale.orNo,
     cashierName,
-    lines: [
-      ["Product", String(sale.productName || "Product").slice(0, 20)],
-      ["Quantity", String(sale.quantity || 1)],
-      ["Unit price", peso(sale.unitPrice)],
-    ],
+    lines,
     total: Number(sale.principal) || 0,
     totalLabel: "PAID",
     note: "Thank you for your purchase!",
@@ -68,8 +74,9 @@ export default function CashierSalesPanel() {
   const [memberLookup, setMemberLookup] = useState({ status: "idle", error: "" });
   const [customerName, setCustomerName] = useState("");
   const [customerContact, setCustomerContact] = useState("");
-  const [productId, setProductId] = useState("");
-  const [quantity, setQuantity] = useState(1);
+  const [cart, setCart] = useState([]); // [{ productId, name, unitPrice, qty, stock }]
+  const [pickId, setPickId] = useState("");
+  const [pickQty, setPickQty] = useState(1);
   const [orNo, setOrNo] = useState("");
   const [method, setMethod] = useState("cash");
   const [savingsBal, setSavingsBal] = useState(null); // member's savings balance (null = none/unknown)
@@ -103,8 +110,9 @@ export default function CashierSalesPanel() {
     setMemberLookup({ status: "idle", error: "" });
     setCustomerName("");
     setCustomerContact("");
-    setProductId("");
-    setQuantity(1);
+    setCart([]);
+    setPickId("");
+    setPickQty(1);
     setOrNo("");
     setMethod("cash");
     setRemarks("");
@@ -166,15 +174,36 @@ export default function CashierSalesPanel() {
     return () => { alive = false; };
   }, [mode, member, token]);
 
-  const product = catalog.find((p) => p._id === productId);
-  const unitPrice = Number(product?.unitPrice) || 0;
-  const total = unitPrice * Math.max(1, Number(quantity) || 1);
+  const total = cart.reduce((s, l) => s + l.unitPrice * l.qty, 0);
+  const cartCount = cart.reduce((s, l) => s + l.qty, 0);
   const savingsOk = savingsBal != null && savingsBal >= total && total > 0;
   // If savings was selected but is no longer valid, fall back to cash.
   useEffect(() => { if (method === "savings" && !savingsOk) setMethod("cash"); }, [method, savingsOk]);
 
+  // ── Cart actions ──
+  function addToCart() {
+    const p = catalog.find((x) => x._id === pickId);
+    if (!p) { toast.error("Pick a product to add."); return; }
+    const qty = Math.max(1, Math.floor(Number(pickQty) || 1));
+    setCart((prev) => {
+      const i = prev.findIndex((l) => l.productId === p._id);
+      if (i >= 0) {
+        const next = [...prev];
+        next[i] = { ...next[i], qty: next[i].qty + qty };
+        return next;
+      }
+      return [...prev, { productId: p._id, name: p.name, unitPrice: Number(p.unitPrice) || 0, qty, stock: p.stock }];
+    });
+    setPickId(""); setPickQty(1);
+  }
+  function setLineQty(productId, qty) {
+    const q = Math.max(1, Math.floor(Number(qty) || 1));
+    setCart((prev) => prev.map((l) => (l.productId === productId ? { ...l, qty: q } : l)));
+  }
+  function removeLine(productId) { setCart((prev) => prev.filter((l) => l.productId !== productId)); }
+
   async function submit() {
-    if (!product) { toast.error("Pick a product first."); return; }
+    if (cart.length === 0) { toast.error("Add at least one product to the cart."); return; }
     if (mode === "member" && !member) { toast.error("Pick a member or switch to Walk-in."); return; }
     if (mode === "walkin" && !customerName.trim()) { toast.error("Enter the walk-in customer name."); return; }
     if (!orNo.trim()) { toast.error("Enter the OR number from the receipt booklet."); return; }
@@ -182,9 +211,7 @@ export default function CashierSalesPanel() {
     const saleOr = orNo.trim().toUpperCase();
     try {
       const body = {
-        transactionType: "sale",
-        productId: product._id,
-        quantity: Math.max(1, Number(quantity) || 1),
+        items: cart.map((l) => ({ productId: l.productId, quantity: l.qty })),
         orNo: saleOr,
         method,
         remarks: remarks.trim(),
@@ -195,22 +222,16 @@ export default function CashierSalesPanel() {
         body.customerName = customerName.trim();
         body.customerContact = customerContact.trim();
       }
-      const res = await apiFetch("/bookkeeper/product-applications", {
-        method: "POST",
-        token,
-        body,
-      });
-      // Capture for the receipt + show the success state in the modal
-      // without closing it, so the cashier can hit Print and then close.
-      // The created doc keeps the OR inside payments[0]; surface the
-      // typed OR directly so the receipt always shows it.
+      const res = await apiFetch("/cashier/sale-cart", { method: "POST", token, body });
+      // Capture for the receipt + show the success state in the modal.
       const sale = {
-        ...res,
         orNo: saleOr,
-        productName: product.name,
-        unitPrice,
-        quantity: body.quantity,
-        principal: total,
+        method,
+        principal: res.total ?? total,
+        items: res.items || cart.map((l) => ({ productName: l.name, quantity: l.qty, unitPrice: l.unitPrice, total: l.unitPrice * l.qty })),
+        pnNo: mode === "member" ? member?.pnNo : "",
+        accountName: mode === "member" ? member?.accountName : "",
+        customerName: mode === "walkin" ? customerName.trim() : "",
       };
       setLastSale(sale);
       toast.success(`Sale posted • OR ${saleOr}`);
@@ -304,7 +325,15 @@ export default function CashierSalesPanel() {
                 <div><span className="text-slate-500">OR No.</span> <span className="font-mono font-bold">{lastSale.orNo || "—"}</span></div>
                 <div><span className="text-slate-500">Total paid</span> <span className="font-bold text-emerald-700">{peso(lastSale.principal)}</span></div>
                 <div className="col-span-2">
-                  <span className="text-slate-500">Product</span> {lastSale.productName} × {lastSale.quantity}
+                  <span className="text-slate-500">Items</span>
+                  <ul className="mt-0.5 space-y-0.5">
+                    {(lastSale.items || []).map((it, i) => (
+                      <li key={i} className="flex justify-between font-mono text-xs">
+                        <span className="truncate">{it.productName} × {it.quantity}</span>
+                        <span>{peso(it.total)}</span>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
                 <div className="col-span-2">
                   <span className="text-slate-500">Customer</span> {mode === "member" ? `${member?.accountName} (${member?.pnNo})` : `${customerName} (walk-in)`}
@@ -404,13 +433,13 @@ export default function CashierSalesPanel() {
               </div>
             )}
 
-            {/* Product picker */}
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <div className="sm:col-span-2">
+            {/* Add-to-cart row */}
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto_auto] sm:items-end">
+              <div>
                 <label className="text-xs font-semibold text-slate-600">Product</label>
                 <select
-                  value={productId}
-                  onChange={(e) => setProductId(e.target.value)}
+                  value={pickId}
+                  onChange={(e) => setPickId(e.target.value)}
                   className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"
                 >
                   <option value="">— pick a product —</option>
@@ -422,16 +451,46 @@ export default function CashierSalesPanel() {
                   ))}
                 </select>
               </div>
-              <div>
-                <label className="text-xs font-semibold text-slate-600">Quantity</label>
+              <div className="w-24">
+                <label className="text-xs font-semibold text-slate-600">Qty</label>
                 <input
-                  type="number"
-                  min="1"
-                  value={quantity}
-                  onChange={(e) => setQuantity(e.target.value)}
+                  type="number" min="1" value={pickQty}
+                  onChange={(e) => setPickQty(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addToCart(); } }}
                   className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-mono"
                 />
               </div>
+              <button
+                type="button" onClick={addToCart} disabled={!pickId}
+                className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-slate-800 px-4 py-2.5 text-sm font-bold text-white hover:bg-slate-900 disabled:opacity-50"
+              >
+                <Plus size={15} /> Add
+              </button>
+            </div>
+
+            {/* Cart */}
+            <div className="rounded-2xl border border-slate-200 overflow-hidden">
+              {cart.length === 0 ? (
+                <div className="px-4 py-6 text-center text-sm text-slate-400">Cart is empty — add products above.</div>
+              ) : cart.map((l) => (
+                <div key={l.productId} className="flex items-center gap-2 border-b border-slate-100 px-3 py-2 last:border-0">
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-semibold text-slate-800">{l.name}</div>
+                    <div className="text-[11px] text-slate-500">{peso(l.unitPrice)} each{l.stock > 0 ? ` • stock ${l.stock}` : ""}</div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button type="button" onClick={() => setLineQty(l.productId, l.qty - 1)} disabled={l.qty <= 1} className="grid h-7 w-7 place-items-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40"><Minus size={13} /></button>
+                    <input
+                      type="number" min="1" value={l.qty}
+                      onChange={(e) => setLineQty(l.productId, e.target.value)}
+                      className="w-12 rounded-lg border border-slate-200 px-1 py-1 text-center text-sm font-mono"
+                    />
+                    <button type="button" onClick={() => setLineQty(l.productId, l.qty + 1)} className="grid h-7 w-7 place-items-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"><Plus size={13} /></button>
+                  </div>
+                  <div className="w-24 text-right font-mono text-sm font-bold text-slate-800">{peso(l.unitPrice * l.qty)}</div>
+                  <button type="button" onClick={() => removeLine(l.productId)} className="grid h-7 w-7 place-items-center rounded-lg text-red-500 hover:bg-red-50"><Trash2 size={14} /></button>
+                </div>
+              ))}
             </div>
 
             {/* OR + method + remarks */}
@@ -475,7 +534,7 @@ export default function CashierSalesPanel() {
             {/* Total */}
             <div className="rounded-2xl border-2 border-orange-300 bg-orange-50 px-4 py-3 flex items-center justify-between">
               <div className="text-sm text-orange-900">
-                {product ? `${product.name} × ${quantity} @ ${peso(unitPrice)}` : "Pick a product"}
+                {cart.length > 0 ? `${cart.length} item${cart.length === 1 ? "" : "s"} • ${cartCount} unit${cartCount === 1 ? "" : "s"}` : "Cart is empty"}
               </div>
               <div className="text-xl font-bold text-orange-700 font-mono">
                 {peso(total)}
@@ -491,7 +550,7 @@ export default function CashierSalesPanel() {
               </button>
               <button
                 onClick={submit}
-                disabled={submitting || !product || total <= 0 || !orNo.trim() || (mode === "member" && !member) || (mode === "walkin" && !customerName.trim())}
+                disabled={submitting || cart.length === 0 || total <= 0 || !orNo.trim() || (mode === "member" && !member) || (mode === "walkin" && !customerName.trim())}
                 className="inline-flex items-center gap-2 rounded-xl bg-orange-600 px-5 py-2 text-sm font-bold text-white hover:bg-orange-700 disabled:opacity-50"
               >
                 <Receipt size={14} /> {submitting ? "Posting…" : `Post Sale ${peso(total)}`}
