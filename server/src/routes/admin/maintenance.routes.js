@@ -20,6 +20,7 @@ import { regenLoanAmortization } from "../../scripts/regenLoanAmortization.js";
 import { rebuildLoanCharges } from "../../scripts/rebuildLoanCharges.js";
 import { importLegacyLoans, LEGACY_LOAN_BATCHES, fixWaterMemberNames } from "../../utils/legacyLoanImport.js";
 import { recomputeWaterBills } from "../../scripts/recomputeWaterBills.js";
+import { applySeniorDiscountToUnpaidBills } from "../../scripts/applySeniorDiscount.js";
 import { importLegacyWater, LEGACY_WATER_AREAS, importWaterRoster, WATER_ROSTER_AREAS, importMemberPuroks, purokImportAreas, dedupeWaterMembers, mergeSplitMeterDuplicates, findDuplicateMembers, purgeArchivedDuplicates } from "../../utils/legacyWaterImport.js";
 import { emitJobProgress } from "../../realtime.js";
 import WaterMember from "../../models/WaterMember.js";
@@ -105,36 +106,38 @@ router.post("/recompute-water-bills", guard, async (req, res) => {
   }
 });
 
-// Apply the GLOBAL senior-discount setting to existing members. Every member
-// historically carried a per-member discountApplicableTiers override (old
-// default ["31-40","41+"]) that SHADOWED the global Water Settings value, so
-// admin changes never took effect. This clears that override so all members
-// INHERIT the global setting, then (unless dry) re-prices unpaid/overdue
-// bills so the corrected discount applies immediately.
-//   body: { confirm: "SYNC MEMBER DISCOUNT", dry }
+// Give EVERY senior citizen a flat discount (default 5%) on ALL tiers, and
+// apply it to their existing unpaid/overdue bills WITHOUT re-pricing the base
+// charge (base preserved; only the discount is subtracted). This:
+//   1. sets the global seniorDiscount = { discountRate: rate, applicableTiers: [] (all) }
+//      so NEW bills also get it,
+//   2. clears each member's per-member tier override (so they inherit the global),
+//   3. applies the discount to existing unpaid bills (base preserved).
+// Paid bills are never touched. Dry-run previews the affected bills.
+//   body: { confirm: "SYNC MEMBER DISCOUNT", dry, rate }
 router.post("/sync-member-discount", guard, async (req, res) => {
-  const { confirm, dry = true } = req.body || {};
+  const { confirm, dry = true, rate: rawRate } = req.body || {};
   if (confirm !== "SYNC MEMBER DISCOUNT") {
     return res.status(400).json({ error: 'Pass { confirm: "SYNC MEMBER DISCOUNT" } to proceed.' });
   }
   try {
-    const settings = await WaterSettings.findOne().lean();
-    const globalTiers = settings?.seniorDiscount?.applicableTiers || [];
-    const globalRate = Number(settings?.seniorDiscount?.discountRate ?? 5);
-    const membersWithOverride = await WaterMember.countDocuments({ "billing.discountApplicableTiers": { $exists: true } });
+    const rate = Math.max(0, Math.min(100, Number(rawRate ?? 5)));
     const seniorCount = await WaterMember.countDocuments({ "personal.isSeniorCitizen": true });
-    const unpaidBills = await WaterBill.countDocuments({ status: { $in: ["unpaid", "overdue"] } });
+    const membersWithOverride = await WaterMember.countDocuments({ "billing.discountApplicableTiers": { $exists: true } });
 
     if (dry) {
-      return res.json({ dry: true, globalTiers, globalRate, membersWithOverride, seniorCount, unpaidBills });
+      const preview = await applySeniorDiscountToUnpaidBills({ dry: true, rate });
+      return res.json({ dry: true, rate, seniorCount, membersWithOverride, billsAffected: preview.changes.length, preview });
     }
 
-    // Clear the per-member override so every member inherits the global tiers.
+    // 1. Global setting → rate% for ALL tiers, so future bills get it too.
+    await WaterSettings.updateOne({}, { $set: { "seniorDiscount.discountRate": rate, "seniorDiscount.applicableTiers": [] } }, { upsert: true });
+    // 2. Clear per-member tier overrides so members inherit the global setting.
     const r = await WaterMember.updateMany({}, { $unset: { "billing.discountApplicableTiers": "" } });
     const membersUpdated = r.modifiedCount ?? r.nModified ?? 0;
-    // Re-price unpaid/overdue bills so the discount takes effect now.
-    const recompute = await recomputeWaterBills({ dry: false });
-    res.json({ dry: false, globalTiers, globalRate, membersUpdated, seniorCount, recompute });
+    // 3. Apply the discount to existing unpaid bills (base preserved).
+    const applied = await applySeniorDiscountToUnpaidBills({ dry: false, rate });
+    res.json({ dry: false, rate, seniorCount, membersUpdated, applied });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

@@ -9,7 +9,7 @@ function activeBillingMeters(member) {
 // Senior/PWD discounts apply to a SINGLE meter for multi-meter accounts:
 // the meter flagged isDiscountMeter, or the first active billing meter if none
 // is flagged. Single-meter accounts (or calls without a meter context) always qualify.
-function discountAppliesToMeter(member, meterNumber) {
+export function discountAppliesToMeter(member, meterNumber) {
   if (!meterNumber) return true;
   const meters = activeBillingMeters(member);
   if (meters.length <= 1) return true;
