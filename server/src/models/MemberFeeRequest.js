@@ -12,6 +12,10 @@ const MemberFeeRequestSchema = new mongoose.Schema(
     total: { type: Number, default: 0, min: 0 },
     status: { type: String, enum: ["pending", "paid", "waived"], default: "pending", index: true },
     requestedBy: { type: String, default: "" },
+    // Pay-before-enroll: the full WaterMember draft is held here and inserted
+    // only once the fee is paid. Null on legacy requests (member already
+    // created before the fee).
+    memberDraft: { type: mongoose.Schema.Types.Mixed, default: null },
     orNo: { type: String, default: "" },
     paidBy: { type: String, default: "" },
     paidAt: { type: Date, default: null },

@@ -1554,7 +1554,10 @@ router.post("/disburse-payroll", ...payGuard, async (req, res) => {
 
 // ─── New-member fees (Phase 9) ──────────────────────────────────────
 router.get("/member-fees", ...payGuard, async (req, res) => {
-  const items = await MemberFeeRequest.find({ status: "pending" }).sort({ createdAt: 1 }).lean();
+  // Exclude the (large) memberDraft from the payload — just flag which fees
+  // will ENROLL the member on payment (pay-before-enroll).
+  const items = (await MemberFeeRequest.find({ status: "pending" }).sort({ createdAt: 1 }).lean())
+    .map(({ memberDraft, ...rest }) => ({ ...rest, heldForEnrollment: !!memberDraft }));
   res.json({ items });
 });
 
@@ -1571,12 +1574,29 @@ router.post("/pay-member-fee", ...payGuard, async (req, res) => {
       { new: true }
     );
     if (!claimed) return res.status(409).json({ message: "Fee request is not pending." });
+
+    // Pay-before-enroll: a held member draft is inserted into the members
+    // collection now that the fee is paid. If enrollment fails, revert the fee
+    // back to pending so the OR can be retried (no orphaned payment).
+    let enrolledMember = null;
+    if (claimed.memberDraft) {
+      const exists = await WaterMember.findOne({ pnNo: claimed.pnNo }).select("_id").lean();
+      if (!exists) {
+        try {
+          enrolledMember = await WaterMember.create(claimed.memberDraft);
+        } catch (e) {
+          await MemberFeeRequest.updateOne({ _id: claimed._id }, { $set: { status: "pending", orNo: "", paidBy: "", paidAt: null } });
+          return res.status(500).json({ message: `Fee not posted — member enrollment failed and was reverted: ${e.message}` });
+        }
+      }
+    }
+
     await TreasuryTransaction.create({
       target: "drawer", type: "in", amount: claimed.total, balanceAfter: null,
       refNo: orNo, by: who,
-      note: `New-member fees ${claimed.pnNo} (${claimed.accountName}): membership ₱${claimed.membershipFee} + tapping ₱${claimed.tappingFee}`,
+      note: `New-member fees ${claimed.pnNo} (${claimed.accountName}): membership ₱${claimed.membershipFee} + tapping ₱${claimed.tappingFee}${enrolledMember ? " — member enrolled" : ""}`,
     });
-    res.json({ ok: true, fee: claimed });
+    res.json({ ok: true, fee: claimed, enrolled: !!enrolledMember, member: enrolledMember ? { pnNo: enrolledMember.pnNo, accountName: enrolledMember.accountName } : null });
   } catch (e) {
     res.status(500).json({ message: e.message || "Payment failed." });
   }

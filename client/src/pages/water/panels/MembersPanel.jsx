@@ -876,19 +876,30 @@ export default function MembersPanel() {
     };
 
     if (!editing) {
-      await apiFetch("/water/members", {
+      const res = await apiFetch("/water/members", {
         method: "POST",
         token,
         body: payload
       });
-      await Swal.fire({
-        icon: "success",
-        title: "Member created",
-        text: `PN ${payload.pnNo} saved successfully.`,
-        confirmButtonColor: "#059669",
-        timer: 2500,
-        timerProgressBar: true,
-      });
+      if (res?.pending) {
+        // Pay-before-enroll: the member is held until the cashier collects the
+        // membership fee, then it's auto-inserted into the database.
+        await Swal.fire({
+          icon: "info",
+          title: "Awaiting fee payment",
+          html: `<b>${res.feeRequest?.accountName || payload.accountName}</b> (PN ${res.pnNo}) is held.<br/>The cashier must collect the <b>₱${Number(res.feeRequest?.total || 0).toFixed(2)}</b> membership fee — the account is enrolled automatically once paid.`,
+          confirmButtonColor: "#059669",
+        });
+      } else {
+        await Swal.fire({
+          icon: "success",
+          title: "Member created",
+          text: `PN ${res?.pnNo || payload.pnNo} saved successfully.`,
+          confirmButtonColor: "#059669",
+          timer: 2500,
+          timerProgressBar: true,
+        });
+      }
     } else {
       // Smart routing: if the officer only added new meters (and didn't
       // touch any other field or existing meter), route the additions

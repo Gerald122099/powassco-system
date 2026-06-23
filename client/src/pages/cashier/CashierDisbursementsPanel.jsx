@@ -336,8 +336,8 @@ function MemberFeeQueue({ token }) {
     const orNo = prompt("Collect PHP " + Number(f.total).toLocaleString() + " from " + f.accountName + " (membership " + f.membershipFee + " + tapping " + f.tappingFee + "). OR number:", "");
     if (orNo === null || !orNo.trim()) return;
     try {
-      await apiFetch("/cashier/pay-member-fee", { method: "POST", token, body: { id: f._id, orNo: orNo.trim() } });
-      toast.success("Member fees collected.");
+      const res = await apiFetch("/cashier/pay-member-fee", { method: "POST", token, body: { id: f._id, orNo: orNo.trim() } });
+      toast.success(res?.enrolled ? `Fee collected — ${res.member?.accountName || f.accountName} enrolled.` : "Member fees collected.");
       load();
     } catch (e) { toast.error(e.message); }
   }
@@ -353,7 +353,7 @@ function MemberFeeQueue({ token }) {
           {items.map((f) => (
             <tr key={f._id} className="border-t">
               <td className="px-3 py-2">
-                <div className="font-semibold">{f.accountName}</div>
+                <div className="font-semibold">{f.accountName}{f.heldForEnrollment && <span className="ml-2 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold text-amber-700">ENROLLS ON PAYMENT</span>}</div>
                 <div className="font-mono text-[10px] text-slate-500">{f.pnNo} - filed by {f.requestedBy}</div>
               </td>
               <td className="px-3 py-2 text-xs text-slate-600">membership {peso(f.membershipFee)}{Number(f.tappingFee) > 0 ? " + tapping " + peso(f.tappingFee) : " (no tapping)"}</td>

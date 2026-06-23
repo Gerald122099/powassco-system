@@ -278,10 +278,19 @@ router.post("/", ...guard, async (req, res) => {
     let finalPnNo = (pnNo || "").trim().toUpperCase();
     if (!finalPnNo) {
       finalPnNo = await generateUniquePnNo();
+      // Avoid colliding with a HELD (unpaid) member draft on a fee request.
+      let guard = 0;
+      while (guard++ < 10 && await MemberFeeRequest.findOne({ pnNo: finalPnNo, status: "pending", memberDraft: { $ne: null } }).select("_id").lean()) {
+        finalPnNo = await generateUniquePnNo();
+      }
     } else {
       const existingMember = await WaterMember.findOne({ pnNo: finalPnNo });
       if (existingMember) {
         return res.status(409).json({ message: `Account number ${finalPnNo} already exists` });
+      }
+      const heldDraft = await MemberFeeRequest.findOne({ pnNo: finalPnNo, status: "pending", memberDraft: { $ne: null } }).select("_id").lean();
+      if (heldDraft) {
+        return res.status(409).json({ message: `Account number ${finalPnNo} is held pending fee payment.` });
       }
     }
 
@@ -340,8 +349,9 @@ router.post("/", ...guard, async (req, res) => {
       updatedAt: new Date()
     }));
 
-    // Create member
-    const member = new WaterMember({
+    // Build the member payload (saved now, or held on the fee request until
+    // the cashier collects the membership fee — see holdForFee below).
+    const memberPayload = {
       pnNo: finalPnNo,
       accountName: accountName.trim(),
       accountType: accountType || "individual",
@@ -403,37 +413,52 @@ router.post("/", ...guard, async (req, res) => {
       arrearsAmount: 0,
       createdBy: req.user?.employeeId || req.user?.username || "system",
       updatedBy: req.user?.employeeId || req.user?.username || "system",
-    });
+    };
 
+    // Membership + tapping fee due for a NEW member (migrated/existing never owe).
+    const ws = await WaterSettings.findOne().lean();
+    const membershipFee = Number(ws?.membershipFee || 0);
+    const includeTapping = req.body.includeTappingFee !== false;
+    const tappingFee = includeTapping ? Number(ws?.tappingFee || 0) : 0;
+    const feeTotal = Math.round((membershipFee + tappingFee) * 100) / 100;
+
+    // PAY-BEFORE-ENROLL: a new member with a fee is NOT inserted yet — the
+    // draft rides on a pending fee request and is enrolled automatically when
+    // the cashier collects the fee. (Migrated members + zero-fee members are
+    // inserted immediately.) Pass holdForFee:false to force an immediate save.
+    const holdForFee = !isExisting && feeTotal > 0 && req.body.holdForFee !== false;
+    if (holdForFee) {
+      const feeRequest = await MemberFeeRequest.create({
+        pnNo: finalPnNo,
+        accountName: memberPayload.accountName,
+        membershipFee, tappingFee, total: feeTotal,
+        status: "pending",
+        memberDraft: memberPayload,
+        requestedBy: req.user?.fullName || req.user?.employeeId || "",
+      });
+      return res.status(202).json({
+        pending: true,
+        feeRequest,
+        pnNo: finalPnNo,
+        message: `Member held — collect ₱${feeTotal} membership fee at the cashier to enroll.`,
+      });
+    }
+
+    // Immediate enrollment.
+    const member = new WaterMember(memberPayload);
     await member.save();
-
-    // Phase 9: NEW members owe membership + tapping fee at the cashier.
-    // The officer can exclude the tapping fee (body.includeTappingFee =
-    // false); migrated/existing members never get a fee request. A
-    // failed request never blocks the registration itself.
     let feeRequest = null;
-    if (!isExisting) {
+    if (!isExisting && feeTotal > 0) {
       try {
-        const ws = await WaterSettings.findOne().lean();
-        const membershipFee = Number(ws?.membershipFee || 0);
-        const includeTapping = req.body.includeTappingFee !== false;
-        const tappingFee = includeTapping ? Number(ws?.tappingFee || 0) : 0;
-        const total = Math.round((membershipFee + tappingFee) * 100) / 100;
-        if (total > 0) {
-          feeRequest = await MemberFeeRequest.create({
-            pnNo: member.pnNo,
-            accountName: member.accountName,
-            membershipFee,
-            tappingFee,
-            total,
-            requestedBy: req.user?.fullName || req.user?.employeeId || "",
-          });
-        }
+        feeRequest = await MemberFeeRequest.create({
+          pnNo: member.pnNo, accountName: member.accountName,
+          membershipFee, tappingFee, total: feeTotal,
+          requestedBy: req.user?.fullName || req.user?.employeeId || "",
+        });
       } catch (feeErr) {
         console.error("member fee request failed (member still created):", feeErr.message);
       }
     }
-
     res.status(201).json({ ...member.toObject(), feeRequest });
   } catch (error) {
     console.error("Error creating member:", error);
