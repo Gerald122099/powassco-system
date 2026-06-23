@@ -35,9 +35,6 @@ function sessionToken(user) {
     { expiresIn: "30d" }
   );
 }
-// Window during which a remembered device skips the authenticator challenge.
-// Beyond this, the user re-verifies even on a known device.
-const DEVICE_TRUST_WINDOW_MS = 2 * 60 * 60 * 1000; // 2 hours
 function challengeToken(user) {
   return jwt.sign({ id: user._id.toString(), purpose: "2fa" }, process.env.JWT_SECRET, { expiresIn: "5m" });
 }
@@ -82,13 +79,13 @@ router.post("/login", async (req, res) => {
   if (user.twoFactorEnabled) {
     const known = deviceKnown(user, deviceToken);
     const nowIp = clientIp(req);
-    const recentlyActive = known && (Date.now() - new Date(known.lastSeen || 0).getTime()) < DEVICE_TRUST_WINDOW_MS;
     const sameIp = known && String(known.ip || "") === String(nowIp || "");
 
-    // Admin role: never skip — every admin login goes through 2FA.
-    // Non-admin: skip only when the device is remembered, recently active
-    //            (≤ 2h), AND the IP hasn't changed since last sign-in.
-    const canSkip = user.role !== "admin" && recentlyActive && sameIp;
+    // A trusted device stays trusted until the user logs out or the
+    // device / network changes — no periodic re-prompt. Admins always go
+    // through 2FA. A NEW DEVICE (!known) or NEW NETWORK (!sameIp) requires
+    // the authenticator code.
+    const canSkip = user.role !== "admin" && !!known && sameIp;
 
     if (canSkip) {
       known.lastSeen = new Date();
@@ -96,11 +93,11 @@ router.post("/login", async (req, res) => {
       await user.save();
       return res.json({ token: sessionToken(user), user: publicUser(user) });
     }
-    // New device, new IP, idle > 2h, or admin — require the authenticator code.
+    // New device, new network, or admin — require the authenticator code.
     return res.json({
       twoFactorRequired: true,
       challengeToken: challengeToken(user),
-      reason: !known ? "new_device" : !sameIp ? "new_ip" : !recentlyActive ? "idle" : "policy",
+      reason: !known ? "new_device" : !sameIp ? "new_network" : "policy",
     });
   }
 

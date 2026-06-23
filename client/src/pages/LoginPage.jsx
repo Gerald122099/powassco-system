@@ -22,7 +22,9 @@ export default function LoginPage() {
   }, [token, user]);
 
   const [step, setStep] = useState("login"); // "login" | "2fa" | "recover" | "forgot"
-  const [employeeId, setEmployeeId] = useState("");
+  // Pre-fill the last Employee ID (desktop app auto-fill). Only the ID is
+  // remembered — never the password.
+  const [employeeId, setEmployeeId] = useState(() => { try { return localStorage.getItem("pow_last_employee") || ""; } catch { return ""; } });
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -85,6 +87,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const data = await login(employeeId.trim(), password);
+      try { localStorage.setItem("pow_last_employee", employeeId.trim()); } catch { /* ignore */ }
       if (data.twoFactorRequired) {
         setChallengeToken(data.challengeToken);
         setStep("2fa");
