@@ -18,6 +18,18 @@ function discountAppliesToMeter(member, meterNumber) {
   return norm(target?.meterNumber) === norm(meterNumber);
 }
 
+// Robust tier-eligibility match for discounts. Tolerates label formatting
+// differences (dash style "–/—/-", "m³"/"m3" suffix, spaces, case) that
+// otherwise silently break an exact string compare. An EMPTY list (or a
+// list containing "all"/"*") means the discount applies to EVERY tier.
+export const normTierLabel = (s) =>
+  String(s || "").toLowerCase().replace(/m³|m3|cu\.?\s*m|cubic/g, "").replace(/[–—−]/g, "-").replace(/\s+/g, "").trim();
+export function tierEligibleForDiscount(eligibleTiers, tierLabel) {
+  const list = (Array.isArray(eligibleTiers) ? eligibleTiers : []).map(normTierLabel).filter(Boolean);
+  if (list.length === 0 || list.includes("all") || list.includes("*")) return true;
+  return list.includes(normTierLabel(tierLabel));
+}
+
 /**
  * Calculate water bill with new tariff structure including minimum charges
  */
@@ -148,8 +160,8 @@ export async function calculateWaterBill(consumption, classification, member = n
                           settings.seniorDiscount?.applicableTiers || 
                           ["31-40", "41+"];
       
-      // Check if current tier is eligible for discount
-      const isTierEligible = eligibleTiers.includes(tariff.tier);
+      // Check if current tier is eligible for discount (robust match).
+      const isTierEligible = tierEligibleForDiscount(eligibleTiers, tariff.tier);
       
       if (isTierEligible) {
         // Get discount rate

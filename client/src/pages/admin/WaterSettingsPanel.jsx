@@ -725,7 +725,7 @@ export default function WaterSettingsPanel() {
                           placeholder="31-40, 41+"
                         />
                         <div className="mt-1 text-[11px] text-slate-500">
-                          Senior discount applies only to these tiers
+                          Senior discount applies only to these tiers. <b>Leave blank (or type “all”)</b> to apply to every tier. Labels are matched flexibly — dashes, spaces and “m³” are ignored, so “31-40” = “31 – 40 m³”.
                         </div>
                       </div>
                     </div>

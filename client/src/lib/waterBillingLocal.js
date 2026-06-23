@@ -13,6 +13,16 @@ function discountAppliesToMeter(member, meterNumber) {
   return norm(target?.meterNumber) === norm(meterNumber);
 }
 
+// Robust tier match (mirror of server). Tolerates dash/m³/space/case label
+// differences; empty list (or "all"/"*") = applies to every tier.
+const normTierLabel = (s) =>
+  String(s || "").toLowerCase().replace(/m³|m3|cu\.?\s*m|cubic/g, "").replace(/[–—−]/g, "-").replace(/\s+/g, "").trim();
+function tierEligibleForDiscount(eligibleTiers, tierLabel) {
+  const list = (Array.isArray(eligibleTiers) ? eligibleTiers : []).map(normTierLabel).filter(Boolean);
+  if (list.length === 0 || list.includes("all") || list.includes("*")) return true;
+  return list.includes(normTierLabel(tierLabel));
+}
+
 export function calculateWaterBillLocal(consumption, classification, member, meterNumber, settings) {
   if (!settings?.tariffs) return null;
   const tariffArray = classification === "residential"
@@ -103,7 +113,7 @@ export function calculateWaterBillLocal(consumption, classification, member, met
   if (allowDiscount && member?.personal?.isSeniorCitizen) {
     const eligibleTiers =
       member.billing?.discountApplicableTiers || settings.seniorDiscount?.applicableTiers || ["31-40", "41+"];
-    if (eligibleTiers.includes(tariff.tier)) {
+    if (tierEligibleForDiscount(eligibleTiers, tariff.tier)) {
       const rate = member.personal?.seniorDiscountRate || settings.seniorDiscount?.discountRate || 5;
       discountAmount = baseAmount * (rate / 100);
       discountReason = `Senior Citizen (${rate}%)`;
