@@ -1,6 +1,7 @@
 import express from "express";
 import PaymentSettings from "../models/PaymentSettings.js";
 import OnlinePayment from "../models/OnlinePayment.js";
+import WebhookEvent from "../models/WebhookEvent.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { postOnlinePayment } from "../utils/postOnlinePayment.js";
 import { envOverrides } from "../utils/pspCreds.js";
@@ -29,6 +30,19 @@ router.put("/settings", ...adminGuard, async (req, res) => {
   s.updatedBy = req.user?.fullName || req.user?.employeeId || "";
   await s.save();
   res.json({ ...s.toObject(), envOverrides: env });
+});
+
+// ---- Admin: recent PSP webhook deliveries (audit / readiness check) ----
+// Read-only feed of incoming webhook events so the admin can confirm the
+// provider is reaching us and signatures verify, once the integration is
+// activated. rawPayload is intentionally excluded (can be large / sensitive).
+router.get("/webhook-events", ...adminGuard, async (req, res) => {
+  const items = await WebhookEvent.find({})
+    .sort({ createdAt: -1 })
+    .limit(40)
+    .select("provider eventType providerRef signatureValid result errorMessage parsedSummary createdAt")
+    .lean();
+  res.json(items);
 });
 
 // ---- Officers: pending online payments to verify ----
