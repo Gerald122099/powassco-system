@@ -36,6 +36,12 @@ export default function WaterDuesLookup() {
   const [data, setData] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [receivables, setReceivables] = useState(null); // { loading } | full payload
+  async function openReceivables(pnNo) {
+    setReceivables({ loading: true });
+    try { setReceivables(await apiFetch(`/cashier/receivables?pnNo=${encodeURIComponent(pnNo)}`, { token })); }
+    catch (e) { toast.error(e.message); setReceivables(null); }
+  }
   // Payment modal: { bill, totalDue }
   const [settingMeter, setSettingMeter] = useState(false);
   const [payTarget, setPayTarget] = useState(null);
@@ -529,9 +535,14 @@ export default function WaterDuesLookup() {
                 <div className="text-xs text-slate-500">Total amount due</div>
                 <div className="text-2xl font-extrabold text-red-600">{peso(data.totalDue)}</div>
                 <div className="text-xs text-slate-500">{data.unpaidCount} unpaid bill(s)</div>
-                <button onClick={printSlip} className="mt-2 inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
-                  <Printer size={13} /> Print dues slip
-                </button>
+                <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
+                  <button onClick={() => openReceivables(data.member.pnNo)} className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100">
+                    <ReceiptText size={13} /> Account receivables
+                  </button>
+                  <button onClick={printSlip} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                    <Printer size={13} /> Print dues slip
+                  </button>
+                </div>
               </div>
             </div>
             {data.member.meters?.length > 0 && (
@@ -646,6 +657,76 @@ export default function WaterDuesLookup() {
           )}
         </div>
       )}
+
+      {/* Account receivables — a reminder of everything the member still owes
+          (water bills, product loans, cash loans), even items not yet due. */}
+      <Modal open={!!receivables} title="Account Receivables" subtitle={receivables?.member ? `${receivables.member.accountName} • ${receivables.member.pnNo}` : ""} onClose={() => setReceivables(null)} size="lg">
+        {receivables?.loading ? (
+          <div className="py-10 text-center text-slate-500"><Loader2 className="mx-auto animate-spin" /> Loading…</div>
+        ) : receivables && !receivables.hasAny ? (
+          <div className="py-8 text-center">
+            <CheckCircle className="mx-auto text-emerald-500" size={40} />
+            <div className="mt-2 font-bold text-slate-800">All clear</div>
+            <p className="mt-1 text-sm text-slate-500">No unpaid bills or unsettled balances for this account.</p>
+          </div>
+        ) : receivables ? (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between rounded-2xl border-2 border-red-200 bg-red-50 px-4 py-3">
+              <span className="text-sm font-semibold text-red-800">Total outstanding</span>
+              <span className="font-mono text-2xl font-extrabold text-red-600">{peso(receivables.grandTotal)}</span>
+            </div>
+
+            {receivables.water.length > 0 && (
+              <div>
+                <div className="mb-1 flex items-center gap-2 text-sm font-bold text-slate-800"><Droplets size={15} className="text-sky-500" /> Water bills <span className="text-slate-400">· {peso(receivables.totals.water)}</span></div>
+                <div className="rounded-xl border border-slate-200 divide-y divide-slate-100">
+                  {receivables.water.map((b) => (
+                    <div key={b.id} className="flex items-center justify-between px-3 py-2 text-sm">
+                      <span><span className="font-mono">{b.periodKey}</span> <span className="text-slate-400">• {b.meterNumber}</span>{b.status === "overdue" && <span className="ml-2 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700">OVERDUE {b.daysOverdue}d</span>}</span>
+                      <span className="font-mono font-bold">{peso(b.totalDue)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {receivables.productLoans.length > 0 && (
+              <div>
+                <div className="mb-1 flex items-center gap-2 text-sm font-bold text-slate-800"><ReceiptText size={15} className="text-orange-500" /> Product loans / rentals <span className="text-slate-400">· {peso(receivables.totals.productLoans)}</span></div>
+                <div className="rounded-xl border border-slate-200 divide-y divide-slate-100">
+                  {receivables.productLoans.map((p) => (
+                    <div key={p._id} className="flex items-center justify-between px-3 py-2 text-sm">
+                      <span>{p.productName} <span className="text-slate-400 capitalize">• {p.transactionType}</span>{p.overdue && <span className="ml-2 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700">OVERDUE</span>}{p.dueDate && !p.overdue && <span className="ml-2 text-[11px] text-slate-400">due {fmtDate(p.dueDate)}</span>}</span>
+                      <span className="font-mono font-bold">{peso(p.balance)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {receivables.loans.length > 0 && (
+              <div>
+                <div className="mb-1 flex items-center gap-2 text-sm font-bold text-slate-800"><Banknote size={15} className="text-emerald-500" /> Cash loans <span className="text-slate-400">· {peso(receivables.totals.loans)}</span></div>
+                <div className="rounded-xl border border-slate-200 divide-y divide-slate-100">
+                  {receivables.loans.map((l) => (
+                    <div key={l.loanId} className="flex items-center justify-between px-3 py-2 text-sm">
+                      <span className="font-mono">{l.loanId} <span className="text-slate-400">• {peso(l.monthlyPayment)}/mo • matures {fmtDate(l.maturityDate)}</span></span>
+                      <span className="font-mono font-bold">{peso(l.balance)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+              Remind the member of these balances. Settle water bills + bundled product loans in the <b>Receive Payment</b> screen; cash loans under <b>Loan Dues</b>.
+            </div>
+          </div>
+        ) : null}
+        <div className="mt-4 flex justify-end">
+          <button onClick={() => setReceivables(null)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold hover:bg-slate-50">Close</button>
+        </div>
+      </Modal>
 
       <Modal open={!!payTarget} title="Receive Payment" subtitle={payTarget ? `Meter ${payTarget.meterNumber} • ${payTarget.periodCovered || payTarget.periodKey}` : ""} onClose={() => setPayTarget(null)} size="lg">
         {payTarget && (

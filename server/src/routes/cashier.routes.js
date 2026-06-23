@@ -277,6 +277,57 @@ router.post("/water/discount-meter", ...payGuard, async (req, res) => {
   }
 });
 
+// ------ ACCOUNT RECEIVABLES ------
+// Everything a member still owes, in one place — water bills, product loans /
+// rentals, and cash loans — so the cashier can remind them (even items not yet
+// due) and optionally collect them. Returns totals + overdue counts.
+//   GET /cashier/receivables?pnNo=PN
+router.get("/receivables", ...guard, async (req, res) => {
+  try {
+    const pnNo = String(req.query.pnNo || "").toUpperCase().trim();
+    if (!pnNo) return res.status(400).json({ message: "Account number (pnNo) is required." });
+    const member = await WaterMember.findOne({ pnNo }).select("pnNo accountName").lean();
+    if (!member) return res.status(404).json({ message: "Member not found." });
+
+    const liveSettings = await WaterSettings.findOne();
+    const waterDocs = await WaterBill.find({ pnNo, status: { $in: ["unpaid", "overdue"] } }).sort({ periodKey: 1 });
+    for (const bDoc of waterDocs) await freshenBill(bDoc, { settings: liveSettings });
+    const water = waterDocs.map((b) => ({
+      id: b._id, meterNumber: b.meterNumber, periodKey: b.periodCovered || b.periodKey,
+      totalDue: round2(b.totalDue), dueDate: b.dueDate, status: b.status, daysOverdue: b.daysOverdue || 0,
+    }));
+
+    const productLoans = (await ProductLoanApplication.find({
+      pnNo, transactionType: { $in: ["loan", "rental"] }, balance: { $gt: 0 },
+    }).select("productName transactionType balance dueDate status").sort({ dueDate: 1 }).lean())
+      .map((p) => ({ ...p, overdue: !!p.dueDate && new Date(p.dueDate).getTime() < Date.now() }));
+
+    const loans = await LoanApplication.find({
+      borrowerPnNo: pnNo, status: "released", balance: { $gt: 0 },
+    }).select("loanId balance monthlyPayment maturityDate").sort({ maturityDate: 1 }).lean();
+
+    const sum = (arr, f) => round2(arr.reduce((s, x) => s + (Number(f(x)) || 0), 0));
+    const totals = {
+      water: sum(water, (b) => b.totalDue),
+      productLoans: sum(productLoans, (p) => p.balance),
+      loans: sum(loans, (l) => l.balance),
+    };
+    const grandTotal = round2(totals.water + totals.productLoans + totals.loans);
+
+    res.json({
+      member, water, productLoans, loans, totals, grandTotal,
+      overdue: {
+        water: water.filter((b) => b.status === "overdue").length,
+        productLoans: productLoans.filter((p) => p.overdue).length,
+      },
+      hasAny: water.length + productLoans.length + loans.length > 0,
+    });
+  } catch (e) {
+    console.error("Receivables error:", e);
+    res.status(500).json({ message: "Could not load receivables." });
+  }
+});
+
 // ------ LOAN LOOKUP ------
 // Search by loan ID, reference code, borrower name, or PN no.
 router.get("/loan", ...guard, async (req, res) => {
