@@ -239,6 +239,7 @@ export default function MaintenancePanel() {
 
       <LegacyLoanImportCard />
 
+      <SetMinimumChargeCard />
       <SyncMemberDiscountCard />
       <RecomputeWaterBillsCard />
 
@@ -1174,6 +1175,130 @@ function LegacyRosterImportCard() {
 // bills keep the tariff they were created with (so tariff changes aren't
 // retroactive); this is the deliberate, dry-run-first opt-out for unpaid
 // bills — e.g. after raising the residential minimum.
+// Raise the minimum-charge tier (residential 0-5 m³ → ₱135 flat) effective a
+// billing period onward, and re-price the affected unpaid bills. Earlier
+// periods + paid bills are never touched.
+function SetMinimumChargeCard() {
+  const { token } = useAuth();
+  const [amount, setAmount] = useState(135);
+  const [fromPeriod, setFromPeriod] = useState("2026-04");
+  const [classification, setClassification] = useState("residential");
+  const [result, setResult] = useState(null);
+  const [working, setWorking] = useState(false);
+
+  async function call(dry) {
+    const changeCount = result?.changes?.filter((c) => !c.error).length || 0;
+    if (!dry && !window.confirm(
+      `Set the ${classification} minimum charge to ₱${amount} effective ${fromPeriod} onward, and re-price ${changeCount} unpaid bill(s) from that period?\n\nEarlier periods and paid bills are NOT touched. New bills will use ₱${amount}.`
+    )) return;
+    setWorking(true);
+    try {
+      const res = await apiFetch("/admin/maintenance/set-minimum-charge", {
+        method: "POST", token, body: { confirm: "SET MIN CHARGE", dry, amount: Number(amount) || 0, fromPeriod, classification },
+      });
+      setResult(res);
+      const n = (res.changes || []).filter((c) => !c.error).length;
+      toast.success(dry ? `Dry run: ${n} bill(s) would change.` : `Updated minimum to ₱${res.minNew}; re-priced ${res.updated} bill(s).`);
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  const changes = (result?.changes || []).filter((c) => !c.error);
+
+  return (
+    <Card>
+      <div className="flex items-center gap-2 text-lg font-bold tracking-tight text-slate-900">
+        <Receipt size={20} className="text-cyan-600" /> Maintenance — Minimum Charge (0-5 m³)
+      </div>
+      <div className="mt-0.5 text-sm text-slate-600">
+        Sets the lowest tariff tier (e.g. residential <b>0-5 m³</b>) to a flat amount and applies it from
+        a billing <b>period onward</b>. Earlier periods and <b>paid</b> bills are never touched; metered
+        consumption + excess tiers are kept, only the minimum bracket moves. New bills use the new amount.
+      </div>
+
+      <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900 flex items-start gap-2">
+        <AlertCircle size={16} className="mt-0.5 shrink-0" />
+        <div><b>Dry-run first.</b> Only unpaid / overdue bills with period ≥ the start period change. Paid bills and earlier periods stay exactly as they are.</div>
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <label className="block">
+          <span className="text-xs font-semibold text-slate-600">Minimum charge (₱)</span>
+          <input type="number" min={0} step={0.5} value={amount} onChange={(e) => { setAmount(e.target.value); setResult(null); }}
+            className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
+        </label>
+        <label className="block">
+          <span className="text-xs font-semibold text-slate-600">Effective from period (YYYY-MM)</span>
+          <input type="text" value={fromPeriod} onChange={(e) => { setFromPeriod(e.target.value); setResult(null); }} placeholder="2026-04"
+            className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-mono" />
+        </label>
+        <label className="block">
+          <span className="text-xs font-semibold text-slate-600">Classification</span>
+          <select value={classification} onChange={(e) => { setClassification(e.target.value); setResult(null); }}
+            className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white">
+            <option value="residential">Residential (0-5 m³)</option>
+            <option value="commercial">Commercial (0-15 m³)</option>
+          </select>
+        </label>
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <div className="flex-1" />
+        <button onClick={() => call(true)} disabled={working}
+          className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50">
+          {working ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />} Dry run
+        </button>
+        <button onClick={() => call(false)} disabled={working || !result}
+          className="inline-flex items-center gap-2 rounded-xl bg-cyan-600 px-5 py-2 text-sm font-bold text-white hover:bg-cyan-700 disabled:opacity-50"
+          title={!result ? "Dry-run first" : ""}>
+          <CheckCircle2 size={14} /> Apply ₱{amount}
+        </button>
+      </div>
+
+      {result && (
+        <div className="mt-4 rounded-2xl border border-slate-200">
+          <div className="bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-700">
+            {result.dry ? "Dry run" : "Applied"} — {result.classification} minimum <b>₱{result.minOld} → ₱{result.minNew}</b> from <b>{result.fromPeriod}</b> · scanned <b>{result.scanned}</b>, changing <b>{changes.length}</b>
+            {!result.dry && <>, updated <b>{result.updated}</b></>}
+            {result.failed > 0 && <>, failed <b className="text-red-600">{result.failed}</b></>}
+          </div>
+          {changes.length === 0 ? (
+            <div className="px-4 py-6 text-center text-sm text-slate-500">No unpaid bill from {result.fromPeriod} onward needs a change.</div>
+          ) : (
+            <div className="max-h-96 overflow-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-white sticky top-0 text-left text-xs text-slate-500">
+                  <tr>
+                    <th className="px-3 py-2">Account</th>
+                    <th className="px-3 py-2">Period</th>
+                    <th className="px-3 py-2 text-right">m³</th>
+                    <th className="px-3 py-2 text-right">Old → New</th>
+                    <th className="px-3 py-2 text-right">Δ</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {changes.map((c, i) => (
+                    <tr key={i} className="border-t border-slate-100">
+                      <td className="px-3 py-2"><span className="font-mono">{c.pnNo}</span> <span className="text-slate-400">{c.accountName}</span></td>
+                      <td className="px-3 py-2">{c.periodKey}</td>
+                      <td className="px-3 py-2 text-right">{c.consumed}</td>
+                      <td className="px-3 py-2 text-right font-mono">{peso2(c.oldAmount)} → {peso2(c.newAmount)}</td>
+                      <td className={`px-3 py-2 text-right font-mono ${c.delta >= 0 ? "text-amber-700" : "text-emerald-700"}`}>{c.delta >= 0 ? "+" : ""}{peso2(c.delta)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 // Give every senior citizen a flat discount (default 5%) on ALL tiers and
 // apply it to their existing unpaid bills WITHOUT re-pricing the base charge
 // (base preserved, only the discount subtracted). Also sets the global

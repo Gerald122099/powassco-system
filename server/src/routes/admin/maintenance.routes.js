@@ -21,6 +21,7 @@ import { rebuildLoanCharges } from "../../scripts/rebuildLoanCharges.js";
 import { importLegacyLoans, LEGACY_LOAN_BATCHES, fixWaterMemberNames } from "../../utils/legacyLoanImport.js";
 import { recomputeWaterBills } from "../../scripts/recomputeWaterBills.js";
 import { applySeniorDiscountToUnpaidBills } from "../../scripts/applySeniorDiscount.js";
+import { applyMinimumCharge } from "../../scripts/applyMinimumCharge.js";
 import { importLegacyWater, LEGACY_WATER_AREAS, importWaterRoster, WATER_ROSTER_AREAS, importMemberPuroks, purokImportAreas, dedupeWaterMembers, mergeSplitMeterDuplicates, findDuplicateMembers, purgeArchivedDuplicates } from "../../utils/legacyWaterImport.js";
 import { emitJobProgress } from "../../realtime.js";
 import WaterMember from "../../models/WaterMember.js";
@@ -138,6 +139,28 @@ router.post("/sync-member-discount", guard, async (req, res) => {
     // 3. Apply the discount to existing unpaid bills (base preserved).
     const applied = await applySeniorDiscountToUnpaidBills({ dry: false, rate });
     res.json({ dry: false, rate, seniorCount, membersUpdated, applied });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Raise the minimum-charge tariff tier (e.g. residential 0-5 m³ → ₱135 flat)
+// effective a billing PERIOD onward, and re-price the affected unpaid/overdue
+// bills. Earlier periods and paid bills are never touched.
+//   body: { confirm: "SET MIN CHARGE", dry, amount, fromPeriod, classification }
+router.post("/set-minimum-charge", guard, async (req, res) => {
+  const { confirm, dry = true, amount = 135, fromPeriod = "2026-04", classification = "residential" } = req.body || {};
+  if (confirm !== "SET MIN CHARGE") {
+    return res.status(400).json({ error: 'Pass { confirm: "SET MIN CHARGE" } to proceed.' });
+  }
+  try {
+    const summary = await applyMinimumCharge({
+      amount: Math.max(0, Number(amount) || 0),
+      fromPeriod: String(fromPeriod || "").trim() || "2026-04",
+      classification: classification === "commercial" ? "commercial" : "residential",
+      dry: Boolean(dry),
+    });
+    res.json({ dry: Boolean(dry), ...summary });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
