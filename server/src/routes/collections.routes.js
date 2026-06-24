@@ -52,8 +52,12 @@ router.get("/today", ...guard, async (req, res) => {
     const wantWater = moduleParam === "all" || moduleParam === "water";
     const wantLoan = moduleParam === "all" || moduleParam === "loan";
 
+    // Show the BASE OR everywhere: a multi-meter account that paid several
+    // meters on one physical OR stores "OR#2", "OR#3"… for uniqueness — strip
+    // the suffix so the daily report reads the OR the cashier actually wrote.
+    const baseOr = (or) => String(or || "").replace(/#\d+$/, "");
     const [waterDocs, loanDocs] = await Promise.all([
-      wantWater ? WaterPayment.find(baseMatch).select("orNo method amountPaid cbuExcess paidAt receivedBy pnNo meterNumber periodKey").lean() : Promise.resolve([]),
+      wantWater ? WaterPayment.find(baseMatch).select("orNo method amountPaid cbuExcess paidAt receivedBy pnNo meterNumber periodKey").lean().then((d) => d.map((x) => ({ ...x, orNo: baseOr(x.orNo) }))) : Promise.resolve([]),
       wantLoan ? LoanPayment.find(baseMatch).select("orNo method amountPaid cbuExcess paidAt receivedBy loanId borrowerPnNo").lean() : Promise.resolve([]),
     ]);
 

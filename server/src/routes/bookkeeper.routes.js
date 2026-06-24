@@ -106,7 +106,8 @@ router.get("/transactions", requireAuth, requireRole(["admin", "manager", "audit
     const nameByPn = new Map(members.map((m) => [m.pnNo, m.accountName]));
 
     const water = waterDocs.map((d) => ({
-      _id: d._id, module: "water", orNo: d.orNo, paidAt: d.paidAt, method: d.method,
+      // Strip the "#n" suffix used to share one OR across an account's meters.
+      _id: d._id, module: "water", orNo: String(d.orNo || "").replace(/#\d+$/, ""), paidAt: d.paidAt, method: d.method,
       pnNo: d.pnNo, accountName: nameByPn.get(d.pnNo) || "",
       meterNumber: d.meterNumber, periodKey: d.periodKey,
       amountDue: d.amountPaid, amountReceived: d.amountReceived || d.amountPaid, cbuExcess: d.cbuExcess || 0,
