@@ -156,13 +156,14 @@ router.get("/water", ...guard, async (req, res) => {
 
     // Last few payments (so the cashier can sanity-check "already paid recently?").
     const billIds = bills.map((b) => b._id);
-    const payments = billIds.length
+    const payments = (billIds.length
       ? await WaterPayment.find({ billId: { $in: billIds } })
           .sort({ paidAt: -1 })
           .limit(20)
           .select("billId pnNo meterNumber orNo amountPaid paidAt receivedBy method")
           .lean()
-      : [];
+      : []
+    ).map((p) => ({ ...p, orNo: String(p.orNo || "").replace(/#\d+$/, "") })); // show the base OR (multi-meter shares one OR)
 
     // Online payments still in pending review — flag so cashier doesn't double-collect.
     const pendingOnline = await OnlinePayment.find({
@@ -563,9 +564,24 @@ router.post("/pay-water", ...payGuard, async (req, res) => {
       });
     }
 
-    // Reject duplicate OR up-front (the unique index would catch it anyway).
-    const dupOr = await WaterPayment.findOne({ orNo });
-    if (dupOr) return res.status(409).json({ message: `OR ${orNo} already used.` });
+    // OR-number policy: one physical OR may cover MULTIPLE meters of the SAME
+    // account (each meter is its own payment row). So the same OR is allowed
+    // again for THIS account, but blocked on a DIFFERENT account. The stored
+    // WaterPayment.orNo gets a "#n" suffix to satisfy the unique index, while
+    // the bill + receipt keep the base OR the cashier typed.
+    let storedOrNo = orNo;
+    const variants = await WaterPayment.find({ orNo: { $regex: `^${escapeRegex(orNo)}(#[0-9]+)?$` } })
+      .select("pnNo orNo")
+      .lean();
+    if (variants.length) {
+      if (variants.some((v) => norm(v.pnNo) !== pnNo)) {
+        return res.status(409).json({ message: `OR ${orNo} is already used on a different account — use a new OR.` });
+      }
+      const used = new Set(variants.map((v) => v.orNo));
+      let n = 2;
+      while (used.has(`${orNo}#${n}`)) n++;
+      storedOrNo = `${orNo}#${n}`;
+    }
 
     const cbuExcess = round2(amountReceived - totalExpected);
     const receivedBy = req.user?.fullName || req.user?.employeeId || "";
@@ -607,7 +623,7 @@ router.post("/pay-water", ...payGuard, async (req, res) => {
         pnNo: claimed.pnNo,
         meterNumber: claimed.meterNumber,
         periodKey: claimed.periodKey,
-        orNo,
+        orNo: storedOrNo,
         method,
         amountPaid: effectiveWaterDue,
         amountReceived: round2(amountReceived),
