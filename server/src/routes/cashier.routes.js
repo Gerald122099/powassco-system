@@ -571,12 +571,17 @@ router.post("/pay-water", ...payGuard, async (req, res) => {
     // the bill + receipt keep the base OR the cashier typed.
     let storedOrNo = orNo;
     const variants = await WaterPayment.find({ orNo: { $regex: `^${escapeRegex(orNo)}(#[0-9]+)?$` } })
-      .select("pnNo orNo")
+      .select("pnNo orNo receivedBy")
       .lean();
     if (variants.length) {
-      if (variants.some((v) => norm(v.pnNo) !== pnNo)) {
+      // Legacy-import rows (receivedBy "legacy-import") are historical
+      // reconciliation, not live receipts — they must NOT block a current OR.
+      // Only a real LIVE payment on a DIFFERENT account is a true conflict.
+      const liveConflict = variants.some((v) => v.receivedBy !== "legacy-import" && norm(v.pnNo) !== pnNo);
+      if (liveConflict) {
         return res.status(409).json({ message: `OR ${orNo} is already used on a different account — use a new OR.` });
       }
+      // Suffix to satisfy the unique index (vs same-account or legacy rows).
       const used = new Set(variants.map((v) => v.orNo));
       let n = 2;
       while (used.has(`${orNo}#${n}`)) n++;
