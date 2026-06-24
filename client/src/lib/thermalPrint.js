@@ -361,7 +361,8 @@ export function printReceiptHTML({
         -webkit-font-smoothing: none; font-smooth: never; text-rendering: optimizeLegibility;
         -webkit-text-stroke: 0.28px #000;
       }
-      body { width: 58mm; margin: 0; padding: 3mm 2mm; font-family: 'Courier New', monospace; font-size: 12px; line-height: 1.4; font-weight: 700; }
+      /* Receipt font: bitArray-A2 if installed on the machine, else monospace. */
+      body { width: 58mm; margin: 0; padding: 3mm 2mm; font-family: 'bitArray-A2', 'Courier New', 'Consolas', monospace; font-size: 12px; line-height: 1.4; font-weight: 700; }
       .c { text-align: center; }
       h1 { font-size: 18px; margin: 0; letter-spacing: 1px; font-weight: 800; -webkit-text-stroke: 0.4px #000; }
       .sub { font-size: 10px; margin: 0; font-weight: 700; }
