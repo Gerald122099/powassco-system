@@ -14,8 +14,9 @@ try {
   contextBridge.exposeInMainWorld("powassco", {
     isDesktop: true,
     // Print a full HTML document silently to `deviceName` (empty = Windows
-    // default printer). Returns { ok, error }.
-    printSilent: (html, deviceName) => ipcRenderer.invoke("pow:print-silent", { html, deviceName: deviceName || "" }),
+    // default printer). `paper` "58mm" prints at the thermal roll width.
+    // Returns { ok, error }.
+    printSilent: (html, deviceName, paper) => ipcRenderer.invoke("pow:print-silent", { html, deviceName: deviceName || "", paper: paper || "" }),
     // List installed printers: [{ name, displayName, isDefault }].
     listPrinters: () => ipcRenderer.invoke("pow:list-printers"),
   });

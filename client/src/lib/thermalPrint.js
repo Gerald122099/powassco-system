@@ -198,6 +198,10 @@ const CMD = {
   center: bytes(0x1b, 0x61, 0x01),
   boldOn: bytes(0x1b, 0x45, 0x01),
   boldOff: bytes(0x1b, 0x45, 0x00),
+  // Double-strike (ESC G 1) — prints each dot twice so output is DARKER, not
+  // faded. Max print density (GS | n / DC2 ~ n is model-specific; double-strike
+  // is universally supported and layout-safe).
+  darkOn: bytes(0x1b, 0x47, 0x01),
   big: bytes(0x1d, 0x21, 0x11),
   normal: bytes(0x1d, 0x21, 0x00),
   feed3: bytes(0x0a, 0x0a, 0x0a),
@@ -218,7 +222,7 @@ function row(label, value) {
 
 export async function printWaterReceipt({ member, meter, previous, present, consumed, calc, periodKey }) {
   const parts = [
-    CMD.init,
+    CMD.init, CMD.darkOn,
     CMD.center,
     CMD.big,
     CMD.boldOn,
@@ -275,7 +279,7 @@ export async function printPaymentReceipt({
   note = "Keep this receipt. Thank you!",
 }) {
   const parts = [
-    CMD.init, CMD.center, CMD.big, CMD.boldOn,
+    CMD.init, CMD.darkOn, CMD.center, CMD.big, CMD.boldOn,
     t("POWASSCO\n"),
     CMD.normal,
     t("Multipurpose Cooperative\n"),
@@ -347,19 +351,20 @@ export function printReceiptHTML({
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(orNo || title)}</title>
     <style>
       @page { size: 58mm auto; margin: 0; }
-      * { box-sizing: border-box; }
-      body { width: 58mm; margin: 0; padding: 3mm 2mm; font-family: 'Courier New', monospace; font-size: 11px; color: #000; line-height: 1.35; }
+      * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      /* Bold + pure black so the thermal head burns dark, not faded. */
+      body { width: 58mm; margin: 0; padding: 3mm 2mm; font-family: 'Courier New', monospace; font-size: 12px; color: #000; line-height: 1.4; font-weight: 700; }
       .c { text-align: center; }
-      h1 { font-size: 17px; margin: 0; letter-spacing: 1px; }
-      .sub { font-size: 9.5px; margin: 0; }
-      .ttl { font-weight: bold; margin: 3px 0; letter-spacing: 1px; }
-      .line { border-top: 1px dashed #000; margin: 4px 0; }
+      h1 { font-size: 18px; margin: 0; letter-spacing: 1px; font-weight: 800; }
+      .sub { font-size: 10px; margin: 0; font-weight: 700; }
+      .ttl { font-weight: 800; margin: 3px 0; letter-spacing: 1px; }
+      .line { border-top: 2px solid #000; margin: 4px 0; }
       .r { display: flex; justify-content: space-between; gap: 6px; }
       .r span:last-child { text-align: right; }
-      .amt span:last-child { font-weight: bold; }
-      .sec { text-align: center; font-weight: bold; font-size: 10px; margin: 3px 0 1px; }
-      .total { display: flex; justify-content: space-between; font-weight: bold; font-size: 15px; margin-top: 3px; border: 1.5px solid #000; border-radius: 4px; padding: 3px 5px; }
-      .foot { font-size: 9px; margin-top: 6px; }
+      .amt span:last-child { font-weight: 800; }
+      .sec { text-align: center; font-weight: 800; font-size: 11px; margin: 3px 0 1px; }
+      .total { display: flex; justify-content: space-between; font-weight: 800; font-size: 16px; margin-top: 3px; border: 2px solid #000; border-radius: 4px; padding: 3px 5px; }
+      .foot { font-size: 9.5px; margin-top: 6px; font-weight: 700; }
     </style></head><body>
     <div class="c">
       <h1>POWASSCO</h1>
@@ -379,6 +384,6 @@ export function printReceiptHTML({
     </body></html>`;
 
   // Silent in the desktop app (no dialog, straight to the default/thermal
-  // printer); hidden-iframe dialog in the browser.
-  printHtmlDoc(html);
+  // printer at 58mm roll width); hidden-iframe dialog in the browser.
+  printHtmlDoc(html, { paper: "58mm" });
 }

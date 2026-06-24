@@ -38,12 +38,13 @@ function silentPrinter() {
   return api && typeof api.printSilent === "function" ? api : null;
 }
 
-export function printHtmlDoc(html) {
+// opts.paper: "58mm" prints at the thermal roll width in the desktop app.
+export function printHtmlDoc(html, opts = {}) {
   const api = silentPrinter();
   if (api) {
     let deviceName = "";
     try { deviceName = localStorage.getItem("pow_print_device") || ""; } catch { /* ignore */ }
-    api.printSilent(html, deviceName)
+    api.printSilent(html, deviceName, opts.paper || "")
       .then((res) => { if (!res || !res.ok) printViaIframe(html); }) // silent failed → show dialog
       .catch(() => printViaIframe(html));
     return;

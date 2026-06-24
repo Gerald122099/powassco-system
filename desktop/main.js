@@ -23,7 +23,10 @@ ipcMain.handle("pow:list-printers", async () => {
 });
 
 ipcMain.handle("pow:print-silent", async (_e, payload = {}) => {
-  const { html = "", deviceName = "" } = payload;
+  // paper: "58mm" → print at exactly 58mm wide, height = content (thermal roll).
+  // Otherwise use the printer's default page size (A4/Letter for documents).
+  const { html = "", deviceName = "", paper = "" } = payload;
+  const PX_TO_MICRON = 264.5833; // 96px = 25400µm (1 inch)
   return await new Promise((resolve) => {
     let win = new BrowserWindow({ show: false, webPreferences: { offscreen: false, sandbox: true } });
     let settled = false;
@@ -36,9 +39,16 @@ ipcMain.handle("pow:print-silent", async (_e, payload = {}) => {
     };
     win.webContents.once("did-finish-load", () => {
       // Let images/QR render before printing.
-      setTimeout(() => {
+      setTimeout(async () => {
         const opts = { silent: true, printBackground: true, margins: { marginType: "none" } };
         if (deviceName) opts.deviceName = deviceName;
+        if (paper === "58mm") {
+          // Width fixed to 58mm; height follows the rendered content so the
+          // roll cuts right after the receipt (no blank feed).
+          let px = 600;
+          try { px = await win.webContents.executeJavaScript("Math.ceil(document.body.scrollHeight) || 600"); } catch { /* keep default */ }
+          opts.pageSize = { width: 58000, height: Math.max(40000, Math.round((Number(px) || 600) * PX_TO_MICRON) + 3000) };
+        }
         try {
           win.webContents.print(opts, (success, failureReason) => finish(success, success ? "" : failureReason));
         } catch (e) { finish(false, e.message); }
