@@ -351,11 +351,19 @@ export function printReceiptHTML({
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(orNo || title)}</title>
     <style>
       @page { size: 58mm auto; margin: 0; }
-      * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-      /* Bold + pure black so the thermal head burns dark, not faded. */
-      body { width: 58mm; margin: 0; padding: 3mm 2mm; font-family: 'Courier New', monospace; font-size: 12px; color: #000; line-height: 1.4; font-weight: 700; }
+      /* FULL BLACK, no fade: force #000 on every node, force-print colors,
+         disable anti-aliasing (gray edges print faint on thermal), and add a
+         glyph stroke so thin monospace strokes burn solid black. */
+      * {
+        box-sizing: border-box;
+        color: #000 !important;
+        -webkit-print-color-adjust: exact; print-color-adjust: exact;
+        -webkit-font-smoothing: none; font-smooth: never; text-rendering: optimizeLegibility;
+        -webkit-text-stroke: 0.28px #000;
+      }
+      body { width: 58mm; margin: 0; padding: 3mm 2mm; font-family: 'Courier New', monospace; font-size: 12px; line-height: 1.4; font-weight: 700; }
       .c { text-align: center; }
-      h1 { font-size: 18px; margin: 0; letter-spacing: 1px; font-weight: 800; }
+      h1 { font-size: 18px; margin: 0; letter-spacing: 1px; font-weight: 800; -webkit-text-stroke: 0.4px #000; }
       .sub { font-size: 10px; margin: 0; font-weight: 700; }
       .ttl { font-weight: 800; margin: 3px 0; letter-spacing: 1px; }
       .line { border-top: 2px solid #000; margin: 4px 0; }
