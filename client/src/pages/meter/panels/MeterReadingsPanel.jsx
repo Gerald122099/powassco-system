@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense } fro
 import Card from "../../../components/Card";
 import Modal from "../../../components/Modal";
 import { apiFetch } from "../../../lib/api";
+import { printHtmlDoc } from "../../../lib/printHtmlDoc";
 import { useRealtime } from "../../../lib/realtime";
 import { useAuth } from "../../../context/AuthContext";
 import { on, emit } from "../../../lib/events"; // Import event system
@@ -1167,8 +1168,7 @@ export default function MeterReadingsPanel() {
   const printReceipt = () => {
     if (!receiptRef.current) return;
 
-    const w = window.open("", "_blank");
-    w.document.write(`
+    printHtmlDoc(`
       <html>
         <head>
           <title>Batch Result</title>
@@ -1189,10 +1189,6 @@ export default function MeterReadingsPanel() {
         <body>${receiptRef.current.innerHTML}</body>
       </html>
     `);
-    w.document.close();
-    w.focus();
-    w.print();
-    w.close();
   };
 
   const batchCount = useMemo(() => {

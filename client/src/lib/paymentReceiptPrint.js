@@ -1,6 +1,7 @@
 // Downloadable/printable payment receipts for the public Bill Inquiry
-// (water bill per meter, and loan payments). Opens a print window; the member
-// can "Save as PDF" to download. Green theme + logo, compact receipt size.
+// (water bill per meter, and loan payments). Prints via a hidden iframe (works
+// in the browser AND the Electron desktop app). Green theme + logo, compact.
+import { printHtmlDoc } from "./printHtmlDoc";
 
 function peso(n) {
   return "₱ " + Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -37,20 +38,7 @@ function header() {
 }
 
 function printDoc(title, body) {
-  const w = window.open("", "_blank", "width=800,height=600");
-  if (!w) {
-    alert("Please allow pop-ups to download the receipt.");
-    return;
-  }
-  w.document.open();
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8"/><title>${safe(title)}</title><style>${BASE_CSS}</style></head><body>${body}</body></html>`);
-  w.document.close();
-  let printed = false;
-  const go = () => { if (printed) return; printed = true; w.focus(); w.print(); setTimeout(() => w.close(), 400); };
-  const img = w.document.images[0];
-  if (img && !img.complete) img.onload = img.onerror = go;
-  else setTimeout(go, 200);
-  setTimeout(go, 1500);
+  printHtmlDoc(`<!doctype html><html><head><meta charset="utf-8"/><title>${safe(title)}</title><style>${BASE_CSS}</style></head><body>${body}</body></html>`);
 }
 
 export function printWaterReceipt({ member, bill, payment }) {

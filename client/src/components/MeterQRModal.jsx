@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 import Modal from "./Modal";
+import { printHtmlDoc } from "../lib/printHtmlDoc";
 import { encodeMeterQR } from "../lib/meterQr";
 import { Printer } from "lucide-react";
 
@@ -18,13 +19,7 @@ export default function MeterQRModal({ open, onClose, pnNo, meterNumber, account
 
   function printLabel() {
     if (!dataUrl) return;
-    const w = window.open("", "_blank", "width=420,height=560");
-    if (!w) {
-      alert("Please allow pop-ups to print the QR label.");
-      return;
-    }
-    w.document.open();
-    w.document.write(`<!doctype html><html><head><meta charset="utf-8"/><title>Meter QR ${meterNumber}</title>
+    printHtmlDoc(`<!doctype html><html><head><meta charset="utf-8"/><title>Meter QR ${meterNumber}</title>
       <style>
         @page { size: 58mm 70mm; margin: 3mm; }
         * { box-sizing: border-box; }
@@ -41,19 +36,6 @@ export default function MeterQRModal({ open, onClose, pnNo, meterNumber, account
         ${accountName ? `<div class="nm">${accountName}</div>` : ""}
         <div class="sub">Scan to encode reading</div>
       </body></html>`);
-    w.document.close();
-    let printed = false;
-    const go = () => {
-      if (printed) return;
-      printed = true;
-      w.focus();
-      w.print();
-      setTimeout(() => w.close(), 400);
-    };
-    const img = w.document.images[0];
-    if (img && !img.complete) img.onload = img.onerror = go;
-    else setTimeout(go, 200);
-    setTimeout(go, 1500);
   }
 
   return (

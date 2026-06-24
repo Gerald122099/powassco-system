@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import Card from "../../components/Card";
 import Modal from "../../components/Modal";
 import { apiFetch } from "../../lib/api";
+import { printHtmlDoc } from "../../lib/printHtmlDoc";
 import { useAuth } from "../../context/AuthContext";
 import { ShieldCheck, RefreshCw, KeyRound, ListChecks, Printer } from "lucide-react";
 
@@ -79,9 +80,7 @@ export default function SecurityPanel() {
 
   function printCodes() {
     if (!codesModal) return;
-    const w = window.open("", "_blank", "width=520,height=640");
-    if (!w) return alert("Allow pop-ups to print.");
-    w.document.write(`<!doctype html><html><head><meta charset="utf-8"/><title>Recovery Codes</title>
+    printHtmlDoc(`<!doctype html><html><head><meta charset="utf-8"/><title>Recovery Codes</title>
       <style>@page{size:A5;margin:14mm}body{font-family:Arial,sans-serif;color:#0f172a}
       h1{font-size:16px;color:#166534}.muted{color:#475569;font-size:12px}
       .code{font-family:monospace;font-size:18px;letter-spacing:1px;border:1px solid #cbd5e1;border-radius:8px;padding:8px 12px;margin:6px 0;text-align:center}
@@ -91,8 +90,6 @@ export default function SecurityPanel() {
       <div style="margin-top:12px">${codesModal.codes.map((c) => `<div class="code">${c}</div>`).join("")}</div>
       <div class="warn">Each code works ONCE to reset 2FA if the authenticator is lost. Keep this sheet in a secure storage box. Do not share.</div>
       </body></html>`);
-    w.document.close();
-    setTimeout(() => { w.focus(); w.print(); }, 200);
   }
 
   return (

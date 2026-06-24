@@ -5,6 +5,7 @@ import { useEffect, useState, useCallback } from "react";
 import Card from "./Card";
 import Modal from "./Modal";
 import { apiFetch } from "../lib/api";
+import { printHtmlDoc } from "../lib/printHtmlDoc";
 import { buildAuditRemarks, buildAuditRecommendations } from "../lib/auditRemarks";
 import { useAuth } from "../context/AuthContext";
 import { Archive, RefreshCw, Printer, CheckCircle2 } from "lucide-react";
@@ -30,10 +31,8 @@ export default function AuditedReportsPanel() {
     const s = r.snapshot || {};
     const c = s.collections || {}, ln = s.loans || {}, inv = s.inventory || {}, ex = s.expenses || {}, tr = s.treasury || {}, dis = s.disbursements || {};
     const totalColl = (c.waterCash || 0) + (c.waterOnline || 0) + (c.loanCash || 0) + (c.loanOnline || 0) + (c.savingsIn || 0) + (c.productCashSale || 0) + (c.productLoanRevenue || 0);
-    const w = window.open("", "_blank", "width=800,height=1000");
-    if (!w) return alert("Allow pop-ups to print.");
     const row = (k, v) => `<tr><td>${k}</td><td class="r">${v}</td></tr>`;
-    w.document.write(`<!doctype html><html><head><meta charset="utf-8"/><title>Audit Report ${r.label || ""}</title>
+    printHtmlDoc(`<!doctype html><html><head><meta charset="utf-8"/><title>Audit Report ${r.label || ""}</title>
       <style>@page{size:A4;margin:14mm}body{font-family:Arial,sans-serif;color:#0f172a;font-size:12px}
       .head{text-align:center;border-bottom:2.5px solid #6d28d9;padding-bottom:6px;margin-bottom:10px}
       .coop{font-size:16px;font-weight:800;color:#6d28d9}.sub{font-size:10px;color:#475569}
@@ -93,8 +92,6 @@ export default function AuditedReportsPanel() {
         <div class="sig"><div class="line">&nbsp;</div>Noted by</div>
       </div>
       </body></html>`);
-    w.document.close();
-    setTimeout(() => { w.focus(); w.print(); }, 300);
   }
 
   return (

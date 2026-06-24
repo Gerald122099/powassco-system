@@ -1,5 +1,6 @@
 import QRCode from "qrcode";
 import { encodeMeterQR } from "./meterQr";
+import { printHtmlDoc } from "./printHtmlDoc";
 
 function esc(s) {
   return String(s || "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -21,12 +22,6 @@ export async function printMeterStickers(meters) {
     })
   );
 
-  const w = window.open("", "_blank", "width=900,height=700");
-  if (!w) {
-    alert("Please allow pop-ups to print the QR sticker sheet.");
-    return;
-  }
-
   const cellsHtml = cells
     .map(
       (c) => `
@@ -40,8 +35,7 @@ export async function printMeterStickers(meters) {
     )
     .join("");
 
-  w.document.open();
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8"/><title>Meter QR Stickers (${cells.length})</title>
+  printHtmlDoc(`<!doctype html><html><head><meta charset="utf-8"/><title>Meter QR Stickers (${cells.length})</title>
     <style>
       @page { size: A4; margin: 8mm; }
       * { box-sizing: border-box; }
@@ -56,19 +50,4 @@ export async function printMeterStickers(meters) {
     </style></head><body>
       <div class="grid">${cellsHtml}</div>
     </body></html>`);
-  w.document.close();
-
-  let printed = false;
-  const go = () => {
-    if (printed) return;
-    printed = true;
-    w.focus();
-    w.print();
-    setTimeout(() => w.close(), 600);
-  };
-  const imgs = Array.from(w.document.images || []);
-  const pending = imgs.filter((im) => !im.complete);
-  if (pending.length === 0) setTimeout(go, 200);
-  else pending.forEach((im) => { im.onload = im.onerror = () => { if (pending.every((p) => p.complete)) go(); }; });
-  setTimeout(go, 4000); // fallback for large sheets
 }

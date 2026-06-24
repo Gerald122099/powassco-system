@@ -13,6 +13,7 @@ import { useEffect, useState, useCallback } from "react";
 import Card from "../../components/Card";
 import Modal from "../../components/Modal";
 import { apiFetch } from "../../lib/api";
+import { printHtmlDoc } from "../../lib/printHtmlDoc";
 import { useRealtime } from "../../lib/realtime";
 import { useAuth } from "../../context/AuthContext";
 import { toast } from "../../components/Toast";
@@ -224,12 +225,10 @@ function PayrollDisburseQueue({ token }) {
   // signature blocks. Cashier prints this FIRST, the employee signs
   // the "Received by" line, then the cashier disburses.
   function printPayslip(p) {
-    const w = window.open("", "_blank", "width=720,height=900");
-    if (!w) return alert("Allow pop-ups to print.");
     const money = (n) => "PHP " + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const d = (x) => (x ? new Date(x).toLocaleDateString() : "-");
     const lines = (arr, sign) => (arr || []).map((x) => `<tr><td>${x.label || ""}</td><td class="r">${sign}${money(x.amount)}</td></tr>`).join("");
-    w.document.write(`<!doctype html><html><head><meta charset="utf-8"/><title>Payslip - ${p.employeeName}</title>
+    printHtmlDoc(`<!doctype html><html><head><meta charset="utf-8"/><title>Payslip - ${p.employeeName}</title>
       <style>@page{size:A5;margin:10mm}body{font-family:Arial,sans-serif;color:#0f172a;font-size:12px;margin:0}
       .head{text-align:center;border-bottom:2.5px solid #166534;padding-bottom:6px;margin-bottom:8px}
       .coop{font-size:15px;font-weight:800;color:#166534}.sub{font-size:10px;color:#475569}
@@ -273,8 +272,6 @@ function PayrollDisburseQueue({ token }) {
         <div class="sig"><div class="line">&nbsp;</div>Received by (Employee signature)</div>
       </div>
       </body></html>`);
-    w.document.close();
-    setTimeout(() => { w.focus(); w.print(); }, 300);
   }
 
   if (!items.length) return null;

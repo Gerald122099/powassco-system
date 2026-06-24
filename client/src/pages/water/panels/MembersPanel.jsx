@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Card from "../../../components/Card";
 import Modal from "../../../components/Modal";
 import { apiFetch } from "../../../lib/api";
+import { printHtmlDoc } from "../../../lib/printHtmlDoc";
 import { useRealtime } from "../../../lib/realtime";
 import { useAuth } from "../../../context/AuthContext";
 import { QrCode } from "lucide-react";
@@ -317,8 +318,6 @@ export default function MembersPanel() {
   // walk-in applicant, then typed into the digital form on submission. Fields
   // mirror the Add-Member modal so transcription is 1:1 with no surprises.
   function printApplicationForm() {
-    const w = window.open("", "_blank", "width=900,height=1200");
-    if (!w) return alert("Allow pop-ups to print.");
     const css = `
       @page { size: A4; margin: 12mm 10mm 12mm 10mm }
       * { box-sizing: border-box }
@@ -343,7 +342,7 @@ export default function MembersPanel() {
     `;
     const F = (label, w = "col-2") => `<div class="field ${w}"><label>${label}</label><div class="line"></div></div>`;
     const checkBox = (label) => `<span class="check"><span class="box"></span>${label}</span>`;
-    w.document.write(`<!doctype html><html><head><meta charset="utf-8"/><title>Application for Water Connection</title><style>${css}</style></head><body>
+    printHtmlDoc(`<!doctype html><html><head><meta charset="utf-8"/><title>Application for Water Connection</title><style>${css}</style></head><body>
       <div class="head">
         <div>
           <h1>POWASSCO Multipurpose Cooperative</h1>
@@ -444,8 +443,6 @@ export default function MembersPanel() {
 
       <div class="footer">POWASSCO Multipurpose Cooperative — keep this form on file. Printed ${new Date().toLocaleString()}.</div>
     </body></html>`);
-    w.document.close();
-    setTimeout(() => { w.focus(); w.print(); }, 250);
   }
 
   function openAdd() {

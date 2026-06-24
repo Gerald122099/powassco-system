@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import Card from "../../../components/Card";
 import CollectionTodayPanel from "../../../components/CollectionTodayPanel";
 import { apiFetch } from "../../../lib/api";
+import { printHtmlDoc } from "../../../lib/printHtmlDoc";
 import { useRealtime } from "../../../lib/realtime";
 import { useAuth } from "../../../context/AuthContext";
 
@@ -325,27 +326,13 @@ function buildReportHtml({ title, periodLabel, generatedAt, data }) {
  * ✅ FIXED: money() function now properly defined in print window
  */
 function printReportWindow({ title, periodLabel, data }) {
-  const w = window.open("", "_blank", "noopener,noreferrer,width=980,height=720");
-  if (!w) return;
-
   const html = buildReportHtml({
     title,
     periodLabel,
     generatedAt: fmtDateTime(new Date()),
     data,
   });
-
-  w.document.open();
-  w.document.write(html);
-  w.document.close();
-
-  // Give browser a tick to render before printing
-  setTimeout(() => {
-    w.focus();
-    w.print();
-    // Optional: auto-close after print dialog
-    setTimeout(() => w.close(), 300);
-  }, 250);
+  printHtmlDoc(html);
 }
 
 export default function AnalyticsPanel() {

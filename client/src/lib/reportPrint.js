@@ -1,4 +1,5 @@
-// Printable admin reports (long bond paper, green theme, logo header).
+// Printable admin reports (long bond paper, green theme, logo header). Iframe print.
+import { printHtmlDoc } from "./printHtmlDoc";
 
 function peso(n) {
   return "₱ " + Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -42,28 +43,7 @@ function header() {
 }
 
 function printDoc(title, bodyHtml) {
-  const w = window.open("", "_blank", "width=900,height=700");
-  if (!w) {
-    alert("Unable to open the print window. Please allow pop-ups for this site and try again.");
-    return;
-  }
-  w.document.open();
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8"/><title>${safe(title)}</title><style>${BASE_CSS}</style></head><body>${bodyHtml}</body></html>`);
-  w.document.close();
-
-  let printed = false;
-  const go = () => {
-    if (printed) return;
-    printed = true;
-    w.focus();
-    w.print();
-    setTimeout(() => w.close(), 400);
-  };
-  const imgs = Array.from(w.document.images || []);
-  const pending = imgs.filter((im) => !im.complete);
-  if (pending.length === 0) setTimeout(go, 150);
-  else pending.forEach((im) => { im.onload = im.onerror = () => { if (pending.every((p) => p.complete)) go(); }; });
-  setTimeout(go, 1500);
+  printHtmlDoc(`<!doctype html><html><head><meta charset="utf-8"/><title>${safe(title)}</title><style>${BASE_CSS}</style></head><body>${bodyHtml}</body></html>`);
 }
 
 export function printFinancialReport({ from, to, expenses, loan, generatedBy }) {

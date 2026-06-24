@@ -1,6 +1,7 @@
-// Clean A4 print documents for the loan module (opens a fresh window, prints).
+// Clean A4 print documents for the loan module (prints via a hidden iframe).
 // Mirrors the cooperative's Application Form, Disclosure Statement, Promissory
 // Note, and a payment receipt — auto-filled from a loan record.
+import { printHtmlDoc } from "./printHtmlDoc";
 
 function peso(n) {
   return Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -43,40 +44,10 @@ const BASE_CSS = `
 `;
 
 function printDoc(title, bodyHtml) {
-  // NOTE: do NOT pass noopener/noreferrer here — those make window.open()
-  // return null, so we'd lose the reference and never write the document
-  // (the symptom is a blank white print window).
-  const w = window.open("", "_blank", "width=900,height=700");
-  if (!w) {
-    alert("Unable to open the print window. Please allow pop-ups for this site and try again.");
-    return;
-  }
-  w.document.open();
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8"/><title>${safe(title)}</title><style>${BASE_CSS}</style></head><body>${bodyHtml}</body></html>`);
-  w.document.close();
-
-  // Wait for the header logo (and any image) to load before printing, otherwise
-  // the print dialog can render before the logo arrives and drop it.
-  let printed = false;
-  const go = () => {
-    if (printed) return;
-    printed = true;
-    w.focus();
-    w.print();
-    setTimeout(() => w.close(), 400);
-  };
-  const imgs = Array.from(w.document.images || []);
-  const pending = imgs.filter((im) => !im.complete);
-  if (pending.length === 0) {
-    setTimeout(go, 150);
-  } else {
-    pending.forEach((im) => {
-      im.onload = im.onerror = () => {
-        if (pending.every((p) => p.complete)) go();
-      };
-    });
-  }
-  setTimeout(go, 1500); // fallback in case load events never fire
+  // Hidden-iframe print — works in the browser AND the Electron desktop app
+  // (window.open("","_blank") is blocked there). printHtmlDoc waits on iframe
+  // load before printing, so the header logo is included.
+  printHtmlDoc(`<!doctype html><html><head><meta charset="utf-8"/><title>${safe(title)}</title><style>${BASE_CSS}</style></head><body>${bodyHtml}</body></html>`);
 }
 
 function header() {
