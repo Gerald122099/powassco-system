@@ -6,7 +6,7 @@ import { apiFetch } from "../../lib/api";
 import { useRealtime } from "../../lib/realtime";
 import { useAuth } from "../../context/AuthContext";
 import { toast } from "../../components/Toast";
-import { Package, Plus, RefreshCw, Trash2, Edit3, ShoppingBag, CheckCircle, XCircle, ImagePlus } from "lucide-react";
+import { Package, Plus, RefreshCw, Trash2, Edit3, ShoppingBag, CheckCircle, XCircle, ImagePlus, Clock } from "lucide-react";
 
 const peso = (n) => "₱" + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 // Catalogue thumbnails load via the (cached, versioned) image endpoint instead
@@ -85,6 +85,12 @@ export default function ProductLoansPanel() {
 
   const [releaseTarget, setReleaseTarget] = useState(null);
   const [useCbu, setUseCbu] = useState(0);
+  const [history, setHistory] = useState(null); // null = closed; [] | rows
+  async function openHistory() {
+    setHistory("loading");
+    try { const r = await apiFetch("/bookkeeper/product-history", { token }); setHistory(r.items || []); }
+    catch (e) { toast.error(e.message); setHistory(null); }
+  }
 
   const load = useCallback(async () => {
     setBusy(true);
@@ -183,15 +189,16 @@ export default function ProductLoansPanel() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2 text-lg font-bold tracking-tight text-slate-900">
-            <Package size={20} className="text-blue-600" /> Product Loans
+            <Package size={20} className="text-blue-600" /> Products
           </div>
-          <div className="mt-0.5 text-sm text-slate-500">Catalogue of in-kind product loans (meter, sack of rice, …) and per-member applications.</div>
+          <div className="mt-0.5 text-sm text-slate-500">Catalogue + stock for items sold or loaned/rented (meter, sack of rice, …) and per-member applications.</div>
         </div>
         <div className="flex gap-2">
           <button onClick={() => setApplyOpen(true)} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
             <ShoppingBag size={16}/> New Application
           </button>
           <button onClick={openAdd} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold hover:bg-slate-50"><Plus size={16}/> Add Product</button>
+          <button onClick={openHistory} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold hover:bg-slate-50"><Clock size={16}/> History</button>
           <button onClick={load} disabled={busy} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold hover:bg-slate-50">
             <RefreshCw size={14} className={busy ? "animate-spin" : ""} />
           </button>
@@ -462,6 +469,52 @@ export default function ProductLoansPanel() {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* Product / stock history */}
+      <Modal open={history !== null} title="Product & Stock History" subtitle="Products added, restocked, and repriced" onClose={() => setHistory(null)} size="lg">
+        {history === "loading" ? (
+          <div className="py-10 text-center text-slate-500">Loading…</div>
+        ) : Array.isArray(history) && history.length === 0 ? (
+          <div className="py-10 text-center text-sm text-slate-500">No history yet. It records every product added, restock, and price change.</div>
+        ) : Array.isArray(history) ? (
+          <div className="max-h-[28rem] overflow-auto rounded-xl border border-slate-100">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-slate-50 text-left text-xs text-slate-500">
+                <tr>
+                  <th className="px-3 py-2">When</th>
+                  <th className="px-3 py-2">Action</th>
+                  <th className="px-3 py-2">Item</th>
+                  <th className="px-3 py-2">Category</th>
+                  <th className="px-3 py-2 text-right">Qty</th>
+                  <th className="px-3 py-2 text-right">Capital</th>
+                  <th className="px-3 py-2 text-right">Value</th>
+                  <th className="px-3 py-2 text-right">Stock</th>
+                  <th className="px-3 py-2">By</th>
+                </tr>
+              </thead>
+              <tbody>
+                {history.map((h) => (
+                  <tr key={h._id} className="border-t border-slate-100">
+                    <td className="px-3 py-2 whitespace-nowrap text-xs text-slate-500">{new Date(h.createdAt).toLocaleString()}</td>
+                    <td className="px-3 py-2">
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${h.action === "created" ? "bg-blue-100 text-blue-700" : h.action === "stock_in" ? "bg-emerald-100 text-emerald-700" : h.action === "reprice" ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-600"}`}>
+                        {h.action === "stock_in" ? "RESTOCK" : h.action.toUpperCase()}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 font-semibold">{h.productName}</td>
+                    <td className="px-3 py-2 text-xs capitalize">{(h.category || "").replace("_", " ")}</td>
+                    <td className="px-3 py-2 text-right font-mono">{h.quantity > 0 ? `+${h.quantity}` : "—"}</td>
+                    <td className="px-3 py-2 text-right font-mono">{peso(h.capital)}</td>
+                    <td className="px-3 py-2 text-right font-mono font-bold">{h.amount > 0 ? peso(h.amount) : "—"}</td>
+                    <td className="px-3 py-2 text-right font-mono">{h.stockAfter}</td>
+                    <td className="px-3 py-2 text-xs text-slate-500">{h.by || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
       </Modal>
     </Card>
     </div>

@@ -193,6 +193,8 @@ export default function ProductAnalyticsPanel() {
             <tr>
               <th className="px-3 py-2">Product</th>
               <th className="px-3 py-2 text-right">Txns</th>
+              <th className="px-3 py-2 text-right">Sold (qty)</th>
+              <th className="px-3 py-2 text-right">Loaned (qty)</th>
               <th className="px-3 py-2 text-right">Capital</th>
               <th className="px-3 py-2 text-right">Profit</th>
               <th className="px-3 py-2 text-right">Sale revenue</th>
@@ -203,11 +205,13 @@ export default function ProductAnalyticsPanel() {
           </thead>
           <tbody>
             {!(data?.products || []).length ? (
-              <tr><td colSpan={8} className="py-10 text-center text-xs text-slate-500">No product transactions yet.</td></tr>
+              <tr><td colSpan={10} className="py-10 text-center text-xs text-slate-500">No product transactions yet.</td></tr>
             ) : data.products.map((r) => (
               <tr key={r.product} className="border-t">
                 <td className="px-3 py-2 font-semibold">{r.product}</td>
                 <td className="px-3 py-2 text-right font-mono">{r.count}</td>
+                <td className="px-3 py-2 text-right font-mono">{r.qtySold || 0}</td>
+                <td className="px-3 py-2 text-right font-mono text-violet-700">{r.qtyLoaned || 0}</td>
                 <td className="px-3 py-2 text-right font-mono text-blue-700">{peso(r.capital)}</td>
                 <td className="px-3 py-2 text-right font-mono font-bold text-emerald-700">{peso(r.profit)}</td>
                 <td className="px-3 py-2 text-right font-mono">{peso(r.soldAsSale)}</td>

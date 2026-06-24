@@ -45,7 +45,7 @@ const items = [
   { key: "loan-approvals", label: "Loan Approvals", icon: Banknote, desc: "First signature on new loan applications" },
   { key: "payroll-approvals", label: "Payroll Approvals", icon: Wallet, desc: "Sign payslips + cash advances before the cashier pays" },
   { key: "adjustments", label: "Adjustments", icon: Scale, desc: "Approve CBU / savings balance adjustments filed by the bookkeeper" },
-  { key: "products", label: "Product Loans", icon: Boxes, desc: "Add products, adjust stocks directly (no approval needed)" },
+  { key: "products", label: "Products", icon: Boxes, desc: "Catalogue + stock + sales/loans/rentals (add products, adjust stocks directly)" },
   { key: "product-analytics", label: "Product Analytics", icon: Boxes, desc: "Capital + profit per product, sale vs loan, paid/unpaid" },
   { key: "store-orders", label: "Store Reservations", icon: Boxes, desc: "Approve public-store reservations (verify by phone) + mark pickup" },
   { key: "expenses", label: "Expenses", icon: Wallet, desc: "File disbursement requests — cashier pays them out" },

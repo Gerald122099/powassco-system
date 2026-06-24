@@ -23,6 +23,7 @@ import WaterSettings from "../models/WaterSettings.js";
 import LoanApplication from "../models/LoanApplication.js";
 import CbuTransaction from "../models/CbuTransaction.js";
 import { ProductLoanCatalog, ProductLoanApplication } from "../models/ProductLoan.js";
+import ProductStockHistory from "../models/ProductStockHistory.js";
 import LoanSettings from "../models/LoanSettings.js";
 import SavingsAccount from "../models/SavingsAccount.js";
 import SavingsTransaction from "../models/SavingsTransaction.js";
@@ -501,6 +502,15 @@ router.post("/product-catalog", ...productManageGuard, async (req, res) => {
       isActive: b.isActive !== false,
       createdBy: req.user?.fullName || req.user?.employeeId || "",
     });
+    // History: new product (initial stock as the opening quantity).
+    try {
+      await ProductStockHistory.create({
+        productId: doc._id, productName: doc.name, category: doc.category,
+        action: "created", quantity: doc.stock, unitPrice: doc.unitPrice, capital: doc.capital,
+        amount: round2((Number(doc.stock) || 0) * (Number(doc.capital) || 0)), stockAfter: doc.stock,
+        note: "Product added", by: req.user?.fullName || req.user?.employeeId || "",
+      });
+    } catch (e) { console.error("product history (create) failed:", e.message); }
     res.status(201).json(doc);
   } catch (e) { res.status(500).json({ message: e.message || "Failed to create product." }); }
 });
@@ -512,9 +522,43 @@ router.put("/product-catalog/:id", ...productManageGuard, async (req, res) => {
   // Auto-flip isRental when category becomes "rental" — keeps the
   // two fields in sync regardless of which the form updates.
   if (patch.category === "rental") patch.isRental = true;
+  const before = await ProductLoanCatalog.findById(req.params.id).lean();
   const doc = await ProductLoanCatalog.findByIdAndUpdate(req.params.id, patch, { new: true });
   if (!doc) return res.status(404).json({ message: "Product not found." });
+  // History: log a restock (stock increased) and/or a reprice.
+  try {
+    const by = req.user?.fullName || req.user?.employeeId || "";
+    const oldStock = Number(before?.stock) || 0;
+    const newStock = Number(doc.stock) || 0;
+    if ("stock" in patch && newStock > oldStock) {
+      const added = newStock - oldStock;
+      await ProductStockHistory.create({
+        productId: doc._id, productName: doc.name, category: doc.category,
+        action: "stock_in", quantity: added, unitPrice: doc.unitPrice, capital: doc.capital,
+        amount: round2(added * (Number(doc.capital) || 0)), stockAfter: newStock,
+        note: `Restocked +${added}`, by,
+      });
+    }
+    const priced = ("unitPrice" in patch && round2(before?.unitPrice) !== round2(doc.unitPrice))
+      || ("capital" in patch && round2(before?.capital) !== round2(doc.capital));
+    if (priced) {
+      await ProductStockHistory.create({
+        productId: doc._id, productName: doc.name, category: doc.category,
+        action: "reprice", quantity: 0, unitPrice: doc.unitPrice, capital: doc.capital,
+        amount: 0, stockAfter: newStock,
+        note: `Price ₱${round2(before?.unitPrice)}→₱${round2(doc.unitPrice)}, capital ₱${round2(before?.capital)}→₱${round2(doc.capital)}`, by,
+      });
+    }
+  } catch (e) { console.error("product history (edit) failed:", e.message); }
   res.json(doc);
+});
+
+// Product/stock history feed (newest first; optional ?productId=).
+router.get("/product-history", ...productTxnGuard, async (req, res) => {
+  const filter = {};
+  if (req.query.productId) filter.productId = req.query.productId;
+  const items = await ProductStockHistory.find(filter).sort({ createdAt: -1 }).limit(300).lean();
+  res.json({ items });
 });
 
 router.delete("/product-catalog/:id", ...productManageGuard, async (req, res) => {
@@ -580,6 +624,9 @@ router.get("/product-analytics", requireAuth, requireRole(["admin", "manager", "
           latePenalty: { $sum: "$latePenalty" },
           soldAsSale: { $sum: { $cond: [{ $eq: ["$transactionType", "sale"] }, "$totalPrice", 0] } },
           soldAsLoan: { $sum: { $cond: [{ $in: ["$transactionType", ["loan", "rental"]] }, "$totalPrice", 0] } },
+          qty: { $sum: "$quantity" },
+          qtySold: { $sum: { $cond: [{ $eq: ["$transactionType", "sale"] }, "$quantity", 0] } },
+          qtyLoaned: { $sum: { $cond: [{ $in: ["$transactionType", ["loan", "rental"]] }, "$quantity", 0] } },
           count: { $sum: 1 },
         } },
       { $sort: { revenue: -1 } },
@@ -593,8 +640,10 @@ router.get("/product-analytics", requireAuth, requireRole(["admin", "manager", "
       unpaid: o.unpaid + (r.unpaid || 0),
       soldAsSale: o.soldAsSale + (r.soldAsSale || 0),
       soldAsLoan: o.soldAsLoan + (r.soldAsLoan || 0),
+      qtySold: o.qtySold + (r.qtySold || 0),
+      qtyLoaned: o.qtyLoaned + (r.qtyLoaned || 0),
       count: o.count + (r.count || 0),
-    }), { capital: 0, profit: 0, revenue: 0, paid: 0, unpaid: 0, latePenalty: 0, soldAsSale: 0, soldAsLoan: 0, count: 0 });
+    }), { capital: 0, profit: 0, revenue: 0, paid: 0, unpaid: 0, latePenalty: 0, soldAsSale: 0, soldAsLoan: 0, qtySold: 0, qtyLoaned: 0, count: 0 });
 
     // Live inventory from the catalogue: what's still on the shelf and
     // the capital tied up in it (vs. the `capital` above = cost of
