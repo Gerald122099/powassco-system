@@ -40,6 +40,9 @@ ipcMain.handle("pow:print-silent", async (_e, payload = {}) => {
     win.webContents.once("did-finish-load", () => {
       // Let images/QR render before printing.
       setTimeout(async () => {
+        // Wait for embedded @font-face (the receipt's dot-matrix font) to decode
+        // so the first print isn't rendered in the fallback font.
+        try { await win.webContents.executeJavaScript("(window.document.fonts&&document.fonts.ready?document.fonts.ready:Promise.resolve()).then(()=>true)"); } catch { /* ignore */ }
         const opts = { silent: true, printBackground: true, margins: { marginType: "none" } };
         if (deviceName) opts.deviceName = deviceName;
         if (paper === "58mm") {

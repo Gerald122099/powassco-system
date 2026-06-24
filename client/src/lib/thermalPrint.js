@@ -6,6 +6,7 @@
 // Whichever the user connects becomes the active printer for the session and
 // silently reconnects next time via getDevices().
 import { printHtmlDoc } from "./printHtmlDoc";
+import { RECEIPT_FONT_FACE } from "./receiptFont";
 
 // Common services exposed by cheap BLE thermal printers (and Nordic UART).
 const OPTIONAL_SERVICES = [
@@ -350,30 +351,32 @@ export function printReceiptHTML({
   const body = lines.map(([l, v]) => r(l, v)).join("");
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(orNo || title)}</title>
     <style>
+      ${RECEIPT_FONT_FACE}
       @page { size: 58mm auto; margin: 0; }
       /* FULL BLACK, no fade: force #000 on every node, force-print colors,
          disable anti-aliasing (gray edges print faint on thermal), and add a
-         glyph stroke so thin monospace strokes burn solid black. */
+         glyph stroke so the dot-matrix strokes burn solid black. */
       * {
         box-sizing: border-box;
         color: #000 !important;
         -webkit-print-color-adjust: exact; print-color-adjust: exact;
         -webkit-font-smoothing: none; font-smooth: never; text-rendering: optimizeLegibility;
-        -webkit-text-stroke: 0.28px #000;
+        -webkit-text-stroke: 0.22px #000;
       }
-      /* Receipt font: bitArray-A2 if installed on the machine, else monospace. */
-      body { width: 58mm; margin: 0; padding: 3mm 2mm; font-family: 'bitArray-A2', 'Courier New', 'Consolas', monospace; font-size: 12px; line-height: 1.4; font-weight: 700; }
+      /* Receipt font: embedded bitArray-A2 (dot-matrix), monospace fallback.
+         VT323 has a small x-height, so sizes run a touch larger than Courier. */
+      body { width: 58mm; margin: 0; padding: 3mm 2mm; font-family: 'bitArray-A2', 'Courier New', 'Consolas', monospace; font-size: 15px; line-height: 1.32; font-weight: 700; }
       .c { text-align: center; }
-      h1 { font-size: 18px; margin: 0; letter-spacing: 1px; font-weight: 800; -webkit-text-stroke: 0.4px #000; }
-      .sub { font-size: 10px; margin: 0; font-weight: 700; }
+      h1 { font-size: 23px; margin: 0; letter-spacing: 1px; font-weight: 800; -webkit-text-stroke: 0.35px #000; }
+      .sub { font-size: 12px; margin: 0; font-weight: 700; }
       .ttl { font-weight: 800; margin: 3px 0; letter-spacing: 1px; }
       .line { border-top: 2px solid #000; margin: 4px 0; }
       .r { display: flex; justify-content: space-between; gap: 6px; }
       .r span:last-child { text-align: right; }
       .amt span:last-child { font-weight: 800; }
-      .sec { text-align: center; font-weight: 800; font-size: 11px; margin: 3px 0 1px; }
-      .total { display: flex; justify-content: space-between; font-weight: 800; font-size: 16px; margin-top: 3px; border: 2px solid #000; border-radius: 4px; padding: 3px 5px; }
-      .foot { font-size: 9.5px; margin-top: 6px; font-weight: 700; }
+      .sec { text-align: center; font-weight: 800; font-size: 14px; margin: 3px 0 1px; }
+      .total { display: flex; justify-content: space-between; font-weight: 800; font-size: 20px; margin-top: 3px; border: 2px solid #000; border-radius: 4px; padding: 3px 5px; }
+      .foot { font-size: 12px; margin-top: 6px; font-weight: 700; }
     </style></head><body>
     <div class="c">
       <h1>POWASSCO</h1>
