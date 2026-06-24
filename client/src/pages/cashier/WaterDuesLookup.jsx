@@ -42,6 +42,17 @@ export default function WaterDuesLookup() {
     try { setReceivables(await apiFetch(`/cashier/receivables?pnNo=${encodeURIComponent(pnNo)}`, { token })); }
     catch (e) { toast.error(e.message); setReceivables(null); }
   }
+  // Collect a meter's reconnection fee → queues it for reconnection (plumber).
+  async function collectReconnection(pnNo, meterNumber, fee) {
+    const orNo = window.prompt(`Collect ₱${Number(fee).toFixed(2)} reconnection fee for meter ${meterNumber}. OR number:`, "");
+    if (orNo === null || !orNo.trim()) return;
+    try {
+      const res = await apiFetch("/cashier/collect-reconnection", { method: "POST", token, body: { pnNo, meterNumber, orNo: orNo.trim() } });
+      toast.success(res.message || "Collected — queued for reconnection.");
+      await openReceivables(pnNo);
+      if (data?.member?.pnNo === pnNo) await lookup(null, pnNo);
+    } catch (e) { toast.error(e.message); }
+  }
   // Payment modal: { bill, totalDue }
   const [settingMeter, setSettingMeter] = useState(false);
   const [payTarget, setPayTarget] = useState(null);
@@ -723,9 +734,14 @@ export default function WaterDuesLookup() {
                 <div className="mb-1 flex items-center gap-2 text-sm font-bold text-slate-800"><AlertTriangle size={15} className="text-red-500" /> Reconnection fees <span className="text-slate-400">· {peso(receivables.totals.reconnection)}</span></div>
                 <div className="rounded-xl border border-red-200 divide-y divide-red-100">
                   {receivables.reconnections.map((r) => (
-                    <div key={r.meterNumber} className="flex items-center justify-between px-3 py-2 text-sm">
+                    <div key={r.meterNumber} className="flex items-center justify-between gap-2 px-3 py-2 text-sm">
                       <span className="font-mono">{r.meterNumber} <span className="text-red-500">• disconnected{r.disconnectedAt ? ` ${fmtDate(r.disconnectedAt)}` : ""}</span></span>
-                      <span className="font-mono font-bold text-red-700">{peso(r.fee)}</span>
+                      <span className="flex items-center gap-2">
+                        <span className="font-mono font-bold text-red-700">{peso(r.fee)}</span>
+                        {isCashier && (
+                          <button onClick={() => collectReconnection(receivables.member.pnNo, r.meterNumber, r.fee)} className="rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-emerald-700">Collect</button>
+                        )}
+                      </span>
                     </div>
                   ))}
                 </div>

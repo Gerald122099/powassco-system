@@ -18,6 +18,7 @@ import WaterBill from "../models/WaterBill.js";
 import WaterMember from "../models/WaterMember.js";
 import WaterSettings from "../models/WaterSettings.js";
 import LoanApplication from "../models/LoanApplication.js";
+import { ProductLoanApplication } from "../models/ProductLoan.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
 const router = express.Router();
@@ -55,6 +56,25 @@ async function loanDrivenPnos(now = new Date()) {
   return pn;
 }
 
+// Product-loan-driven disconnections: an OPEN product loan / rental past its
+// due date makes ALL of the borrower's meters subject for disconnection.
+async function productLoanDrivenPnos(now = new Date()) {
+  const items = await ProductLoanApplication.find({
+    transactionType: { $in: ["loan", "rental"] },
+    balance: { $gt: 0 },
+    dueDate: { $ne: null, $lt: now },
+    status: { $nin: ["fully_paid", "returned", "cancelled", "rejected"] },
+  }).select("pnNo productName balance dueDate").lean();
+  const pn = new Map();
+  for (const p of items) {
+    const key = up(p.pnNo);
+    if (!key) continue;
+    if (!pn.has(key)) pn.set(key, []);
+    pn.get(key).push({ productName: p.productName, owed: Number(p.balance) || 0 });
+  }
+  return pn;
+}
+
 // GET /api/disconnections
 // Returns: { pendingDisconnect, disconnected, pendingReconnect }
 router.get("/", ...viewGuard, async (req, res) => {
@@ -71,6 +91,8 @@ router.get("/", ...viewGuard, async (req, res) => {
 
     // 2) Loan-driven pending: borrower's loan past due → ALL of borrower's meters are subject.
     const loanMap = await loanDrivenPnos(now);
+    // 2b) Product-loan-driven: overdue product loan / rental → all meters subject.
+    const productLoanMap = await productLoanDrivenPnos(now);
 
     // Index bill-driven entries by pn+meter
     const meterRows = new Map();
@@ -90,7 +112,7 @@ router.get("/", ...viewGuard, async (req, res) => {
     }
 
     // 3) Join member data (status of each meter + address + ALL meters for loan-driven).
-    const candidatePns = new Set([...meterRows.keys()].map((k) => k.split("|")[0]).concat([...loanMap.keys()]));
+    const candidatePns = new Set([...meterRows.keys()].map((k) => k.split("|")[0]).concat([...loanMap.keys()]).concat([...productLoanMap.keys()]));
     const members = await WaterMember.find({ pnNo: { $in: [...candidatePns] } })
       .select("pnNo accountName meters address")
       .lean();
@@ -110,6 +132,22 @@ router.get("/", ...viewGuard, async (req, res) => {
           daysOverdue: 0, remark,
         });
         // If bills already flagged this meter, append the loan remark.
+        else meterRows.get(k).remark = `${meterRows.get(k).remark} + ${remark}`;
+      }
+    }
+
+    // Add product-loan-driven rows for every meter on each affected member.
+    for (const [pnNo, items] of productLoanMap) {
+      const m = memberByPn.get(pnNo);
+      if (!m) continue;
+      const remark = `Unpaid product loans (${items.map((i) => i.productName).filter(Boolean).slice(0, 3).join(", ")})`;
+      for (const mt of m.meters || []) {
+        const k = `${up(pnNo)}|${up(mt.meterNumber)}`;
+        if (!meterRows.has(k)) meterRows.set(k, {
+          pnNo, accountName: m.accountName, meterNumber: mt.meterNumber,
+          periods: [], unpaidCount: 0, totalOwed: 0, oldestDue: null,
+          daysOverdue: 0, remark,
+        });
         else meterRows.get(k).remark = `${meterRows.get(k).remark} + ${remark}`;
       }
     }
@@ -193,6 +231,9 @@ router.post("/mark-disconnected", ...actGuard, async (req, res) => {
   meter.reconnectionRequestedAt = null;
   meter.reconnectionRequestedBy = "";
   if (!(Number(meter.reconnectionFeeDue) > 0)) meter.reconnectionFeeDue = fee;
+  // A disconnected meter suspends the account (lifted on reconnection request /
+  // reconnection-fee collection).
+  if (member.accountStatus === "active") member.accountStatus = "suspended";
   await member.save();
   res.json({ ok: true, message: `Meter ${meterNumber} marked as disconnected.`, reconnectionFeeDue: meter.reconnectionFeeDue });
 });
@@ -236,6 +277,10 @@ router.post("/mark-reconnected", ...actGuard, async (req, res) => {
   meter.reconnectedBy = req.user?.fullName || req.user?.employeeId || "";
   meter.disconnectionRemarks = "";
   meter.reconnectionFeeDue = 0; // cleared on reconnection
+  // Reactivate the account once no meter is left disconnected.
+  if (!(member.meters || []).some((m) => m.meterStatus === "disconnected") && member.accountStatus === "suspended") {
+    member.accountStatus = "active";
+  }
   await member.save();
   res.json({ ok: true, message: `Meter ${meterNumber} reconnected.` });
 });

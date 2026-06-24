@@ -335,6 +335,51 @@ router.get("/receivables", ...guard, async (req, res) => {
   }
 });
 
+// Collect a meter's reconnection fee (cash, on an OR), then queue the meter
+// for reconnection so the plumber can physically reconnect it. Records a
+// drawer-IN treasury row (same as new-member fees).
+//   body: { pnNo, meterNumber, orNo }
+router.post("/collect-reconnection", ...payGuard, async (req, res) => {
+  try {
+    const pnNo = norm(req.body?.pnNo);
+    const meterNumber = norm(req.body?.meterNumber);
+    const orNo = String(req.body?.orNo || "").trim().toUpperCase();
+    if (!pnNo || !meterNumber) return res.status(400).json({ message: "pnNo and meterNumber are required." });
+    if (!orNo) return res.status(400).json({ message: "OR number is required." });
+
+    const member = await WaterMember.findOne({ pnNo });
+    if (!member) return res.status(404).json({ message: "Member not found." });
+    const meter = (member.meters || []).find((m) => String(m.meterNumber).toUpperCase() === meterNumber);
+    if (!meter) return res.status(404).json({ message: "Meter not found on this account." });
+    if (meter.meterStatus !== "disconnected") return res.status(400).json({ message: "Meter is not disconnected." });
+    const fee = round2(Number(meter.reconnectionFeeDue) || 0);
+    if (!(fee > 0)) return res.status(400).json({ message: "No reconnection fee is due on this meter." });
+
+    const dup = await TreasuryTransaction.findOne({ refNo: orNo }).select("_id").lean();
+    if (dup) return res.status(409).json({ message: `OR ${orNo} already used.` });
+
+    const who = req.user?.fullName || req.user?.employeeId || "";
+    // Collect the fee + queue the meter for reconnection.
+    meter.reconnectionFeeDue = 0;
+    meter.reconnectionRequested = true;
+    meter.reconnectionRequestedAt = new Date();
+    meter.reconnectionRequestedBy = who;
+    if (member.accountStatus === "suspended") member.accountStatus = "active";
+    await member.save();
+
+    await TreasuryTransaction.create({
+      target: "drawer", type: "in", amount: fee, balanceAfter: null,
+      refNo: orNo, by: who,
+      note: `Reconnection fee — ${pnNo} meter ${meterNumber} (queued for reconnection)`,
+    });
+
+    res.json({ ok: true, fee, meterNumber, message: `₱${fee} collected — meter ${meterNumber} queued for reconnection.` });
+  } catch (e) {
+    console.error("collect-reconnection error:", e);
+    res.status(500).json({ message: e.message || "Failed to collect the reconnection fee." });
+  }
+});
+
 // ------ LOAN LOOKUP ------
 // Search by loan ID, reference code, borrower name, or PN no.
 router.get("/loan", ...guard, async (req, res) => {
