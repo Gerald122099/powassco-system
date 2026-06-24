@@ -101,8 +101,23 @@ async function bindUSB(dev) {
 export async function connectPrinterUSB() {
   if (!usbSupported()) throw new Error("USB printing needs Chrome/Edge on desktop (HTTPS).");
   const dev = await navigator.usb.requestDevice({ filters: [] }); // user picks the printer
-  const name = await bindUSB(dev);
-  if (!name) throw new Error("Couldn’t open this USB printer. On Windows it may need the WinUSB/Zadig driver, or another app is using it.");
+  let name;
+  try {
+    name = await bindUSB(dev);
+  } catch (e) {
+    // Windows binds an installed printer to its own driver (usbprint.sys), so
+    // Chrome's WebUSB can't open it — "Access denied". The right fix on a
+    // driver-installed printer is the default-printer mode, not direct USB.
+    if (/access denied|security|the device is in use|access to this device/i.test(e?.message || "")) {
+      throw new Error(
+        'Windows is already using this printer through its installed driver, so the browser can’t take it over directly. ' +
+        'Switch ON "Print to the default printer" in Printer settings and set this thermal printer as your Windows default — ' +
+        'receipts then print through the driver. (Advanced alternative: replace its driver with WinUSB using Zadig to allow direct USB.)'
+      );
+    }
+    throw new Error(e?.message || "Couldn’t open this USB printer.");
+  }
+  if (!name) throw new Error("Couldn’t open this USB printer — no printable interface found. On Windows it may need the WinUSB/Zadig driver, or another app is using it.");
   return name;
 }
 

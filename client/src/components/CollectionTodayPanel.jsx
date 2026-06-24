@@ -3,6 +3,7 @@
 // and an optional `defaultMine` to scope to the signed-in user's postings.
 import { useCallback, useEffect, useState } from "react";
 import Card from "./Card";
+import { printHtmlDoc } from "../lib/printHtmlDoc";
 import { apiFetch } from "../lib/api";
 import { useRealtime } from "../lib/realtime";
 import { useAuth } from "../context/AuthContext";
@@ -38,12 +39,10 @@ export default function CollectionTodayPanel({ module = "all", defaultMine = fal
 
   function printReport() {
     if (!data) return;
-    const w = window.open("", "_blank", "width=720,height=900");
-    if (!w) return alert("Allow pop-ups to print.");
     const water = data.waterPayments || [];
     const loan = data.loanPayments || [];
     const row = (p, kind) => `<tr><td>${fmtTime(p.paidAt)}</td><td>${p.orNo}</td><td>${kind}</td><td>${p.method}</td><td>${kind === "Water" ? `${p.pnNo} / ${p.meterNumber}` : `${p.loanId}`}</td><td>${p.receivedBy || "—"}</td><td style="text-align:right">${peso(p.amountPaid)}</td></tr>`;
-    w.document.write(`<!doctype html><html><head><meta charset="utf-8"/><title>Collection Report — ${data.date}</title>
+    const html = `<!doctype html><html><head><meta charset="utf-8"/><title>Collection Report — ${data.date}</title>
       <style>@page{size:A4;margin:14mm}body{font-family:Arial,sans-serif;color:#0f172a;font-size:12px}
       h1{font-size:16px;color:#0f766e;margin:0 0 6px}.muted{color:#64748b;font-size:11px}
       table{width:100%;border-collapse:collapse;margin-top:10px;font-size:11px}
@@ -65,9 +64,8 @@ export default function CollectionTodayPanel({ module = "all", defaultMine = fal
         ${loan.map((p) => row(p, "Loan")).join("")}
       </tbody></table>
       <div class="grand">GRAND TOTAL: ${peso((data.totals.grand || 0) + (data.totals.productCash || 0))}</div>
-      </body></html>`);
-    w.document.close();
-    setTimeout(() => { w.focus(); w.print(); }, 250);
+      </body></html>`;
+    printHtmlDoc(html);
   }
 
   if (err) return <Card><div className="text-sm text-red-700">{err}</div></Card>;

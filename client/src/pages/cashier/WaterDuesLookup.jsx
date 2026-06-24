@@ -7,6 +7,7 @@ import { toast } from "../../components/Toast";
 import PrinterPrompt from "../../components/PrinterPrompt";
 import { printPaymentReceipt } from "../../lib/thermalPrint";
 import { printReceiptSmart, printReceiptManual } from "../../lib/printerSettings";
+import { printHtmlDoc } from "../../lib/printHtmlDoc";
 import { Search, Droplets, Printer, AlertTriangle, MapPin, CheckCircle, Hourglass, Gauge, Banknote, History, Wallet, TrendingUp, ReceiptText, BadgeCheck, Loader2 } from "lucide-react";
 
 // Recently-looked-up PNs are kept in localStorage so the cashier can
@@ -310,8 +311,6 @@ export default function WaterDuesLookup() {
 
   function printSlip(filterMeter = null) {
     if (!data) return;
-    const w = window.open("", "_blank", "width=520,height=720");
-    if (!w) return alert("Allow pop-ups to print.");
     const unpaid = (data.bills || []).filter((b) => b.status !== "paid" && (!filterMeter || String(b.meterNumber).toUpperCase() === String(filterMeter).toUpperCase()));
     const slipTotal = unpaid.reduce((s, b) => s + (Number(b.totalDue) || 0), 0);
     const rows = unpaid
@@ -320,7 +319,7 @@ export default function WaterDuesLookup() {
           `<tr><td>${b.periodCovered || b.periodKey || ""}</td><td>${b.meterNumber || ""}</td><td>${b.status}</td><td style="text-align:right">${peso(b.totalDue)}</td></tr>`
       )
       .join("");
-    w.document.write(`<!doctype html><html><head><meta charset="utf-8"/><title>Dues Slip — ${data.member.pnNo}</title>
+    const html = `<!doctype html><html><head><meta charset="utf-8"/><title>Dues Slip — ${data.member.pnNo}</title>
       <style>@page{size:A6;margin:8mm}body{font-family:Arial,sans-serif;color:#0f172a;font-size:12px}
       h1{font-size:14px;color:#0f766e;margin:0 0 4px}.row{display:flex;justify-content:space-between;margin:2px 0}
       table{width:100%;border-collapse:collapse;margin-top:6px;font-size:11px}
@@ -336,9 +335,8 @@ export default function WaterDuesLookup() {
       <table><thead><tr><th>Period</th><th>Meter</th><th>Status</th><th style="text-align:right">Amount</th></tr></thead><tbody>${rows || `<tr><td colspan="4" style="text-align:center;color:#64748b">No outstanding dues</td></tr>`}</tbody></table>
       <div class="total">TOTAL DUE: ${peso(slipTotal)}</div>
       <div class="warn">Hand-write the OR number on the official paper receipt. Consumer must bring the OR to the Water Bill Officer to post the payment.</div>
-      </body></html>`);
-    w.document.close();
-    setTimeout(() => { w.focus(); w.print(); }, 250);
+      </body></html>`;
+    printHtmlDoc(html);
   }
 
   return (

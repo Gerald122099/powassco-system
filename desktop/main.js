@@ -44,6 +44,13 @@ function createWindow() {
 
   // window.open / target=_blank → keep app links in-app, send the rest to the browser.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    // Print/preview windows are opened with window.open("", "_blank") which
+    // resolves to about:blank (or empty). ALLOW these so the in-app print
+    // dialog works — otherwise Electron hands "about:" to the OS shell and
+    // Windows shows "We can't open this 'about' link".
+    if (!url || url === "about:blank" || url.startsWith("about:") || url.startsWith("blob:") || url.startsWith("data:")) {
+      return { action: "allow" };
+    }
     try {
       if (new URL(url).origin === APP_ORIGIN) return { action: "allow" };
     } catch { /* fall through */ }
@@ -52,9 +59,11 @@ function createWindow() {
   });
 
   // A full navigation that leaves our origin opens in the real browser
-  // instead of turning this window into a generic browser.
+  // instead of turning this window into a generic browser. about:/blob:/data:
+  // (print windows) are left alone.
   mainWindow.webContents.on("will-navigate", (e, url) => {
     try {
+      if (/^(about:|blob:|data:)/.test(url)) return;
       if (new URL(url).origin !== APP_ORIGIN) {
         e.preventDefault();
         shell.openExternal(url);

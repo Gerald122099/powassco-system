@@ -8,7 +8,7 @@ import { toast } from "./Toast";
 import {
   connectPrinterUSB, connectPrinterBLE, tryReconnect,
   printerConnected, printerName, printerTransport,
-  usbSupported, bluetoothSupported, thermalSupported, printPaymentReceipt,
+  usbSupported, bluetoothSupported, thermalSupported, printPaymentReceipt, printReceiptHTML,
 } from "../lib/thermalPrint";
 import { isAutoPrintOn, setAutoPrint, isDefaultFallbackOn, setDefaultFallback } from "../lib/printerSettings";
 import { Bluetooth, Printer, CheckCircle2, RefreshCw, AlertTriangle, Usb } from "lucide-react";
@@ -64,6 +64,24 @@ export default function PrinterSettings({ cashierName = "" }) {
     finally { setBusy(""); }
   }
 
+  // Test the default-printer path (58mm HTML → OS default printer). Works even
+  // when no thermal printer is "connected" — the right path for a Windows
+  // printer installed with its own driver.
+  function testDefault() {
+    try {
+      printReceiptHTML({
+        title: "TEST PRINT",
+        accountName: "Juan Dela Cruz",
+        orNo: "TEST-0001",
+        cashierName,
+        lines: [["Sample item", "P100.00"]],
+        total: 100,
+        note: "Default-printer test.",
+      });
+      toast.success("Sent to your default printer. If a Print dialog appears, pick the thermal printer and print.");
+    } catch (e) { toast.error("Default-printer test failed: " + e.message); }
+  }
+
   function toggleAuto(on) {
     setAuto(on);
     setAutoPrint(on);
@@ -104,6 +122,15 @@ export default function PrinterSettings({ cashierName = "" }) {
             <button onClick={() => { setBusy("recheck"); tryReconnect().then(syncStatus).finally(() => setBusy("")); }} disabled={busy === "recheck"} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-white disabled:opacity-50" title="Re-check connection">
               <RefreshCw size={13} className={busy === "recheck" ? "animate-spin" : ""} /> Re-check
             </button>
+          </div>
+
+          {/* Windows / driver-installed printer guidance */}
+          <div className="mt-3 flex items-start gap-2 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-xs text-sky-900">
+            <Printer size={15} className="mt-0.5 shrink-0 text-sky-600" />
+            <div>
+              <b>USB printer installed in Windows (most setups):</b> you usually do <b>not</b> need “Connect USB printer”. Keep <b>“Fall back to the default printer”</b> ON below, set the thermal printer as your <b>Windows default printer</b>, and use <b>Test default printer</b>. Receipts then print through the driver automatically.
+              <div className="mt-1">“Connect USB printer” is only for a <b>raw</b> printer with no Windows driver — on a driver-installed printer it returns <i>“Access denied”</i> because Windows already owns the device.</div>
+            </div>
           </div>
 
           {/* Connect buttons */}
@@ -156,10 +183,13 @@ export default function PrinterSettings({ cashierName = "" }) {
             </button>
           </label>
 
-          <div className="mt-3">
+          <div className="mt-3 flex flex-wrap gap-2">
             <button onClick={test} disabled={busy === "test"} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50">
               {busy === "test" ? <RefreshCw size={14} className="animate-spin" /> : <Printer size={14} />}
-              Test print
+              Test print (thermal)
+            </button>
+            <button onClick={testDefault} className="inline-flex items-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100">
+              <Printer size={14} /> Test default printer
             </button>
           </div>
 

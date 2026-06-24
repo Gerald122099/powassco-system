@@ -8,6 +8,7 @@ import { Kpi } from "./WaterDuesLookup";
 import PrinterPrompt from "../../components/PrinterPrompt";
 import { printPaymentReceipt } from "../../lib/thermalPrint";
 import { printReceiptSmart, printReceiptManual } from "../../lib/printerSettings";
+import { printHtmlDoc } from "../../lib/printHtmlDoc";
 import { Search, Banknote, Printer, Hourglass, CheckCircle, Wallet, History, TrendingUp, ReceiptText } from "lucide-react";
 
 const RECENT_KEY = "pow_cashier_recent_loan";
@@ -290,9 +291,7 @@ export default function LoanDuesLookup() {
   }
 
   function printSlip(loan) {
-    const w = window.open("", "_blank", "width=520,height=720");
-    if (!w) return alert("Allow pop-ups to print.");
-    w.document.write(`<!doctype html><html><head><meta charset="utf-8"/><title>Loan Dues — ${loan.loanId}</title>
+    const html = `<!doctype html><html><head><meta charset="utf-8"/><title>Loan Dues — ${loan.loanId}</title>
       <style>@page{size:A6;margin:8mm}body{font-family:Arial,sans-serif;color:#0f172a;font-size:12px}
       h1{font-size:14px;color:#0f766e;margin:0 0 4px}.row{display:flex;justify-content:space-between;margin:2px 0}
       .total{margin-top:8px;text-align:right;font-weight:bold;font-size:13px}
@@ -308,9 +307,8 @@ export default function LoanDuesLookup() {
       <div class="row"><span>Total Paid:</span><span>${peso(loan.totalPaid)}</span></div>
       <div class="total">OUTSTANDING: ${peso(loan.balance)}</div>
       <div class="warn">Hand-write the OR number on the official paper receipt. Consumer must bring the OR to the Loan Officer to post the payment.</div>
-      </body></html>`);
-    w.document.close();
-    setTimeout(() => { w.focus(); w.print(); }, 250);
+      </body></html>`;
+    printHtmlDoc(html);
   }
 
   return (
