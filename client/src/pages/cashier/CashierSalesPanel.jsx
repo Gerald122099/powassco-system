@@ -238,6 +238,29 @@ export default function CashierSalesPanel() {
   }
   function removeLine(productId) { setCart((prev) => prev.filter((l) => l.productId !== productId)); }
 
+  // Group multi-item cart sales (one DB row per product, sharing the OR with a
+  // "#n" suffix on lines 2+) into a SINGLE transaction row per receipt.
+  const groupedSales = (() => {
+    const groups = new Map();
+    for (const s of recentSales) {
+      const rawOr = s.orNo || s.payments?.[0]?.orNo || String(s._id);
+      const baseOr = String(rawOr).replace(/#\d+$/, "");
+      if (!groups.has(baseOr)) {
+        groups.set(baseOr, {
+          key: baseOr, orNo: baseOr, createdAt: s.createdAt,
+          pnNo: s.pnNo, accountName: s.accountName, customerName: s.customerName, customerContact: s.customerContact,
+          method: s.payments?.[0]?.method || "cash", items: [], qty: 0, total: 0,
+        });
+      }
+      const g = groups.get(baseOr);
+      g.items.push({ productName: s.productName || "Product", quantity: Number(s.quantity || 1) });
+      g.qty += Number(s.quantity || 1);
+      g.total += Number(s.totalPrice ?? s.principal) || 0;
+      if (new Date(s.createdAt) < new Date(g.createdAt)) g.createdAt = s.createdAt;
+    }
+    return [...groups.values()].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  })();
+
   async function submit() {
     if (cart.length === 0) { toast.error("Add at least one product to the cart."); return; }
     if (mode === "member" && !member) { toast.error("Pick a member or switch to Walk-in."); return; }
@@ -336,21 +359,25 @@ export default function CashierSalesPanel() {
               </tr>
             </thead>
             <tbody>
-              {recentSales.length === 0 ? (
+              {groupedSales.length === 0 ? (
                 <tr><td colSpan={7} className="py-10 text-center text-slate-500">No sales yet today.</td></tr>
-              ) : recentSales.map((s) => (
-                <tr key={s._id} className="border-t">
-                  <td className="px-3 py-2 font-mono text-xs">{s.orNo || s.payments?.[0]?.orNo || "—"}</td>
-                  <td className="px-3 py-2 text-xs">{new Date(s.createdAt).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" })}</td>
+              ) : groupedSales.map((g) => (
+                <tr key={g.key} className="border-t">
+                  <td className="px-3 py-2 font-mono text-xs">{g.orNo || "—"}</td>
+                  <td className="px-3 py-2 text-xs">{new Date(g.createdAt).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" })}</td>
                   <td className="px-3 py-2">
-                    {s.accountName || s.customerName || "—"}
-                    {s.pnNo && <div className="text-[10px] font-mono text-slate-500">{s.pnNo}</div>}
-                    {!s.pnNo && s.customerContact && <div className="text-[10px] text-slate-500">{s.customerContact}</div>}
+                    {g.accountName || g.customerName || "—"}
+                    {g.pnNo && <div className="text-[10px] font-mono text-slate-500">{g.pnNo}</div>}
+                    {!g.pnNo && g.customerContact && <div className="text-[10px] text-slate-500">{g.customerContact}</div>}
                   </td>
-                  <td className="px-3 py-2">{s.productName || "—"}</td>
-                  <td className="px-3 py-2 text-right font-mono">{s.quantity || 1}</td>
-                  <td className="px-3 py-2 text-right font-mono font-bold text-emerald-700">{peso(s.principal)}</td>
-                  <td className="px-3 py-2 text-xs">{s.payments?.[0]?.method || "cash"}</td>
+                  <td className="px-3 py-2" title={g.items.map((it) => `${it.productName} × ${it.quantity}`).join(", ")}>
+                    {g.items.length === 1
+                      ? g.items[0].productName
+                      : <>{g.items[0].productName} <span className="text-[10px] font-semibold text-slate-500">+{g.items.length - 1} more</span></>}
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono">{g.qty}</td>
+                  <td className="px-3 py-2 text-right font-mono font-bold text-emerald-700">{peso(g.total)}</td>
+                  <td className="px-3 py-2 text-xs">{g.method}</td>
                 </tr>
               ))}
             </tbody>

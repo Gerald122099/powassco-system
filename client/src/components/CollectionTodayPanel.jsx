@@ -57,13 +57,14 @@ export default function CollectionTodayPanel({ module = "all", defaultMine = fal
       <div class="totals">
         <div class="box"><div class="muted">Cash collected</div><div style="font-size:16px;font-weight:bold">${peso(data.totals.cash)}</div></div>
         <div class="box"><div class="muted">Online posted</div><div style="font-size:16px;font-weight:bold">${peso(data.totals.online)}</div></div>
-        <div class="box"><div class="muted">Grand total</div><div style="font-size:16px;font-weight:bold;color:#0f766e">${peso(data.totals.grand)}</div></div>
+        <div class="box"><div class="muted">Sales/Product</div><div style="font-size:16px;font-weight:bold">${peso(data.totals.productCash || 0)}</div></div>
+        <div class="box"><div class="muted">Grand total</div><div style="font-size:16px;font-weight:bold;color:#0f766e">${peso((data.totals.grand || 0) + (data.totals.productCash || 0))}</div></div>
       </div>
       <table><thead><tr><th>Time</th><th>OR No</th><th>Module</th><th>Method</th><th>Reference</th><th>Posted by</th><th style="text-align:right">Amount</th></tr></thead><tbody>
         ${water.map((p) => row(p, "Water")).join("")}
         ${loan.map((p) => row(p, "Loan")).join("")}
       </tbody></table>
-      <div class="grand">GRAND TOTAL: ${peso(data.totals.grand)}</div>
+      <div class="grand">GRAND TOTAL: ${peso((data.totals.grand || 0) + (data.totals.productCash || 0))}</div>
       </body></html>`);
     w.document.close();
     setTimeout(() => { w.focus(); w.print(); }, 250);
@@ -114,8 +115,11 @@ export default function CollectionTodayPanel({ module = "all", defaultMine = fal
         </div>
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-emerald-700"><ArrowDownUp size={14}/> Grand Total</div>
-          <div className="mt-1 text-3xl font-extrabold text-emerald-800">{peso(data?.totals?.grand || 0)}</div>
-          <div className="text-xs text-emerald-700">{(data?.counts?.water?.total || 0) + (data?.counts?.loan?.total || 0)} payment(s)</div>
+          <div className="mt-1 text-3xl font-extrabold text-emerald-800">{peso((data?.totals?.grand || 0) + (data?.totals?.productCash || 0))}</div>
+          <div className="text-xs text-emerald-700">
+            {(data?.counts?.water?.total || 0) + (data?.counts?.loan?.total || 0)} payment(s)
+            {Number(data?.totals?.productCash) > 0 ? ` · incl. ${peso(data.totals.productCash)} sales/product` : ""}
+          </div>
         </div>
       </div>
 
@@ -138,6 +142,13 @@ export default function CollectionTodayPanel({ module = "all", defaultMine = fal
                 <div><div className="text-[10px] text-slate-500">Online</div><div className="font-bold">{peso(data?.totals?.loan?.online || 0)}</div></div>
                 <div><div className="text-[10px] text-slate-500">Total</div><div className="font-bold text-emerald-700">{peso(data?.totals?.loan?.total || 0)}</div></div>
               </div>
+            </div>
+          )}
+          {module === "all" && (
+            <div className="rounded-2xl border border-orange-200 bg-orange-50/40 p-3 text-sm">
+              <div className="text-xs font-semibold uppercase tracking-wide text-orange-600">Sales & Product loans (cash)</div>
+              <div className="mt-1 text-lg font-bold text-orange-700">{peso(data?.totals?.productCash || 0)}</div>
+              <div className="text-[10px] text-slate-500">Counter product sales + product-loan payments collected in cash today.</div>
             </div>
           )}
         </div>
