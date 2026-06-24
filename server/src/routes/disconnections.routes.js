@@ -32,18 +32,17 @@ function buildAddressText(addr = {}) {
   return [addr.houseLotNo, addr.streetSitioPurok, addr.barangay, addr.municipalityCity].filter(Boolean).join(", ");
 }
 
-// Compute loan-driven disconnections. Operator rule (2026-06-13): a
-// loan account is subject for disconnection only once SIX MONTHS have
-// passed since the loan's LAST due date (maturityDate) with a balance
-// still outstanding — not on the first missed installment as before.
+// Compute loan-driven disconnections. Operator rule (updated 2026-06-24): a
+// released loan whose final due date (maturityDate) has PASSED with a balance
+// still outstanding makes ALL the borrower's meters subject for disconnection
+// — i.e. "after the due day", matching the product-loan rule. (This replaced
+// the earlier 6-month grace.) Surfacing here only lists candidates; a plumber
+// must still physically disconnect before any reconnection fee applies.
 async function loanDrivenPnos(now = new Date()) {
-  // maturityDate + 6 months <= now  ⇔  maturityDate <= now − 6 months
-  const cutoff = new Date(now);
-  cutoff.setMonth(cutoff.getMonth() - 6);
   const loans = await LoanApplication.find({
     status: "released",
     balance: { $gt: 0 },
-    maturityDate: { $ne: null, $lte: cutoff },
+    maturityDate: { $ne: null, $lt: now },
   })
     .select("loanId borrowerPnNo borrowerName balance maturityDate")
     .lean();
