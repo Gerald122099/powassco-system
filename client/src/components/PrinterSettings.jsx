@@ -22,6 +22,20 @@ export default function PrinterSettings({ cashierName = "" }) {
   const [autoPrint, setAuto] = useState(isAutoPrintOn());
   const [fallback, setFallback] = useState(isDefaultFallbackOn());
 
+  // Desktop app: silent printing (no dialog) to a chosen printer.
+  const desktopSilent = typeof window !== "undefined" && !!window.powassco?.printSilent;
+  const [printers, setPrinters] = useState([]);
+  const [device, setDevice] = useState(() => { try { return localStorage.getItem("pow_print_device") || ""; } catch { return ""; } });
+  useEffect(() => {
+    if (!desktopSilent) return;
+    window.powassco.listPrinters().then((list) => setPrinters(Array.isArray(list) ? list : [])).catch(() => {});
+  }, [desktopSilent]);
+  function pickDevice(name) {
+    setDevice(name);
+    try { localStorage.setItem("pow_print_device", name); } catch { /* quota */ }
+    toast.success(name ? `Silent printing to: ${name}` : "Silent printing to the Windows default printer.");
+  }
+
   function syncStatus() {
     setConnected(printerConnected());
     setName(printerName());
@@ -78,7 +92,9 @@ export default function PrinterSettings({ cashierName = "" }) {
         total: 100,
         note: "Default-printer test.",
       });
-      toast.success("Sent to your default printer. If a Print dialog appears, pick the thermal printer and print.");
+      toast.success(desktopSilent
+        ? "Silent test sent — it should print with no pop-up."
+        : "Sent to your default printer. If a Print dialog appears, pick the thermal printer and print.");
     } catch (e) { toast.error("Default-printer test failed: " + e.message); }
   }
 
@@ -183,13 +199,38 @@ export default function PrinterSettings({ cashierName = "" }) {
             </button>
           </label>
 
+          {/* Desktop app: silent printing (no pop-up) */}
+          {desktopSilent && (
+            <div className="mt-4 rounded-2xl border border-emerald-300 bg-emerald-50 px-4 py-3">
+              <div className="flex items-center gap-2 text-sm font-bold text-emerald-800">
+                <CheckCircle2 size={16} className="text-emerald-600" /> Silent printing is ON (desktop app)
+              </div>
+              <div className="mt-0.5 text-xs text-emerald-900">
+                Receipts auto-print with <b>no pop-up</b> straight to the printer below. Your thermal printer should be the Windows default.
+              </div>
+              <label className="mt-2 block">
+                <span className="text-xs font-semibold text-emerald-800">Printer</span>
+                <select
+                  value={device}
+                  onChange={(e) => pickDevice(e.target.value)}
+                  className="mt-1 w-full rounded-xl border border-emerald-300 bg-white px-3 py-2 text-sm"
+                >
+                  <option value="">Windows default printer{printers.find((p) => p.isDefault) ? ` (${printers.find((p) => p.isDefault).displayName})` : ""}</option>
+                  {printers.map((p) => (
+                    <option key={p.name} value={p.name}>{p.displayName}{p.isDefault ? " — default" : ""}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          )}
+
           <div className="mt-3 flex flex-wrap gap-2">
             <button onClick={test} disabled={busy === "test"} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50">
               {busy === "test" ? <RefreshCw size={14} className="animate-spin" /> : <Printer size={14} />}
               Test print (thermal)
             </button>
             <button onClick={testDefault} className="inline-flex items-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100">
-              <Printer size={14} /> Test default printer
+              <Printer size={14} /> {desktopSilent ? "Test silent print" : "Test default printer"}
             </button>
           </div>
 

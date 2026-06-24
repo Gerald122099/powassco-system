@@ -5,6 +5,7 @@
 //                                 no re-selecting a driver/default printer.
 // Whichever the user connects becomes the active printer for the session and
 // silently reconnects next time via getDevices().
+import { printHtmlDoc } from "./printHtmlDoc";
 
 // Common services exposed by cheap BLE thermal printers (and Nordic UART).
 const OPTIONAL_SERVICES = [
@@ -377,19 +378,7 @@ export function printReceiptHTML({
     <div class="c foot">This serves as your official receipt.<br/>Printed ${esc(new Date().toLocaleString())}</div>
     </body></html>`;
 
-  const iframe = document.createElement("iframe");
-  iframe.setAttribute("aria-hidden", "true");
-  iframe.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;";
-  document.body.appendChild(iframe);
-  let done = false;
-  const doPrint = () => {
-    if (done) return; done = true;
-    try { iframe.contentWindow.focus(); iframe.contentWindow.print(); } catch { /* ignore */ }
-    setTimeout(() => { try { document.body.removeChild(iframe); } catch { /* ignore */ } }, 1500);
-  };
-  iframe.onload = doPrint;
-  const doc = iframe.contentWindow.document;
-  doc.open(); doc.write(html); doc.close();
-  // Safety net if onload doesn't fire (some engines on document.write).
-  setTimeout(doPrint, 500);
+  // Silent in the desktop app (no dialog, straight to the default/thermal
+  // printer); hidden-iframe dialog in the browser.
+  printHtmlDoc(html);
 }

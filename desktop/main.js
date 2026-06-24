@@ -6,8 +6,49 @@
 //
 // By default it loads the production site. For local dev, set:
 //   POWASSCO_DESKTOP_URL=http://localhost:5173
-const { app, BrowserWindow, shell, Menu } = require("electron");
+const { app, BrowserWindow, shell, Menu, ipcMain } = require("electron");
 const path = require("path");
+
+// ── Silent printing (no OS print dialog) ──────────────────────────────────
+// The renderer (web app) sends a full HTML document; we render it in a hidden
+// window and print it directly to the chosen (or default) printer. This is the
+// "auto-print, no pop-up" path the cashier wants — only possible in the desktop
+// app (browsers always show a print dialog).
+ipcMain.handle("pow:list-printers", async () => {
+  try {
+    const wc = (mainWindow && mainWindow.webContents) || null;
+    const printers = wc ? await wc.getPrintersAsync() : [];
+    return printers.map((p) => ({ name: p.name, displayName: p.displayName || p.name, isDefault: !!p.isDefault, status: p.status }));
+  } catch { return []; }
+});
+
+ipcMain.handle("pow:print-silent", async (_e, payload = {}) => {
+  const { html = "", deviceName = "" } = payload;
+  return await new Promise((resolve) => {
+    let win = new BrowserWindow({ show: false, webPreferences: { offscreen: false, sandbox: true } });
+    let settled = false;
+    const finish = (ok, error) => {
+      if (settled) return;
+      settled = true;
+      try { if (win && !win.isDestroyed()) win.destroy(); } catch { /* ignore */ }
+      win = null;
+      resolve({ ok, error: error || "" });
+    };
+    win.webContents.once("did-finish-load", () => {
+      // Let images/QR render before printing.
+      setTimeout(() => {
+        const opts = { silent: true, printBackground: true, margins: { marginType: "none" } };
+        if (deviceName) opts.deviceName = deviceName;
+        try {
+          win.webContents.print(opts, (success, failureReason) => finish(success, success ? "" : failureReason));
+        } catch (e) { finish(false, e.message); }
+      }, 300);
+    });
+    win.webContents.once("did-fail-load", (_ev, _code, desc) => finish(false, desc || "load failed"));
+    win.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(html)).catch((e) => finish(false, e.message));
+    setTimeout(() => finish(false, "print timeout"), 20000);
+  });
+});
 
 const APP_URL = (process.env.POWASSCO_DESKTOP_URL || "https://powassco.site").replace(/\/+$/, "");
 const START_PATH = "/employee-login";
