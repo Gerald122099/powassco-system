@@ -82,9 +82,13 @@ export default function PaymentSettingsPanel() {
           xenditApiKey: s.xenditApiKey,
           xenditCallbackToken: s.xenditCallbackToken,
           pspActive: s.pspActive,
+          receiptStyle: s.receiptStyle === "dotmatrix" ? "dotmatrix" : "classic",
         },
       });
       setS(updated);
+      // Reflect the new receipt style on THIS device immediately (others sync
+      // on their next app load via /public/payments/info).
+      try { localStorage.setItem("pow_receipt_style", updated.receiptStyle === "dotmatrix" ? "dotmatrix" : "classic"); } catch { /* ignore */ }
       setToast("Payment settings saved.");
       setTimeout(() => setToast(""), 2500);
     } catch (e) {
@@ -122,6 +126,32 @@ export default function PaymentSettingsPanel() {
         >
           <span className={`absolute top-1 h-5 w-5 rounded-full bg-white transition-all ${s.onlineEnabled !== false ? "left-6" : "left-1"}`} />
         </button>
+      </div>
+
+      {/* Receipt printing style — system-wide, synced to every terminal */}
+      <div className="mt-4 rounded-2xl border border-slate-200 p-4">
+        <div className="font-semibold text-slate-800">Receipt font &amp; format</div>
+        <div className="text-sm text-slate-500">Applies to every cashier terminal (synced on their next app open). Both print full-black for thermal clarity.</div>
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:max-w-md">
+          {[
+            { v: "classic", label: "Classic", hint: "Courier · original" },
+            { v: "dotmatrix", label: "Dot-matrix", hint: "bitArray-A2 · larger" },
+          ].map((o) => {
+            const active = (s.receiptStyle === "dotmatrix" ? "dotmatrix" : "classic") === o.v;
+            return (
+              <button
+                key={o.v}
+                type="button"
+                onClick={() => set("receiptStyle", o.v)}
+                className={`rounded-xl border px-3 py-2 text-left text-sm font-semibold transition ${active ? "border-emerald-500 bg-emerald-50 text-emerald-800 ring-1 ring-emerald-500" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+              >
+                {o.label}
+                <div className="text-[10px] font-normal text-slate-400">{o.hint}</div>
+              </button>
+            );
+          })}
+        </div>
+        <div className="mt-2 text-[11px] text-slate-400">Don’t forget to <b>Save</b> below to apply.</div>
       </div>
 
       {/* Mode */}

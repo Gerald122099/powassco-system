@@ -23,6 +23,11 @@ const PaymentSettingsSchema = new mongoose.Schema(
     xenditCallbackToken: { type: String, default: "" }, // sent as X-CALLBACK-TOKEN on each event
     pspActive: { type: Boolean, default: false }, // admin must explicitly activate realtime
 
+    // Receipt printing — system-wide (admin-set), synced to every terminal.
+    //   "classic"   — original compact Courier receipt
+    //   "dotmatrix" — embedded bitArray-A2 dot-matrix font, larger
+    receiptStyle: { type: String, enum: ["classic", "dotmatrix"], default: "classic" },
+
     updatedBy: { type: String, default: "" },
   },
   { timestamps: true }

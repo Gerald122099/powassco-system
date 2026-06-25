@@ -18,6 +18,18 @@ export function AuthProvider({ children }) {
     else localStorage.removeItem("pow_user");
   }, [token, user]);
 
+  // Sync the admin-set receipt style (Payment Settings) to this device. The
+  // thermal receipt builder reads pow_receipt_style synchronously, so we cache
+  // the system-wide value here on each app load. Public route — no auth needed.
+  useEffect(() => {
+    apiFetch("/public/payments/info")
+      .then((info) => {
+        const st = info?.receiptStyle === "dotmatrix" ? "dotmatrix" : "classic";
+        try { localStorage.setItem("pow_receipt_style", st); } catch { /* ignore */ }
+      })
+      .catch(() => { /* offline — keep last cached style */ });
+  }, []);
+
   const getDeviceToken = () => localStorage.getItem("pow_device") || "";
   const storeDeviceToken = (t) => {
     if (t) localStorage.setItem("pow_device", t);

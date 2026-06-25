@@ -23,7 +23,7 @@ router.get("/settings", ...adminGuard, async (req, res) => {
 });
 router.put("/settings", ...adminGuard, async (req, res) => {
   const s = await getSettings();
-  const allow = ["onlineEnabled", "mode", "qrImage", "onlineFee", "payeeName", "instructions", "paymongoSecretKey", "paymongoPublicKey", "paymongoWebhookSecret", "xenditApiKey", "xenditCallbackToken", "pspActive"];
+  const allow = ["onlineEnabled", "mode", "qrImage", "onlineFee", "payeeName", "instructions", "paymongoSecretKey", "paymongoPublicKey", "paymongoWebhookSecret", "xenditApiKey", "xenditCallbackToken", "pspActive", "receiptStyle"];
   // Never let DB values overwrite host-env values (env wins).
   const env = envOverrides();
   for (const k of allow) if (k in req.body && !env[k]) s[k] = req.body[k];
