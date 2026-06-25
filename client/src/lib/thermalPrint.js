@@ -349,13 +349,22 @@ export function printReceiptHTML({
   meta.push(r("Date", new Date().toLocaleString()));
   if (cashierName) meta.push(r("Cashier", cashierName));
   const body = lines.map(([l, v]) => r(l, v)).join("");
+  // Receipt style is switchable in Printer Settings (pow_receipt_style):
+  //   • "classic"   — original compact Courier New format (DEFAULT).
+  //   • "dotmatrix" — embedded bitArray-A2 dot-matrix font, slightly larger.
+  // Both keep the full-black, no-fade treatment.
+  let style = "classic";
+  try { style = localStorage.getItem("pow_receipt_style") || "classic"; } catch { /* ignore */ }
+  const F = style === "dotmatrix"
+    ? { face: RECEIPT_FONT_FACE, fam: "'bitArray-A2','Courier New','Consolas',monospace", body: 15, lh: 1.32, h1: 23, h1s: 0.35, sub: 12, sec: 14, total: 20, foot: 12 }
+    : { face: "", fam: "'Courier New','Consolas',monospace", body: 12, lh: 1.4, h1: 18, h1s: 0.4, sub: 10, sec: 11, total: 16, foot: 9.5 };
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(orNo || title)}</title>
     <style>
-      ${RECEIPT_FONT_FACE}
+      ${F.face}
       @page { size: 58mm auto; margin: 0; }
       /* FULL BLACK, no fade: force #000 on every node, force-print colors,
-         disable anti-aliasing (gray edges print faint on thermal), and add a
-         glyph stroke so the dot-matrix strokes burn solid black. */
+         disable anti-aliasing (gray edges print faint on thermal), and a glyph
+         stroke so strokes burn solid black. */
       * {
         box-sizing: border-box;
         color: #000 !important;
@@ -363,20 +372,18 @@ export function printReceiptHTML({
         -webkit-font-smoothing: none; font-smooth: never; text-rendering: optimizeLegibility;
         -webkit-text-stroke: 0.22px #000;
       }
-      /* Receipt font: embedded bitArray-A2 (dot-matrix), monospace fallback.
-         VT323 has a small x-height, so sizes run a touch larger than Courier. */
-      body { width: 58mm; margin: 0; padding: 3mm 2mm; font-family: 'bitArray-A2', 'Courier New', 'Consolas', monospace; font-size: 15px; line-height: 1.32; font-weight: 700; }
+      body { width: 58mm; margin: 0; padding: 3mm 2mm; font-family: ${F.fam}; font-size: ${F.body}px; line-height: ${F.lh}; font-weight: 700; }
       .c { text-align: center; }
-      h1 { font-size: 23px; margin: 0; letter-spacing: 1px; font-weight: 800; -webkit-text-stroke: 0.35px #000; }
-      .sub { font-size: 12px; margin: 0; font-weight: 700; }
+      h1 { font-size: ${F.h1}px; margin: 0; letter-spacing: 1px; font-weight: 800; -webkit-text-stroke: ${F.h1s}px #000; }
+      .sub { font-size: ${F.sub}px; margin: 0; font-weight: 700; }
       .ttl { font-weight: 800; margin: 3px 0; letter-spacing: 1px; }
       .line { border-top: 2px solid #000; margin: 4px 0; }
       .r { display: flex; justify-content: space-between; gap: 6px; }
       .r span:last-child { text-align: right; }
       .amt span:last-child { font-weight: 800; }
-      .sec { text-align: center; font-weight: 800; font-size: 14px; margin: 3px 0 1px; }
-      .total { display: flex; justify-content: space-between; font-weight: 800; font-size: 20px; margin-top: 3px; border: 2px solid #000; border-radius: 4px; padding: 3px 5px; }
-      .foot { font-size: 12px; margin-top: 6px; font-weight: 700; }
+      .sec { text-align: center; font-weight: 800; font-size: ${F.sec}px; margin: 3px 0 1px; }
+      .total { display: flex; justify-content: space-between; font-weight: 800; font-size: ${F.total}px; margin-top: 3px; border: 2px solid #000; border-radius: 4px; padding: 3px 5px; }
+      .foot { font-size: ${F.foot}px; margin-top: 6px; font-weight: 700; }
     </style></head><body>
     <div class="c">
       <h1>POWASSCO</h1>

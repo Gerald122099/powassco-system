@@ -21,6 +21,13 @@ export default function PrinterSettings({ cashierName = "" }) {
   const [busy, setBusy] = useState("");
   const [autoPrint, setAuto] = useState(isAutoPrintOn());
   const [fallback, setFallback] = useState(isDefaultFallbackOn());
+  // Receipt style: "classic" (original Courier) or "dotmatrix" (bitArray-A2).
+  const [rstyle, setRstyle] = useState(() => { try { return localStorage.getItem("pow_receipt_style") || "classic"; } catch { return "classic"; } });
+  function pickStyle(v) {
+    setRstyle(v);
+    try { localStorage.setItem("pow_receipt_style", v); } catch { /* quota */ }
+    toast.success(v === "dotmatrix" ? "Receipt style: Dot-matrix (bitArray-A2)." : "Receipt style: Classic (Courier).");
+  }
 
   // Desktop app: silent printing (no dialog) to a chosen printer.
   const desktopSilent = typeof window !== "undefined" && !!window.powassco?.printSilent;
@@ -198,6 +205,30 @@ export default function PrinterSettings({ cashierName = "" }) {
               <span className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition ${fallback ? "left-[22px]" : "left-0.5"}`} />
             </button>
           </label>
+
+          {/* Receipt font / format */}
+          <div className="mt-3 rounded-2xl border border-slate-200 px-4 py-3">
+            <div className="text-sm font-semibold text-slate-800">Receipt font &amp; format</div>
+            <div className="text-xs text-slate-500">Switch between the original Courier receipt and the dot-matrix (bitArray-A2) look.</div>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => pickStyle("classic")}
+                className={`rounded-xl border px-3 py-2 text-sm font-semibold transition ${rstyle === "classic" ? "border-emerald-500 bg-emerald-50 text-emerald-800 ring-1 ring-emerald-500" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+              >
+                <span style={{ fontFamily: "'Courier New', monospace" }}>Classic</span>
+                <div className="text-[10px] font-normal text-slate-400">Courier · original</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => pickStyle("dotmatrix")}
+                className={`rounded-xl border px-3 py-2 text-sm font-semibold transition ${rstyle === "dotmatrix" ? "border-emerald-500 bg-emerald-50 text-emerald-800 ring-1 ring-emerald-500" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+              >
+                Dot-matrix
+                <div className="text-[10px] font-normal text-slate-400">bitArray-A2 · larger</div>
+              </button>
+            </div>
+          </div>
 
           {/* Desktop app: silent printing (no pop-up) */}
           {desktopSilent && (
