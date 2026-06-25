@@ -82,13 +82,13 @@ export default function PaymentSettingsPanel() {
           xenditApiKey: s.xenditApiKey,
           xenditCallbackToken: s.xenditCallbackToken,
           pspActive: s.pspActive,
-          receiptStyle: s.receiptStyle === "dotmatrix" ? "dotmatrix" : "classic",
+          receiptStyle: ["original", "classic", "dotmatrix"].includes(s.receiptStyle) ? s.receiptStyle : "original",
         },
       });
       setS(updated);
       // Reflect the new receipt style on THIS device immediately (others sync
       // on their next app load via /public/payments/info).
-      try { localStorage.setItem("pow_receipt_style", updated.receiptStyle === "dotmatrix" ? "dotmatrix" : "classic"); } catch { /* ignore */ }
+      try { localStorage.setItem("pow_receipt_style", ["original", "classic", "dotmatrix"].includes(updated.receiptStyle) ? updated.receiptStyle : "original"); } catch { /* ignore */ }
       setToast("Payment settings saved.");
       setTimeout(() => setToast(""), 2500);
     } catch (e) {
@@ -131,13 +131,14 @@ export default function PaymentSettingsPanel() {
       {/* Receipt printing style — system-wide, synced to every terminal */}
       <div className="mt-4 rounded-2xl border border-slate-200 p-4">
         <div className="font-semibold text-slate-800">Receipt font &amp; format</div>
-        <div className="text-sm text-slate-500">Applies to every cashier terminal (synced on their next app open). Both print full-black for thermal clarity.</div>
-        <div className="mt-3 grid grid-cols-2 gap-2 sm:max-w-md">
+        <div className="text-sm text-slate-500">Applies to every cashier terminal (synced on their next app open). <b>Original</b> is the old light receipt; the other two print full-black for thermal clarity.</div>
+        <div className="mt-3 grid grid-cols-3 gap-2">
           {[
-            { v: "classic", label: "Classic", hint: "Courier · original" },
+            { v: "original", label: "Original", hint: "Courier · light (old)" },
+            { v: "classic", label: "Bold black", hint: "Courier · darker" },
             { v: "dotmatrix", label: "Dot-matrix", hint: "bitArray-A2 · larger" },
           ].map((o) => {
-            const active = (s.receiptStyle === "dotmatrix" ? "dotmatrix" : "classic") === o.v;
+            const active = (["original", "classic", "dotmatrix"].includes(s.receiptStyle) ? s.receiptStyle : "original") === o.v;
             return (
               <button
                 key={o.v}

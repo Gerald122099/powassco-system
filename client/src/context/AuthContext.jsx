@@ -24,7 +24,7 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     apiFetch("/public/payments/info")
       .then((info) => {
-        const st = info?.receiptStyle === "dotmatrix" ? "dotmatrix" : "classic";
+        const st = ["original", "classic", "dotmatrix"].includes(info?.receiptStyle) ? info.receiptStyle : "original";
         try { localStorage.setItem("pow_receipt_style", st); } catch { /* ignore */ }
       })
       .catch(() => { /* offline — keep last cached style */ });

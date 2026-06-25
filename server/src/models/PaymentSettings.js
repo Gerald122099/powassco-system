@@ -24,9 +24,10 @@ const PaymentSettingsSchema = new mongoose.Schema(
     pspActive: { type: Boolean, default: false }, // admin must explicitly activate realtime
 
     // Receipt printing — system-wide (admin-set), synced to every terminal.
-    //   "classic"   — original compact Courier receipt
-    //   "dotmatrix" — embedded bitArray-A2 dot-matrix font, larger
-    receiptStyle: { type: String, enum: ["classic", "dotmatrix"], default: "classic" },
+    //   "original"  — the original light Courier receipt (no bold/forced-black)
+    //   "classic"   — Courier with the full-black, bold, no-fade treatment
+    //   "dotmatrix" — embedded bitArray-A2 dot-matrix font, larger + full-black
+    receiptStyle: { type: String, enum: ["original", "classic", "dotmatrix"], default: "original" },
 
     updatedBy: { type: String, default: "" },
   },

@@ -31,7 +31,7 @@ router.get("/info", async (req, res) => {
     onlineFee: s.onlineFee,
     payeeName: s.payeeName,
     instructions: s.instructions,
-    receiptStyle: s.receiptStyle || "classic", // synced to every terminal for receipt printing
+    receiptStyle: s.receiptStyle || "original", // synced to every terminal for receipt printing
   });
 });
 

@@ -23,7 +23,8 @@ export default function PrinterSettings({ cashierName = "" }) {
   const [fallback, setFallback] = useState(isDefaultFallbackOn());
   // Receipt style is admin-set (Payment Settings) and synced to this device via
   // localStorage; shown here read-only so the cashier knows what will print.
-  const rstyle = (() => { try { return localStorage.getItem("pow_receipt_style") === "dotmatrix" ? "dotmatrix" : "classic"; } catch { return "classic"; } })();
+  const rstyle = (() => { try { const v = localStorage.getItem("pow_receipt_style"); return ["original", "classic", "dotmatrix"].includes(v) ? v : "original"; } catch { return "original"; } })();
+  const RSTYLE_LABEL = { original: "Original (Courier)", classic: "Bold black (Courier)", dotmatrix: "Dot-matrix (bitArray-A2)" };
 
   // Desktop app: silent printing (no dialog) to a chosen printer.
   const desktopSilent = typeof window !== "undefined" && !!window.powassco?.printSilent;
@@ -209,7 +210,7 @@ export default function PrinterSettings({ cashierName = "" }) {
               <div className="text-xs text-slate-500">Set by an admin in <b>Payment Settings</b> for all terminals.</div>
             </div>
             <span className="shrink-0 rounded-full border border-slate-300 bg-slate-50 px-3 py-1 text-xs font-bold text-slate-700">
-              {rstyle === "dotmatrix" ? "Dot-matrix (bitArray-A2)" : "Classic (Courier)"}
+              {RSTYLE_LABEL[rstyle]}
             </span>
           </div>
 

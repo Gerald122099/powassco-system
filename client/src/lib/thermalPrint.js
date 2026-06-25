@@ -349,41 +349,41 @@ export function printReceiptHTML({
   meta.push(r("Date", new Date().toLocaleString()));
   if (cashierName) meta.push(r("Cashier", cashierName));
   const body = lines.map(([l, v]) => r(l, v)).join("");
-  // Receipt style is switchable in Printer Settings (pow_receipt_style):
-  //   • "classic"   — original compact Courier New format (DEFAULT).
-  //   • "dotmatrix" — embedded bitArray-A2 dot-matrix font, slightly larger.
-  // Both keep the full-black, no-fade treatment.
-  let style = "classic";
-  try { style = localStorage.getItem("pow_receipt_style") || "classic"; } catch { /* ignore */ }
-  const F = style === "dotmatrix"
-    ? { face: RECEIPT_FONT_FACE, fam: "'bitArray-A2','Courier New','Consolas',monospace", body: 15, lh: 1.32, h1: 23, h1s: 0.35, sub: 12, sec: 14, total: 20, foot: 12 }
-    : { face: "", fam: "'Courier New','Consolas',monospace", body: 12, lh: 1.4, h1: 18, h1s: 0.4, sub: 10, sec: 11, total: 16, foot: 9.5 };
+  // Receipt style is admin-set (Payment Settings) and synced to pow_receipt_style:
+  //   • "original"  — the original light receipt (Courier, normal weight, no
+  //                   forced-black/stroke, dashed rules). DEFAULT.
+  //   • "classic"   — Courier with the full-black, bold, no-fade treatment.
+  //   • "dotmatrix" — embedded bitArray-A2 dot-matrix font, larger + full-black.
+  const STYLES = {
+    original:  { face: "", fam: "'Courier New', monospace", body: 11, lh: 1.35, h1: 17, sub: 9.5, sec: 10, total: 15, foot: 9, dark: false, bodyW: 400, subW: 400, strongW: "bold", h1s: 0, line: "1px dashed #000", totalBorder: "1.5px solid #000" },
+    classic:   { face: "", fam: "'Courier New','Consolas',monospace", body: 12, lh: 1.4, h1: 18, sub: 10, sec: 11, total: 16, foot: 9.5, dark: true, bodyW: 700, subW: 700, strongW: 800, h1s: 0.4, line: "2px solid #000", totalBorder: "2px solid #000" },
+    dotmatrix: { face: RECEIPT_FONT_FACE, fam: "'bitArray-A2','Courier New','Consolas',monospace", body: 15, lh: 1.32, h1: 23, sub: 12, sec: 14, total: 20, foot: 12, dark: true, bodyW: 700, subW: 700, strongW: 800, h1s: 0.35, line: "2px solid #000", totalBorder: "2px solid #000" },
+  };
+  let style = "original";
+  try { style = localStorage.getItem("pow_receipt_style") || "original"; } catch { /* ignore */ }
+  const F = STYLES[style] || STYLES.original;
+  // The dark treatment (forced #000, anti-alias off, glyph stroke) is what made
+  // the receipt heavy — "original" opts out of it entirely.
+  const starRule = F.dark
+    ? "* { box-sizing: border-box; color: #000 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; -webkit-font-smoothing: none; font-smooth: never; text-rendering: optimizeLegibility; -webkit-text-stroke: 0.22px #000; }"
+    : "* { box-sizing: border-box; }";
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(orNo || title)}</title>
     <style>
       ${F.face}
       @page { size: 58mm auto; margin: 0; }
-      /* FULL BLACK, no fade: force #000 on every node, force-print colors,
-         disable anti-aliasing (gray edges print faint on thermal), and a glyph
-         stroke so strokes burn solid black. */
-      * {
-        box-sizing: border-box;
-        color: #000 !important;
-        -webkit-print-color-adjust: exact; print-color-adjust: exact;
-        -webkit-font-smoothing: none; font-smooth: never; text-rendering: optimizeLegibility;
-        -webkit-text-stroke: 0.22px #000;
-      }
-      body { width: 58mm; margin: 0; padding: 3mm 2mm; font-family: ${F.fam}; font-size: ${F.body}px; line-height: ${F.lh}; font-weight: 700; }
+      ${starRule}
+      body { width: 58mm; margin: 0; padding: 3mm 2mm; font-family: ${F.fam}; font-size: ${F.body}px; color: #000; line-height: ${F.lh}; font-weight: ${F.bodyW}; }
       .c { text-align: center; }
-      h1 { font-size: ${F.h1}px; margin: 0; letter-spacing: 1px; font-weight: 800; -webkit-text-stroke: ${F.h1s}px #000; }
-      .sub { font-size: ${F.sub}px; margin: 0; font-weight: 700; }
-      .ttl { font-weight: 800; margin: 3px 0; letter-spacing: 1px; }
-      .line { border-top: 2px solid #000; margin: 4px 0; }
+      h1 { font-size: ${F.h1}px; margin: 0; letter-spacing: 1px; font-weight: ${F.strongW}; ${F.dark ? `-webkit-text-stroke: ${F.h1s}px #000;` : ""} }
+      .sub { font-size: ${F.sub}px; margin: 0; font-weight: ${F.subW}; }
+      .ttl { font-weight: ${F.strongW}; margin: 3px 0; letter-spacing: 1px; }
+      .line { border-top: ${F.line}; margin: 4px 0; }
       .r { display: flex; justify-content: space-between; gap: 6px; }
       .r span:last-child { text-align: right; }
-      .amt span:last-child { font-weight: 800; }
-      .sec { text-align: center; font-weight: 800; font-size: ${F.sec}px; margin: 3px 0 1px; }
-      .total { display: flex; justify-content: space-between; font-weight: 800; font-size: ${F.total}px; margin-top: 3px; border: 2px solid #000; border-radius: 4px; padding: 3px 5px; }
-      .foot { font-size: ${F.foot}px; margin-top: 6px; font-weight: 700; }
+      .amt span:last-child { font-weight: ${F.strongW}; }
+      .sec { text-align: center; font-weight: ${F.strongW}; font-size: ${F.sec}px; margin: 3px 0 1px; }
+      .total { display: flex; justify-content: space-between; font-weight: ${F.strongW}; font-size: ${F.total}px; margin-top: 3px; border: ${F.totalBorder}; border-radius: 4px; padding: 3px 5px; }
+      .foot { font-size: ${F.foot}px; margin-top: 6px; font-weight: ${F.subW}; }
     </style></head><body>
     <div class="c">
       <h1>POWASSCO</h1>
