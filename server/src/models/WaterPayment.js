@@ -38,7 +38,10 @@ const WaterPaymentSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-WaterPaymentSchema.index({ orNo: 1 }, { unique: true }); // OR No unique
+// OR No is NOT globally unique: one physical OR can cover several meters of the
+// same account (paper-ledger practice). Cross-account reuse of a live OR is
+// blocked in the pay-water handler. Plain index for lookups/search.
+WaterPaymentSchema.index({ orNo: 1 });
 WaterPaymentSchema.index({ pnNo: 1, paidAt: -1 });
 WaterPaymentSchema.index({ meterNumber: 1, periodKey: 1, paidAt: -1 });
 WaterPaymentSchema.index({ method: 1 });

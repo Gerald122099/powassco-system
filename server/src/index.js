@@ -267,9 +267,29 @@ async function connectDB() {
     startBackupJob();
     // Real-time: watch the DB for changes and ping subscribed clients.
     startChangeStream(mongoose.connection);
+    // One-time, idempotent: the water OR number is no longer globally unique —
+    // one physical OR can cover several meters of the SAME account (matches the
+    // paper ledger). Cross-account reuse of a LIVE OR is still blocked in the
+    // pay-water handler. Drop the old unique index if it's still there.
+    try { await relaxWaterOrIndex(); } catch (e) { console.error("⚠️  relaxWaterOrIndex:", e.message); }
   } catch (err) {
     console.error("❌ MongoDB connection failed; retrying in 5s:", err.message);
     setTimeout(connectDB, 5000);
+  }
+}
+
+// Drop the legacy unique index on waterpayments.orNo so the same OR can be
+// stored on multiple meters of one account. Safe to run every boot: it only
+// acts when a UNIQUE orNo index is present, then ensures a plain lookup index.
+async function relaxWaterOrIndex() {
+  const coll = mongoose.connection.db.collection("waterpayments");
+  let idx;
+  try { idx = await coll.indexes(); } catch { return; } // collection may not exist yet
+  const uniqueOr = idx.find((i) => i.key && i.key.orNo === 1 && i.unique);
+  if (uniqueOr) {
+    await coll.dropIndex(uniqueOr.name);
+    console.log(`ℹ️  Dropped unique index ${uniqueOr.name} on waterpayments.orNo (duplicate OR now allowed within an account).`);
+    await coll.createIndex({ orNo: 1 }); // keep a non-unique index for lookups
   }
 }
 
