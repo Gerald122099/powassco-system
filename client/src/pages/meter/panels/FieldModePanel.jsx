@@ -311,7 +311,14 @@ export default function FieldModePanel() {
         : prevReadingFor(member, mt.meterNumber);
       const present = parseFloat(val);
       const cons = Number.isFinite(present) ? (present - prev) * (mt.consumptionMultiplier || 1) : 0;
-      return { meterNumber: mt.meterNumber, mt, val, prev, present, consumed: cons };
+      // Typo guard: flag a consumption way above this meter's last actual
+      // (≥3× and ≥30 m³), or ≥100 m³ with no history — a fat-fingered extra
+      // digit becomes a huge wrong bill, so make the plumber look twice.
+      const lastCons = Number(member.lastActualReadings?.[mnorm(mt.meterNumber)]?.consumed);
+      const unusual = Number.isFinite(lastCons) && lastCons > 0
+        ? cons >= Math.max(30, lastCons * 3)
+        : cons >= 100;
+      return { meterNumber: mt.meterNumber, mt, val, prev, present, consumed: cons, lastCons: Number.isFinite(lastCons) ? lastCons : null, unusual };
     });
     setConfirmSave({ member, items });
   }
@@ -1124,7 +1131,7 @@ export default function FieldModePanel() {
             </div>
             <div className="space-y-2">
               {confirmSave.items.map((it) => (
-                <div key={it.meterNumber} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div key={it.meterNumber} className={`rounded-xl border p-3 ${it.unusual ? "border-red-300 bg-red-50" : "border-slate-200 bg-slate-50"}`}>
                   <div className="flex items-center justify-between text-xs text-slate-500">
                     <span className="font-mono font-semibold text-slate-700">Meter {it.meterNumber}</span>
                     <span>prev {fmt(it.prev)}</span>
@@ -1135,8 +1142,13 @@ export default function FieldModePanel() {
                   </div>
                   <div className="mt-0.5 flex items-center justify-between">
                     <div className="text-xs text-slate-500">Consumption</div>
-                    <div className="font-mono text-sm font-semibold text-purple-700">{fmt(it.consumed)} m³</div>
+                    <div className={`font-mono text-sm font-semibold ${it.unusual ? "text-red-700" : "text-purple-700"}`}>{fmt(it.consumed)} m³</div>
                   </div>
+                  {it.unusual && (
+                    <div className="mt-1.5 rounded-lg border border-red-200 bg-white px-2 py-1.5 text-[11px] font-semibold text-red-700">
+                      ⚠ Unusually high{it.lastCons != null ? ` — last month was ${fmt(it.lastCons)} m³` : ""}. Double-check the meter digits before saving.
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
