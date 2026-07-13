@@ -113,7 +113,10 @@ export async function apiDownload(path, { token, filename } = {}) {
 
 export async function apiFetch(
   path,
-  { method = "GET", body, token, headers: extraHeaders } = {}
+  // timeoutMs (opt-in): aborts the request after N ms. Used by the field-sync
+  // paths so a hung request on a weak cell signal can't wedge the sync lock —
+  // callers that stream large payloads simply don't pass it.
+  { method = "GET", body, token, headers: extraHeaders, timeoutMs } = {}
 ) {
   const cleanPath = String(path).startsWith("/") ? path : `/${path}`;
   const url = `${API_BASE}${cleanPath}`;
@@ -143,14 +146,26 @@ export async function apiFetch(
   };
 
   let res;
+  let timer = null;
+  let controller = null;
+  if (Number(timeoutMs) > 0 && typeof AbortController !== "undefined") {
+    controller = new AbortController();
+    timer = setTimeout(() => controller.abort(), Number(timeoutMs));
+  }
   try {
     res = await fetch(url, {
       method,
       headers,
       body: body ? JSON.stringify(body) : undefined,
+      ...(controller ? { signal: controller.signal } : {}),
     });
-  } catch {
+  } catch (e) {
+    if (e?.name === "AbortError") {
+      throw new Error("Request timed out — weak signal. It will be retried.");
+    }
     throw new Error("Network error. Please check server or connection.");
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 
   const text = await res.text();

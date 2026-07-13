@@ -103,11 +103,14 @@ export default function FieldModePanel() {
     ]);
     setMembers(m || []);
     setPuroks(pks || []);
-    setQueueKeys(new Set((queue || []).map((x) => x.id)));
+    // Key by PN__METER built from the row FIELDS (never x.id — the stored id
+    // also carries the period so cross-period rows can't clobber each other).
+    const qk = (x) => `${String(x.pnNo || "").toUpperCase().trim()}__${String(x.meterNumber || "").toUpperCase().trim()}`;
+    setQueueKeys(new Set((queue || []).map(qk)));
     // Map each queued reading by its key so the UI can show "encoded
     // X m³" instead of an empty input on already-read meters.
     const qbk = {};
-    for (const r of queue || []) qbk[r.id] = r;
+    for (const r of queue || []) qbk[qk(r)] = r;
     setQueueByKey(qbk);
     setPending((queue || []).filter((x) => !x.synced).length);
     if (pk) setPeriodKey(pk);
@@ -164,7 +167,10 @@ export default function FieldModePanel() {
         flash(`✓ Synced ${success} reading(s) to the server.`, "success");
       } else if (failed > 0) {
         // Auto-retry once after 5s; persistent banner stays until success.
-        flash(`Synced ${success}, ${failed} still pending — auto-retry in 5s…`, "error", true);
+        // Show the first concrete reason so a server rejection (e.g. "not in
+        // your batch") isn't mistaken for a signal problem.
+        const why = Array.isArray(res.errors) && res.errors.length ? ` — ${res.errors[0]}` : "";
+        flash(`Synced ${success}, ${failed} still pending${why} — auto-retry in 5s…`, "error", true);
         if (retryTimer.current) clearTimeout(retryTimer.current);
         retryTimer.current = setTimeout(() => {
           if (navigator.onLine) doSync();
@@ -413,7 +419,8 @@ export default function FieldModePanel() {
     let present = inputs[key];
     const prev = prevReadingFor(member, mt.meterNumber);
     if (present === undefined || present === "") {
-      const q = (await odb.getQueue()).find((x) => x.id === key);
+      // Match by fields (the stored id also carries the period key).
+      const q = (await odb.getQueue()).find((x) => `${mnorm(x.pnNo)}__${mnorm(x.meterNumber)}` === key);
       if (!q) return flash("Enter or save a reading first.", "error");
       present = q.presentReading;
     }

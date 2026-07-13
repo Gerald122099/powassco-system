@@ -41,9 +41,11 @@ export async function updateMember(member) {
   await (await db()).put("members", member);
 }
 
-// Queue keyed by pnNo__meter so re-encoding the same meter overwrites (no dupes).
+// Queue keyed by pnNo__meter__period so re-encoding the same meter in the
+// SAME period overwrites (no dupes), while a still-unsynced reading from a
+// PREVIOUS period is never clobbered when the new month starts.
 export async function enqueueReading(reading) {
-  const id = `${reading.pnNo}__${reading.meterNumber}`;
+  const id = `${reading.pnNo}__${reading.meterNumber}__${reading.periodKey || ""}`;
   await (await db()).put("queue", { ...reading, id, synced: false, ts: Date.now() });
   return id;
 }
@@ -57,6 +59,22 @@ export async function removeFromQueue(ids) {
   const d = await db();
   const tx = d.transaction("queue", "readwrite");
   for (const id of ids) await tx.store.delete(id);
+  await tx.done;
+}
+// Record a failed sync attempt on specific queue rows so the UI can show WHY a
+// reading keeps re-trying (server rejection, network drop) instead of failing
+// silently forever.
+export async function markSyncFailure(ids, error) {
+  const d = await db();
+  const tx = d.transaction("queue", "readwrite");
+  for (const id of ids) {
+    const row = await tx.store.get(id);
+    if (!row) continue;
+    row.attempts = (Number(row.attempts) || 0) + 1;
+    row.lastError = String(error || "sync failed").slice(0, 300);
+    row.lastAttemptAt = Date.now();
+    await tx.store.put(row);
+  }
   await tx.done;
 }
 export async function clearOffline() {

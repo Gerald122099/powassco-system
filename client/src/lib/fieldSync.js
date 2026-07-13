@@ -19,8 +19,8 @@ export function prevPeriodKey(periodKey = currentPeriodKey()) {
 // the two becomes the wall-clock cost instead of the sum.
 export async function downloadBatch({ token, periodKey = currentPeriodKey() }) {
   const [res, settingsRes] = await Promise.all([
-    apiFetch(`/water/readings/my-batch?periodKey=${periodKey}`, { token }),
-    apiFetch("/water/settings", { token }).catch(() => null),
+    apiFetch(`/water/readings/my-batch?periodKey=${periodKey}`, { token, timeoutMs: 120000 }),
+    apiFetch("/water/settings", { token, timeoutMs: 30000 }).catch(() => null),
   ]);
 
   const items = res.items || [];
@@ -50,8 +50,8 @@ export async function downloadAllMeters({ token, periodKey = currentPeriodKey(),
   const qs = new URLSearchParams({ periodKey });
   if (barangay) qs.set("barangay", barangay);
   const [res, settingsRes] = await Promise.all([
-    apiFetch(`/water/readings/field-all?${qs}`, { token }),
-    apiFetch("/water/settings", { token }).catch(() => null),
+    apiFetch(`/water/readings/field-all?${qs}`, { token, timeoutMs: 120000 }),
+    apiFetch("/water/settings", { token, timeoutMs: 30000 }).catch(() => null),
   ]);
   const items = res.items || [];
   if (settingsRes) await odb.setMeta("settings", settingsRes);
@@ -73,7 +73,7 @@ export async function downloadAllMeters({ token, periodKey = currentPeriodKey(),
 export async function downloadUpdates({ token, periodKey = currentPeriodKey() } = {}) {
   const sinceRaw = (await odb.getMeta("lastUpdateAt")) || (await odb.getMeta("downloadedAt")) || 0;
   const since = typeof sinceRaw === "number" ? new Date(sinceRaw).toISOString() : sinceRaw;
-  const r = await apiFetch(`/water/readings/field-updates?periodKey=${periodKey}&since=${encodeURIComponent(since)}`, { token });
+  const r = await apiFetch(`/water/readings/field-updates?periodKey=${periodKey}&since=${encodeURIComponent(since)}`, { token, timeoutMs: 30000 });
   const readings = r.readings || [];
   await odb.setMeta("lastUpdateAt", r.now || new Date().toISOString());
   if (!readings.length) return { ok: true, patched: 0, changed: 0 };
@@ -184,7 +184,8 @@ async function runSync({ token, user }) {
 
   let success = 0;
   let failed = 0;
-  const doneIds = [];
+  const errors = []; // human-readable reasons for the UI (first few)
+  const rkey = (x) => `${String(x.pnNo).toUpperCase().trim()}__${String(x.meterNumber).toUpperCase().trim()}`;
 
   for (const [periodKey, rows] of Object.entries(byPeriod)) {
     // Split by forceUpdate so we can re-encode edited rows without
@@ -205,38 +206,63 @@ async function runSync({ token, user }) {
       readDate: r.readDate,
       coords: r.coords || null,
     }));
-    const res = await apiFetch("/water/batches/import-readings", {
-      method: "POST",
-      token,
-      body: {
-        readings,
-        periodKey,
-        readerName: user?.fullName || "",
-        readerId: user?.employeeId || user?._id || "",
-        importDate: Date.now(),
-        forceUpdate: group.force,
-        // Generate bills inline so they appear in the Water Bill
-        // Officer dashboard immediately after the field reader syncs.
-        // The server batches the bill upserts via WaterBill.bulkWrite
-        // so this stays cheap (single roundtrip per sync regardless of
-        // row count).
-        generateBill: true,
-      },
-    });
-    // Map server per-row results back to queue ids; accept success + skipped.
+    let res;
+    try {
+      res = await apiFetch("/water/batches/import-readings", {
+        method: "POST",
+        token,
+        // Abort a hung request after 45s so one dead cell hop can't wedge
+        // the sync lock — the rows stay queued and the next tick retries.
+        timeoutMs: 45000,
+        body: {
+          readings,
+          periodKey,
+          readerName: user?.fullName || "",
+          readerId: user?.employeeId || user?._id || "",
+          importDate: Date.now(),
+          forceUpdate: group.force,
+          // Generate bills inline so they appear in the Water Bill
+          // Officer dashboard immediately after the field reader syncs.
+          // The server batches the bill upserts via WaterBill.bulkWrite
+          // so this stays cheap (single roundtrip per sync regardless of
+          // row count).
+          generateBill: true,
+        },
+      });
+    } catch (e) {
+      // Network drop / timeout on THIS group: keep its rows queued, note the
+      // reason, and continue — a later group (and already-confirmed rows) must
+      // not be lost because of one failed request.
+      failed += group.items.length;
+      if (errors.length < 3) errors.push(e?.message || "network error");
+      await odb.markSyncFailure(group.items.map((r) => r.id), e?.message).catch(() => {});
+      continue;
+    }
+    // Map server per-row results back to queue rows by PN+meter (never by the
+    // queue id — its format carries the period and may evolve). Accept
+    // success + skipped (idempotent re-post).
     const byKey = {};
-    for (const d of res.details || []) byKey[`${d.pnNo}__${d.meterNumber}`] = d.status;
+    for (const d of res.details || []) byKey[rkey(d)] = d;
+    const doneIds = [];
+    const failedRows = []; // [{ id, message }]
     const justSynced = []; // rows that need their member's readMeters/lastActualReadings refreshed locally
     for (const r of group.items) {
-      const st = byKey[r.id];
+      const d = byKey[rkey(r)];
+      const st = d?.status;
       if (st === "success" || st === "skipped") {
         doneIds.push(r.id);
         success++;
         if (st === "success") justSynced.push(r);
       } else {
         failed++;
+        failedRows.push({ id: r.id, message: d?.message || "rejected by server" });
+        if (d?.message && errors.length < 3) errors.push(`${r.pnNo}/${r.meterNumber}: ${d.message}`);
       }
     }
+    // Remove confirmed rows IMMEDIATELY (per group) so progress survives even
+    // if a later group or the cache patch below throws.
+    if (doneIds.length) await odb.removeFromQueue(doneIds);
+    for (const fr of failedRows) await odb.markSyncFailure([fr.id], fr.message).catch(() => {});
 
     // After a successful server save the queue entry is removed — but
     // the locally-cached member doc still has the OLD readMeters /
@@ -244,35 +270,39 @@ async function runSync({ token, user }) {
     // patching the local doc, on next refresh `isRead` would flip the
     // meter back to "not read" (queue empty + server-side flags stale).
     // Patch the cache here so a newly-added meter on a multi-meter
-    // account stays marked READ across refreshes.
+    // account stays marked READ across refreshes. Best-effort: the server
+    // already confirmed these rows, so a cache hiccup must not fail the sync.
     if (justSynced.length > 0) {
-      const byPn = {};
-      for (const r of justSynced) (byPn[r.pnNo] ||= []).push(r);
-      for (const [pnNo, rows] of Object.entries(byPn)) {
-        const member = await odb.getMember(pnNo);
-        if (!member) continue;
-        member.readMeters = Array.isArray(member.readMeters) ? [...member.readMeters] : [];
-        member.lastActualReadings = { ...(member.lastActualReadings || {}) };
-        for (const r of rows) {
-          const mn = String(r.meterNumber).toUpperCase().trim();
-          if (!member.readMeters.some((x) => String(x).toUpperCase().trim() === mn)) {
-            member.readMeters.push(r.meterNumber);
+      try {
+        const byPn = {};
+        for (const r of justSynced) (byPn[r.pnNo] ||= []).push(r);
+        for (const [pnNo, rows] of Object.entries(byPn)) {
+          const member = await odb.getMember(pnNo);
+          if (!member) continue;
+          member.readMeters = Array.isArray(member.readMeters) ? [...member.readMeters] : [];
+          member.lastActualReadings = { ...(member.lastActualReadings || {}) };
+          for (const r of rows) {
+            const mn = String(r.meterNumber).toUpperCase().trim();
+            if (!member.readMeters.some((x) => String(x).toUpperCase().trim() === mn)) {
+              member.readMeters.push(r.meterNumber);
+            }
+            member.lastActualReadings[mn] = {
+              ...(member.lastActualReadings[mn] || {}),
+              presentReading: r.presentReading,
+              previousReading: r.previousReading,
+              consumed: r.consumed,
+              readDate: r.readDate,
+            };
           }
-          member.lastActualReadings[mn] = {
-            ...(member.lastActualReadings[mn] || {}),
-            presentReading: r.presentReading,
-            previousReading: r.previousReading,
-            consumed: r.consumed,
-            readDate: r.readDate,
-          };
+          await odb.updateMember(member);
         }
-        await odb.updateMember(member);
-      }
+      } catch { /* cache patch is cosmetic — next download refreshes it */ }
     }
     }
   }
 
-  if (doneIds.length) await odb.removeFromQueue(doneIds);
   await odb.setMeta("lastSyncAt", Date.now());
-  return { ok: true, success, failed };
+  // ok = the sync pass ran (callers branch on `failed` for partial results;
+  // `errors` carries the first few human-readable reasons for the banner).
+  return { ok: true, success, failed, errors };
 }
