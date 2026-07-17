@@ -165,7 +165,7 @@ function dueDateFor(periodKey, dueDay = 17) {
   return new Date(Date.UTC(y, m, Math.min(dueDay, 28)));
 }
 const NOW_DUE = new Date(Date.UTC(2026, 5, 17));
-const PERIODS = ["2025-12", "2026-01", "2026-02", "2026-03", "2026-04", "2026-05"];
+const PERIODS = ["2025-12", "2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"];
 
 async function postCbuCredit(member, amount) {
   const refOrNo = `LEGCBU-${member.pnNo}`;
