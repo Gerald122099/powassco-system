@@ -29,6 +29,7 @@ function pushRecent(entry) {
 
 const peso = (n) => "₱" + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "—");
+const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
 export default function WaterDuesLookup() {
   const { token, user } = useAuth();
@@ -113,6 +114,116 @@ export default function WaterDuesLookup() {
   // Penalty days to CHARGE (default = full days overdue). Admin-gated: the
   // cashier can lower it (charge fewer days) or set 0 to waive entirely.
   const [penaltyDays, setPenaltyDays] = useState(0);
+
+  // ── Multi-meter select-and-pay ──────────────────────────────────────────
+  // A multi-meter account can be paid all at once on ONE receipt: the
+  // cashier ticks several unpaid meters, and every meter posts under the
+  // SAME OR (already supported server-side — one OR may cover multiple
+  // meters of one account). Any CBU/savings/excess is bundled into the last
+  // meter's call so it posts once, credited to that SAME OR — same "credit
+  // to the account's main OR" behavior as paying one meter at a time.
+  const [selectedBillIds, setSelectedBillIds] = useState(() => new Set());
+  const [multiPayOpen, setMultiPayOpen] = useState(false);
+  const [multiPayOR, setMultiPayOR] = useState("");
+  const [multiPayReceived, setMultiPayReceived] = useState("");
+  const [multiPayCbu, setMultiPayCbu] = useState("");
+  const [multiPaySavings, setMultiPaySavings] = useState("");
+  const [multiPayExcessTo, setMultiPayExcessTo] = useState("cbu");
+  const [multiPaying, setMultiPaying] = useState(false);
+  const [multiPayProgress, setMultiPayProgress] = useState(null); // { done, total }
+
+  const unpaidBills = (data?.bills || []).filter((b) => b.status !== "paid");
+  const selectedBills = unpaidBills.filter((b) => selectedBillIds.has(b._id));
+  const selectedTotal = selectedBills.reduce((s, b) => s + (Number(b.totalDue) || 0), 0);
+
+  function toggleBillSelect(bill) {
+    setSelectedBillIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(bill._id)) next.delete(bill._id);
+      else next.add(bill._id);
+      return next;
+    });
+  }
+  function selectAllUnpaid() { setSelectedBillIds(new Set(unpaidBills.map((b) => b._id))); }
+  function clearSelection() { setSelectedBillIds(new Set()); }
+
+  function openMultiPay() {
+    if (selectedBills.length < 2) return; // exactly one meter → use the regular single-Pay flow
+    setMultiPayOR("");
+    setMultiPayReceived(String(selectedTotal.toFixed(2)));
+    setMultiPayCbu("");
+    setMultiPaySavings("");
+    setMultiPayExcessTo("cbu");
+    setMultiPayOpen(true);
+  }
+
+  async function submitMultiPay(e) {
+    e?.preventDefault?.();
+    if (selectedBills.length < 2) return;
+    const orNo = multiPayOR.trim().toUpperCase();
+    if (!orNo) return toast.error("Enter the OR number.");
+    const cbuNum = Math.max(0, Number(multiPayCbu) || 0);
+    const savingsNum = Math.max(0, Number(multiPaySavings) || 0);
+    if (savingsNum > 0 && !data.savingsAccount) {
+      return toast.error("Member has no savings account. Open one in the Savings tab first.");
+    }
+    const totalReceived = Number(multiPayReceived) || 0;
+    const minRequired = selectedTotal + cbuNum + savingsNum;
+    if (totalReceived < minRequired) {
+      return toast.error(`Amount received must be at least ₱${minRequired.toFixed(2)} (₱${selectedTotal.toFixed(2)} bills + ₱${cbuNum.toFixed(2)} CBU + ₱${savingsNum.toFixed(2)} savings).`);
+    }
+    // The extra over the bills (CBU + savings + any further overpayment)
+    // rides on the LAST meter's call, so exactly one CBU/savings entry gets
+    // created — posted against this SAME OR, same as a single-meter payment.
+    const extraOverBills = round2(totalReceived - selectedTotal);
+    setMultiPaying(true);
+    setMultiPayProgress({ done: 0, total: selectedBills.length });
+    const succeeded = [];
+    const failed = [];
+    try {
+      for (let i = 0; i < selectedBills.length; i++) {
+        const b = selectedBills[i];
+        const isLast = i === selectedBills.length - 1;
+        try {
+          const res = await apiFetch("/cashier/pay-water", {
+            method: "POST",
+            token,
+            body: {
+              pnNo: data.member.pnNo,
+              meterNumber: b.meterNumber,
+              periodKey: b.periodKey || b.periodCovered,
+              orNo,
+              amountReceived: isLast ? round2(Number(b.totalDue) + extraOverBills) : Number(b.totalDue),
+              method: "cash",
+              ...(isLast ? { savingsDeposit: savingsNum, cbuContribution: cbuNum, excessTo: multiPayExcessTo } : {}),
+            },
+          });
+          succeeded.push({ meterNumber: b.meterNumber, res });
+        } catch (err) {
+          failed.push({ meterNumber: b.meterNumber, error: err.message });
+          break; // stop — don't keep charging once one call fails; the cashier reviews what posted before retrying the rest
+        } finally {
+          setMultiPayProgress({ done: i + 1, total: selectedBills.length });
+        }
+      }
+    } finally {
+      setMultiPaying(false);
+    }
+    if (succeeded.length) {
+      const last = succeeded[succeeded.length - 1].res;
+      toast.success(
+        failed.length
+          ? `OR ${orNo}: paid ${succeeded.length} of ${selectedBills.length} meter(s) before a failure — see below.`
+          : `OR ${orNo}: paid ${succeeded.length} meter(s)${last.cbuExcess > 0 ? ` — excess ₱${last.cbuExcess} → CBU (new balance ₱${last.newCbuBalance})` : ""}.`
+      );
+    }
+    if (failed.length) {
+      toast.error(`Meter ${failed[0].meterNumber} failed: ${failed[0].error}${succeeded.length ? " — already-posted meters are safe; re-select the remaining unpaid meters and retry." : ""}`);
+    }
+    setSelectedBillIds(new Set());
+    if (!failed.length) setMultiPayOpen(false);
+    await lookup(null, data.member.pnNo);
+  }
 
   const penaltyOf = (bill) => Number(bill?.penaltyApplied || 0);          // full penalty on the bill
   const daysOf = (bill) => Math.max(0, Math.floor(Number(bill?.daysOverdue || 0)));
@@ -269,6 +380,7 @@ export default function WaterDuesLookup() {
     try {
       const res = await apiFetch(`/cashier/water?q=${encodeURIComponent(term)}`, { token });
       setData(res);
+      setSelectedBillIds(new Set()); // fresh lookup — a stale multi-select from a prior account/refresh shouldn't carry over
       // Push to "recent" only on a single-account match (skips the
       // candidate-list response from a name with multiple matches).
       if (res?.member?.pnNo) setRecents(pushRecent({ pnNo: res.member.pnNo, accountName: res.member.accountName, totalDue: res.totalDue }) || []);
@@ -631,7 +743,39 @@ export default function WaterDuesLookup() {
             </div>
           )}
 
-          <MeterGroups data={data} printSlip={printSlip} onPay={isCashier ? openPay : null} justPaidPeriod={justPaid?.module === "water" && justPaid?.meter ? `${justPaid.meter}|${justPaid.period}` : null} />
+          {/* Multi-meter select-and-pay bar — appears once 1+ unpaid meters are
+              ticked below. Selecting 2+ pays them all under ONE OR. */}
+          {isCashier && unpaidBills.length > 1 && (
+            <div className="sticky top-2 z-10 flex flex-wrap items-center gap-3 rounded-2xl border-2 border-emerald-300 bg-emerald-50 px-4 py-3 shadow-sm">
+              <div className="text-xs font-bold text-emerald-800">
+                {selectedBills.length > 0 ? `${selectedBills.length} meter(s) selected · ${peso(selectedTotal)}` : `${unpaidBills.length} unpaid meter(s) — tick to pay several on one OR`}
+              </div>
+              <div className="ml-auto flex flex-wrap gap-2">
+                {selectedBills.length > 0 ? (
+                  <button onClick={clearSelection} className="rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100">Clear</button>
+                ) : (
+                  <button onClick={selectAllUnpaid} className="rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100">Select all unpaid</button>
+                )}
+                <button
+                  onClick={openMultiPay}
+                  disabled={selectedBills.length < 2}
+                  title={selectedBills.length === 1 ? "Use the Pay button on that one meter" : ""}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-40"
+                >
+                  <Banknote size={14} /> Pay {selectedBills.length > 1 ? `${selectedBills.length} selected` : "selected"} — {peso(selectedTotal)}
+                </button>
+              </div>
+            </div>
+          )}
+
+          <MeterGroups
+            data={data}
+            printSlip={printSlip}
+            onPay={isCashier ? openPay : null}
+            justPaidPeriod={justPaid?.module === "water" && justPaid?.meter ? `${justPaid.meter}|${justPaid.period}` : null}
+            selectedBillIds={isCashier && unpaidBills.length > 1 ? selectedBillIds : null}
+            onToggleSelect={toggleBillSelect}
+          />
 
           {data.recentPayments?.length > 0 && (
             <div className="rounded-2xl border border-slate-200 overflow-hidden">
@@ -1039,6 +1183,111 @@ export default function WaterDuesLookup() {
         )}
       </Modal>
 
+      {/* Multi-meter pay — several unpaid meters on ONE OR. Any CBU/savings/
+          excess posts once, credited to this same OR (mirrors the
+          single-meter flow's "credit to the account's main OR" behavior). */}
+      <Modal open={multiPayOpen} title="Receive Payment — Multiple Meters" subtitle={`${selectedBills.length} meter(s) selected`} onClose={() => { if (!multiPaying) setMultiPayOpen(false); }} size="lg">
+        {multiPayOpen && (
+          <form onSubmit={submitMultiPay} className="space-y-3">
+            <div className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-2 text-sm">
+              <div>Account: <b>{data?.member?.accountName}</b> <span className="text-xs text-slate-500">({data?.member?.pnNo})</span></div>
+              <div className="mt-2 divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
+                {selectedBills.map((b) => (
+                  <div key={b._id} className="flex items-center justify-between px-3 py-1.5 text-xs">
+                    <span className="font-mono">{b.meterNumber} <span className="text-slate-400">• {b.periodCovered || b.periodKey}</span></span>
+                    <span className="font-mono font-bold">{peso(b.totalDue)}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-2 flex items-center justify-between">
+                <span className="text-xs text-slate-500">Combined total due</span>
+                <span className="text-lg font-extrabold text-red-600">{peso(selectedTotal)}</span>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-700">OR Number (one receipt covers every selected meter)</label>
+              <input value={multiPayOR} onChange={(e) => setMultiPayOR(e.target.value.toUpperCase())} autoFocus placeholder="e.g. 0010234" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-mono uppercase" />
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="rounded-xl border border-pink-200 bg-pink-50/50 p-2">
+                <label className="text-[11px] font-bold uppercase tracking-wide text-pink-700">Savings deposit (optional)</label>
+                <input
+                  type="number" step="0.01" min="0"
+                  value={multiPaySavings}
+                  onChange={(e) => setMultiPaySavings(e.target.value)}
+                  disabled={!data?.savingsAccount}
+                  placeholder={data?.savingsAccount ? "0.00" : "No savings account"}
+                  className="mt-1 w-full rounded-xl border border-pink-200 bg-white px-3 py-2 text-sm font-mono disabled:opacity-50"
+                />
+              </div>
+              <div className="rounded-xl border border-violet-200 bg-violet-50/50 p-2">
+                <label className="text-[11px] font-bold uppercase tracking-wide text-violet-700">Direct CBU contribution (optional)</label>
+                <input
+                  type="number" step="0.01" min="0"
+                  value={multiPayCbu}
+                  onChange={(e) => setMultiPayCbu(e.target.value)}
+                  placeholder="0.00"
+                  className="mt-1 w-full rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm font-mono"
+                />
+                <div className="mt-0.5 text-[10px] text-violet-700">Posted once, credited to this OR.</div>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-700">Amount received from member (₱)</label>
+              <input
+                type="number" step="0.01"
+                min={selectedTotal + Math.max(0, Number(multiPayCbu) || 0) + Math.max(0, Number(multiPaySavings) || 0)}
+                value={multiPayReceived}
+                onChange={(e) => setMultiPayReceived(e.target.value)}
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-mono text-right text-lg font-bold"
+              />
+              <div className="mt-1 text-[10px] text-slate-500">
+                Must be ≥ {peso(selectedTotal + Math.max(0, Number(multiPayCbu) || 0) + Math.max(0, Number(multiPaySavings) || 0))} (bills + CBU + savings above).
+              </div>
+            </div>
+
+            {(() => {
+              const cbuNum = Math.max(0, Number(multiPayCbu) || 0);
+              const savingsNum = Math.max(0, Number(multiPaySavings) || 0);
+              const totalNum = Math.max(0, Number(multiPayReceived) || 0);
+              const excess = round2(totalNum - selectedTotal - cbuNum - savingsNum);
+              return excess > 0 ? (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[11px] font-semibold text-emerald-800">Extra {peso(excess)} on top of bills + CBU + savings →</span>
+                    {[["cbu", "CBU"], ["savings", "Savings"], ["split", "Split 50/50"]].map(([k, label]) => (
+                      <label key={k} className={`inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-[11px] font-semibold cursor-pointer ${multiPayExcessTo === k ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-700"} ${k !== "cbu" && !data?.savingsAccount ? "opacity-40 cursor-not-allowed" : ""}`}>
+                        <input type="radio" name="multiExcessTo" value={k} checked={multiPayExcessTo === k} disabled={k !== "cbu" && !data?.savingsAccount} onChange={() => setMultiPayExcessTo(k)} className="hidden" />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ) : null;
+            })()}
+
+            {multiPaying && multiPayProgress && (
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                Posting meter {multiPayProgress.done} of {multiPayProgress.total}…
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button type="button" onClick={() => setMultiPayOpen(false)} disabled={multiPaying} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold disabled:opacity-50">Cancel</button>
+              <button
+                disabled={multiPaying || !multiPayOR.trim() || Number(multiPayReceived) < selectedTotal + Math.max(0, Number(multiPayCbu) || 0) + Math.max(0, Number(multiPaySavings) || 0)}
+                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+              >
+                {multiPaying ? "Posting…" : `Post ${selectedBills.length} Payment(s)`}
+              </button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
       <PrinterPrompt
         open={!!printerPrompt}
         onClose={() => setPrinterPrompt(null)}
@@ -1049,7 +1298,7 @@ export default function WaterDuesLookup() {
   );
 }
 
-function MeterGroups({ data, printSlip, onPay, justPaidPeriod }) {
+function MeterGroups({ data, printSlip, onPay, justPaidPeriod, selectedBillIds, onToggleSelect }) {
   const groups = useMemo(() => {
     const map = new Map();
     // Seed with active meters from the member so meters with zero bills still appear.
@@ -1103,6 +1352,7 @@ function MeterGroups({ data, printSlip, onPay, justPaidPeriod }) {
               <table className="w-full text-sm">
                 <thead className="bg-white text-left text-xs text-slate-500">
                   <tr>
+                    {selectedBillIds && <th className="px-3 py-2 w-8"></th>}
                     <th className="px-3 py-2">Period</th>
                     <th className="px-3 py-2">Consumed</th>
                     <th className="px-3 py-2 text-right">Total Due</th>
@@ -1117,6 +1367,19 @@ function MeterGroups({ data, printSlip, onPay, justPaidPeriod }) {
                     const isJustPaid = justPaidPeriod && justPaidPeriod === `${b.meterNumber}|${b.periodCovered || b.periodKey}`;
                     return (
                     <tr key={b._id} className={`border-t ${isJustPaid ? "bg-emerald-100 animate-pulse" : b.status !== "paid" ? "bg-red-50/30" : ""}`}>
+                      {selectedBillIds && (
+                        <td className="px-3 py-2">
+                          {b.status !== "paid" && (
+                            <input
+                              type="checkbox"
+                              checked={selectedBillIds.has(b._id)}
+                              onChange={() => onToggleSelect(b)}
+                              className="h-4 w-4 accent-emerald-600"
+                              aria-label={`Select meter ${b.meterNumber} ${b.periodCovered || b.periodKey}`}
+                            />
+                          )}
+                        </td>
+                      )}
                       <td className="px-3 py-2 font-mono">{b.periodCovered || b.periodKey}</td>
                       <td className="px-3 py-2 text-xs">{Number(b.consumed || 0).toFixed(2)} m³</td>
                       <td className="px-3 py-2 text-right font-bold text-slate-800">
