@@ -13,7 +13,7 @@ import Card from "../components/Card";
 import { apiFetch } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { exportPdf, exportExcel, reportFormatters } from "../lib/reportExport";
-import { FileDown, FileSpreadsheet, RefreshCw, Calendar } from "lucide-react";
+import { FileDown, FileSpreadsheet, RefreshCw, Calendar, Hash } from "lucide-react";
 
 const { peso, dateTime } = reportFormatters;
 
@@ -78,9 +78,19 @@ export default function ReportsPanel({ defaultTitle = "Treasurer's Report — Ca
   const [from, setFrom] = useState(() => rangeForPreset("today").from);
   const [to, setTo] = useState(() => rangeForPreset("today").to);
   const [moduleFilter, setModuleFilter] = useState("all");
+  // Period mode: "date" (presets/custom, as before) or "or" — the physical OR
+  // booklet doesn't line up with calendar dates (a May OR often gets keyed in
+  // during June), so "or" mode selects the period by OR NUMBER instead and
+  // ignores the date range entirely, avoiding that exact misfile.
+  const [periodMode, setPeriodMode] = useState("date");
+  const [orFrom, setOrFrom] = useState("");
+  const [orTo, setOrTo] = useState("");
   const [data, setData] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+
+  const isPetty = moduleFilter === "pettycash";
+  const useOrRange = periodMode === "or" && !isPetty; // petty cash has no OR concept
 
   const load = useCallback(async () => {
     setBusy(true); setErr("");
@@ -90,12 +100,17 @@ export default function ReportsPanel({ defaultTitle = "Treasurer's Report — Ca
         setData({ _petty: await apiFetch("/petty-cash?limit=1000", { token }) });
       } else {
         const params = new URLSearchParams({ module: moduleFilter });
-        if (from) params.set("from", from);
-        if (to) params.set("to", to);
+        if (useOrRange) {
+          if (orFrom.trim()) params.set("orFrom", orFrom.trim());
+          if (orTo.trim()) params.set("orTo", orTo.trim());
+        } else {
+          if (from) params.set("from", from);
+          if (to) params.set("to", to);
+        }
         setData(await apiFetch(`/bookkeeper/transactions?${params.toString()}`, { token }));
       }
     } catch (e) { setErr(e.message); } finally { setBusy(false); }
-  }, [moduleFilter, from, to, token]);
+  }, [moduleFilter, from, to, useOrRange, orFrom, orTo, token]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -106,8 +121,6 @@ export default function ReportsPanel({ defaultTitle = "Treasurer's Report — Ca
       setFrom(f); setTo(t);
     }
   }
-
-  const isPetty = moduleFilter === "pettycash";
   const inRange = (dt) => {
     const d = ymd(new Date(dt));
     return (!from || d >= from) && (!to || d <= to);
@@ -120,9 +133,17 @@ export default function ReportsPanel({ defaultTitle = "Treasurer's Report — Ca
   const pettyIn = pettyRows.filter((r) => r.type === "replenish").reduce((s, r) => s + (r.amount || 0), 0);
   const pettyOut = pettyRows.filter((r) => r.type === "voucher").reduce((s, r) => s + (r.amount || 0), 0);
 
-  // Combined rows for export — petty cash, or water + loan with a "type" marker.
+  const isProduct = moduleFilter === "product";
+  const isSavings = moduleFilter === "savings";
+
+  // Combined rows for export — petty cash, product, savings, or water + loan
+  // with a "type" marker.
   const allRows = isPetty
     ? pettyRows
+    : isProduct
+    ? (data?.product || []).map((r) => ({ ...r, _type: "Product" }))
+    : isSavings
+    ? (data?.savings || []).map((r) => ({ ...r, _type: "Savings" }))
     : (data && !data._petty
       ? [
           ...data.water.map((r) => ({ ...r, _type: "Water" })),
@@ -154,7 +175,28 @@ export default function ReportsPanel({ defaultTitle = "Treasurer's Report — Ca
     { header: "CBU excess", key: "cbuExcess", align: "right", format: (v) => peso(v) },
     { header: "Cashier", key: "receivedBy" },
   ];
-  const exportColumns = isPetty ? pettyColumns : txColumns;
+  const productColumns = [
+    { header: "Date / Time", key: "paidAt", format: (v) => dateTime(v) },
+    { header: "OR No.", key: "orNo" },
+    { header: "Account No.", key: "pnNo" },
+    { header: "Account / Customer", key: "accountName" },
+    { header: "Product", key: "productName" },
+    { header: "Transaction", key: "transactionType" },
+    { header: "Qty", key: "quantity", align: "right" },
+    { header: "Amount received", key: "amountReceived", align: "right", format: (v) => peso(v) },
+    { header: "Cashier", key: "receivedBy" },
+  ];
+  const savingsColumns = [
+    { header: "Date / Time", key: "paidAt", format: (v) => dateTime(v) },
+    { header: "OR No.", key: "orNo" },
+    { header: "Account No.", key: "pnNo" },
+    { header: "Account name", key: "accountName" },
+    { header: "Type", key: "type" },
+    { header: "Deposit", key: "amountReceived", align: "right", format: (v) => (v ? peso(v) : "") },
+    { header: "Withdrawal", key: "amountOut", align: "right", format: (v) => (v ? peso(v) : "") },
+    { header: "Cashier", key: "receivedBy" },
+  ];
+  const exportColumns = isPetty ? pettyColumns : isProduct ? productColumns : isSavings ? savingsColumns : txColumns;
 
   const exportTotals = isPetty
     ? (data?._petty
@@ -163,6 +205,21 @@ export default function ReportsPanel({ defaultTitle = "Treasurer's Report — Ca
           { label: "Vouchers (in range)", value: peso(pettyOut) },
           { label: "Net (in range)", value: peso(pettyIn - pettyOut) },
           { label: "Current fund balance", value: peso(data._petty.balance) },
+        ]
+      : [])
+    : isProduct
+    ? (data
+      ? [
+          { label: "Product — transactions", value: data.totals.product.count },
+          { label: "Product — received", value: peso(data.totals.product.amountReceived) },
+        ]
+      : [])
+    : isSavings
+    ? (data
+      ? [
+          { label: "Savings — deposits", value: peso(data.totals.savings.amountReceived) },
+          { label: "Savings — withdrawals", value: peso(data.totals.savings.amountOut) },
+          { label: "Savings — net", value: peso(data.totals.savings.amountReceived - data.totals.savings.amountOut) },
         ]
       : [])
     : (data && !data._petty
@@ -177,17 +234,29 @@ export default function ReportsPanel({ defaultTitle = "Treasurer's Report — Ca
       : []);
 
   const periodLabel = PRESETS.find((p) => p.key === preset)?.label || "";
+  // OR-range mode's period line — replaces the date-range line entirely on
+  // screen and in the exported PDF/Excel header.
+  const orRangeLabel = orFrom && orTo
+    ? `OR # ${orFrom} to ${orTo}`
+    : orFrom
+    ? `OR # ${orFrom} onward`
+    : orTo
+    ? `OR # up to ${orTo}`
+    : "OR # range not set";
   const reportTitle = isPetty
     ? "Petty Cash Report"
     : `${defaultTitle}${moduleFilter === "all" ? "" : ` — ${moduleFilter[0].toUpperCase()}${moduleFilter.slice(1)}`}`;
-  const filenameSuffix = `${from || "all"}_${to || "all"}`.replace(/[^0-9A-Za-z_-]+/g, "_");
+  const filenameSuffix = useOrRange
+    ? `OR${orFrom || "start"}-${orTo || "end"}`
+    : `${from || "all"}_${to || "all"}`.replace(/[^0-9A-Za-z_-]+/g, "_");
 
   const [exporting, setExporting] = useState("");
   const baseName = isPetty ? "Petty_Cash_Report" : "Treasurers_Report";
   const exportPayload = () => ({
     title: reportTitle,
-    fromDate: from,
-    toDate: to,
+    fromDate: useOrRange ? undefined : from,
+    toDate: useOrRange ? undefined : to,
+    periodLabel: useOrRange ? orRangeLabel : undefined,
     preparedBy: user?.fullName || user?.employeeId || "",
     columns: exportColumns,
     rows: allRows,
@@ -237,38 +306,86 @@ export default function ReportsPanel({ defaultTitle = "Treasurer's Report — Ca
         </div>
       </div>
 
-      {/* Preset pills + custom dates */}
-      <div className="mt-4 flex flex-wrap items-center gap-2">
-        <div className="inline-flex rounded-xl border border-slate-200 p-1">
-          {PRESETS.map((p) => (
-            <button
-              key={p.key}
-              type="button"
-              onClick={() => pickPreset(p.key)}
-              className={`rounded-lg px-3 py-1 text-xs font-semibold ${preset === p.key ? "bg-emerald-600 text-white" : "text-slate-700 hover:bg-slate-50"}`}
-            >
-              {p.label}
-            </button>
-          ))}
+      {/* Period mode — date range (as before) or OR-number range. The OR
+          booklet doesn't line up with calendar dates (a May OR sometimes
+          gets keyed in during June), so OR mode reports the exact period a
+          physical OR range covers instead of guessing from the typed date. */}
+      {!isPetty && (
+        <div className="mt-4 inline-flex rounded-xl border border-slate-200 p-1">
+          <button
+            type="button"
+            onClick={() => setPeriodMode("date")}
+            className={`rounded-lg px-3 py-1 text-xs font-semibold ${periodMode === "date" ? "bg-emerald-600 text-white" : "text-slate-700 hover:bg-slate-50"}`}
+          >
+            Date range
+          </button>
+          <button
+            type="button"
+            onClick={() => setPeriodMode("or")}
+            className={`inline-flex items-center gap-1 rounded-lg px-3 py-1 text-xs font-semibold ${periodMode === "or" ? "bg-blue-600 text-white" : "text-slate-700 hover:bg-slate-50"}`}
+          >
+            <Hash size={11} /> OR number range
+          </button>
         </div>
-        <input
-          type="date"
-          value={from}
-          onChange={(e) => { setFrom(e.target.value); setPreset("custom"); }}
-          className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs"
-        />
-        <span className="text-slate-400 text-xs">to</span>
-        <input
-          type="date"
-          value={to}
-          onChange={(e) => { setTo(e.target.value); setPreset("custom"); }}
-          className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs"
-        />
+      )}
+
+      {/* Preset pills + custom dates (date mode) / OR from-to (OR mode) */}
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        {useOrRange ? (
+          <>
+            <span className="text-xs font-semibold text-blue-800">OR</span>
+            <input
+              value={orFrom}
+              onChange={(e) => setOrFrom(e.target.value.replace(/[^0-9]/g, ""))}
+              placeholder="from (e.g. 40760)"
+              inputMode="numeric"
+              className="w-32 rounded-xl border border-blue-200 px-3 py-1.5 text-xs font-mono"
+            />
+            <span className="text-slate-400 text-xs">to</span>
+            <input
+              value={orTo}
+              onChange={(e) => setOrTo(e.target.value.replace(/[^0-9]/g, ""))}
+              placeholder="to (e.g. 41200)"
+              inputMode="numeric"
+              className="w-32 rounded-xl border border-blue-200 px-3 py-1.5 text-xs font-mono"
+            />
+          </>
+        ) : (
+          <>
+            <div className="inline-flex rounded-xl border border-slate-200 p-1">
+              {PRESETS.map((p) => (
+                <button
+                  key={p.key}
+                  type="button"
+                  onClick={() => pickPreset(p.key)}
+                  className={`rounded-lg px-3 py-1 text-xs font-semibold ${preset === p.key ? "bg-emerald-600 text-white" : "text-slate-700 hover:bg-slate-50"}`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            <input
+              type="date"
+              value={from}
+              onChange={(e) => { setFrom(e.target.value); setPreset("custom"); }}
+              className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs"
+            />
+            <span className="text-slate-400 text-xs">to</span>
+            <input
+              type="date"
+              value={to}
+              onChange={(e) => { setTo(e.target.value); setPreset("custom"); }}
+              className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs"
+            />
+          </>
+        )}
         <div className="inline-flex rounded-xl border border-slate-200 ml-auto">
           {[
             { key: "all", label: "ALL" },
             { key: "water", label: "WATER" },
             { key: "loan", label: "LOAN" },
+            { key: "product", label: "PRODUCT" },
+            { key: "savings", label: "SAVINGS" },
             { key: "pettycash", label: "PETTY CASH" },
           ].map((m) => (
             <button
@@ -309,7 +426,7 @@ export default function ReportsPanel({ defaultTitle = "Treasurer's Report — Ca
       {/* Preview table — same format that will go into the PDF/CSV */}
       <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
         <div className="bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-700">
-          {periodLabel} ({from || "—"} to {to || "—"}) — {allRows.length} row(s)
+          {useOrRange ? orRangeLabel : `${periodLabel} (${from || "—"} to ${to || "—"})`} — {allRows.length} row(s)
         </div>
         <div className="max-h-[60vh] overflow-auto">
           <table className="w-full text-xs">

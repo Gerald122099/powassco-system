@@ -3,16 +3,21 @@ import Card from "../../components/Card";
 import { apiFetch } from "../../lib/api";
 import { useRealtime } from "../../lib/realtime";
 import { useAuth } from "../../context/AuthContext";
-import { Receipt, RefreshCw, Filter, Search } from "lucide-react";
+import { Receipt, RefreshCw, Filter, Search, Hash } from "lucide-react";
 
 const peso = (n) => "₱" + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtDateTime = (d) => (d ? new Date(d).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "—");
 
 export default function TransactionsPanel() {
   const { token } = useAuth();
-  const [moduleFilter, setModuleFilter] = useState("all"); // all / water / loan
+  const [moduleFilter, setModuleFilter] = useState("all"); // all / water / loan / product / savings
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  // OR-number range: the physical booklet doesn't line up with calendar
+  // dates (an OR from May's booklet sometimes gets keyed in during June), so
+  // this filters by the OR NUMBER itself instead of the date it was typed.
+  const [orFrom, setOrFrom] = useState("");
+  const [orTo, setOrTo] = useState("");
   const [q, setQ] = useState("");
   const [data, setData] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -24,11 +29,13 @@ export default function TransactionsPanel() {
       const params = new URLSearchParams({ module: moduleFilter });
       if (from) params.set("from", from);
       if (to) params.set("to", to);
+      if (orFrom.trim()) params.set("orFrom", orFrom.trim());
+      if (orTo.trim()) params.set("orTo", orTo.trim());
       if (q.trim()) params.set("q", q.trim());
       setData(await apiFetch(`/bookkeeper/transactions?${params.toString()}`, { token }));
     } catch (e) { setErr(e.message); } finally { setBusy(false); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [moduleFilter, from, to, token]);
+  }, [moduleFilter, from, to, orFrom, orTo, token]);
 
   useEffect(() => { load(); }, [load]);
   // Live: a new payment anywhere refreshes the transaction feed.
@@ -45,16 +52,44 @@ export default function TransactionsPanel() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="inline-flex rounded-xl border border-slate-200">
-            {["all", "water", "loan"].map((m) => (
+            {["all", "water", "loan", "product", "savings"].map((m) => (
               <button key={m} onClick={() => setModuleFilter(m)} className={`px-3 py-1.5 text-xs font-semibold ${moduleFilter === m ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-50"}`}>{m.toUpperCase()}</button>
             ))}
           </div>
-          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="rounded-xl border border-slate-200 px-3 py-2 text-sm" />
-          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="rounded-xl border border-slate-200 px-3 py-2 text-sm" />
+          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="rounded-xl border border-slate-200 px-3 py-2 text-sm" title="Date from" />
+          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="rounded-xl border border-slate-200 px-3 py-2 text-sm" title="Date to" />
           <button onClick={load} disabled={busy} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold hover:bg-slate-50">
             <RefreshCw size={14} className={busy ? "animate-spin" : ""} />
           </button>
         </div>
+      </div>
+
+      {/* OR-number range — filters by the physical OR booklet number instead
+          of the date it was typed in (a May OR often gets keyed in June). */}
+      <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-blue-200 bg-blue-50/60 px-3 py-2">
+        <Hash size={14} className="text-blue-600" />
+        <span className="text-xs font-semibold text-blue-800">OR range</span>
+        <input
+          value={orFrom}
+          onChange={(e) => setOrFrom(e.target.value.replace(/[^0-9]/g, ""))}
+          placeholder="from (e.g. 40760)"
+          inputMode="numeric"
+          className="w-32 rounded-lg border border-blue-200 bg-white px-2.5 py-1.5 text-xs font-mono"
+        />
+        <span className="text-xs text-blue-400">to</span>
+        <input
+          value={orTo}
+          onChange={(e) => setOrTo(e.target.value.replace(/[^0-9]/g, ""))}
+          placeholder="to (e.g. 41200)"
+          inputMode="numeric"
+          className="w-32 rounded-lg border border-blue-200 bg-white px-2.5 py-1.5 text-xs font-mono"
+        />
+        {(orFrom || orTo) && (
+          <button onClick={() => { setOrFrom(""); setOrTo(""); }} className="text-xs font-semibold text-blue-600 hover:underline">
+            Clear
+          </button>
+        )}
+        <span className="ml-auto text-[10px] text-blue-500">Combines with the date range and search above, if set.</span>
       </div>
 
       <form onSubmit={(e) => { e.preventDefault(); load(); }} className="mt-3">
@@ -107,6 +142,41 @@ export default function TransactionsPanel() {
             ["Due", (r) => peso(r.amountDue), "right"],
             ["Received", (r) => peso(r.amountReceived), "right"],
             ["CBU excess", (r) => peso(r.cbuExcess), "right", "text-blue-700 font-bold"],
+            ["Cashier", (r) => r.receivedBy || "—"],
+          ]}
+          loading={busy && !data}
+        />
+      )}
+
+      {/* Product loan / sale payments */}
+      {moduleFilter === "product" && (
+        <Table
+          title="Product loan / sale payments"
+          rows={data?.product || []}
+          columns={[
+            ["When", (r) => fmtDateTime(r.paidAt)],
+            ["OR No", (r) => <span className="font-mono">{r.orNo}</span>],
+            ["Account", (r) => <><div className="font-semibold">{r.accountName}</div>{r.pnNo && <div className="text-[11px] text-slate-500 font-mono">{r.pnNo}</div>}</>],
+            ["Product / Type", (r) => <><div>{r.productName}</div><div className="text-[11px] uppercase text-slate-500">{r.transactionType} · qty {r.quantity}</div></>],
+            ["Received", (r) => peso(r.amountReceived), "right"],
+            ["Cashier", (r) => r.receivedBy || "—"],
+          ]}
+          loading={busy && !data}
+        />
+      )}
+
+      {/* Savings deposits / withdrawals */}
+      {moduleFilter === "savings" && (
+        <Table
+          title="Savings deposits / withdrawals"
+          rows={data?.savings || []}
+          columns={[
+            ["When", (r) => fmtDateTime(r.paidAt)],
+            ["OR No", (r) => <span className="font-mono">{r.orNo}</span>],
+            ["Account", (r) => <><div className="font-semibold">{r.accountName}</div><div className="text-[11px] text-slate-500 font-mono">{r.pnNo}</div></>],
+            ["Type", (r) => <span className={`text-[11px] font-bold uppercase ${r.type === "deposit" ? "text-emerald-600" : "text-red-600"}`}>{r.type}</span>],
+            ["Deposit", (r) => (r.amountReceived ? peso(r.amountReceived) : "—"), "right"],
+            ["Withdrawal", (r) => (r.amountOut ? peso(r.amountOut) : "—"), "right"],
             ["Cashier", (r) => r.receivedBy || "—"],
           ]}
           loading={busy && !data}

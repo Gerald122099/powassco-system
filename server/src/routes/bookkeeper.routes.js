@@ -51,15 +51,52 @@ function dateRange(fromStr, toStr) {
   return Object.keys(range).length ? range : null;
 }
 
+// OR-number RANGE (bookkeeper reports). The physical OR booklet doesn't line
+// up with calendar dates — an OR from May's booklet sometimes gets keyed in
+// during June, so a date-range report silently misfiles it into the wrong
+// month. Filtering by the OR NUMBER itself reproduces "everything on OR
+// 40760-41200" regardless of what date each row landed on. The number is the
+// LEADING DIGIT RUN of orNo — a "#2" suffix (shared multi-meter OR) is
+// ignored, and a non-numeric OR (e.g. "INT-...", "LEG-...") never matches, by
+// design: those aren't physical booklet entries.
+// Returns null (no-op) when neither bound is given, else the aggregation
+// stages that compute `_orNum` from `fieldPath` and match it into range.
+function orRangeStages(fieldPath, orFrom, orTo) {
+  const fromNum = orFrom !== "" && orFrom != null ? parseInt(String(orFrom).replace(/\D/g, ""), 10) : null;
+  const toNum = orTo !== "" && orTo != null ? parseInt(String(orTo).replace(/\D/g, ""), 10) : null;
+  if (!Number.isFinite(fromNum) && !Number.isFinite(toNum)) return null;
+  const numMatch = { _orNum: { $ne: null } };
+  if (Number.isFinite(fromNum)) numMatch._orNum.$gte = fromNum;
+  if (Number.isFinite(toNum)) numMatch._orNum.$lte = toNum;
+  return [
+    { $addFields: { _orDigits: { $regexFind: { input: { $ifNull: [fieldPath, ""] }, regex: /^\d+/ } } } },
+    { $addFields: { _orNum: { $convert: { input: "$_orDigits.match", to: "long", onError: null, onNull: null } } } },
+    { $match: numMatch },
+    { $project: { _orDigits: 0, _orNum: 0 } },
+  ];
+}
+
 // ----- Transactions feed (cashier postings) -----
 // Cashier also reads this — they need to look up past ORs at the
 // counter ("did we already post this?", "show me yesterday's loan
 // payments by member X"). Read-only access.
+//
+//   ?module=all|water|loan|product|savings
+//   ?from=&to=              — date range on paidAt (as before)
+//   ?orFrom=&orTo=           — OR NUMBER range (see orRangeStages above);
+//                              combines with from/to if both are given
+//   ?q=                      — free-text OR/PN/meter/loan/name search
+//
+// "all" stays water+loan only (unchanged, so existing Treasurer's Report
+// totals never shift under anyone) — product/savings are opt-in module
+// values, each returned in their own array + totals.
 router.get("/transactions", requireAuth, requireRole(["admin", "manager", "audit_committee", "bookkeeper", "cashier"]), async (req, res) => {
   try {
     const moduleParam = String(req.query.module || "all").toLowerCase();
     const q = String(req.query.q || "").trim();
     const rangePaidAt = dateRange(req.query.from, req.query.to);
+    const orFrom = String(req.query.orFrom ?? "").trim();
+    const orTo = String(req.query.orTo ?? "").trim();
 
     const baseMatch = {};
     if (rangePaidAt) baseMatch.paidAt = rangePaidAt;
@@ -88,20 +125,69 @@ router.get("/transactions", requireAuth, requireRole(["admin", "manager", "audit
 
     const wantWater = moduleParam === "all" || moduleParam === "water";
     const wantLoan = moduleParam === "all" || moduleParam === "loan";
+    const wantProduct = moduleParam === "product";
+    const wantSavings = moduleParam === "savings";
+
+    const wlMatch = orMatch ? { ...baseMatch, $or: orMatch } : baseMatch;
+    const wlOrStages = orRangeStages("$orNo", orFrom, orTo);
 
     const [waterDocs, loanDocs] = await Promise.all([
       wantWater
-        ? WaterPayment.find(orMatch ? { ...baseMatch, $or: orMatch } : baseMatch).sort({ paidAt: -1 }).limit(500).lean()
+        ? (wlOrStages
+            ? WaterPayment.aggregate([{ $match: wlMatch }, ...wlOrStages, { $sort: { paidAt: -1 } }, { $limit: 1000 }])
+            : WaterPayment.find(wlMatch).sort({ paidAt: -1 }).limit(500).lean())
         : Promise.resolve([]),
       wantLoan
-        ? LoanPayment.find(orMatch ? { ...baseMatch, $or: orMatch } : baseMatch).sort({ paidAt: -1 }).limit(500).lean()
+        ? (wlOrStages
+            ? LoanPayment.aggregate([{ $match: wlMatch }, ...wlOrStages, { $sort: { paidAt: -1 } }, { $limit: 1000 }])
+            : LoanPayment.find(wlMatch).sort({ paidAt: -1 }).limit(500).lean())
         : Promise.resolve([]),
     ]);
+
+    // Product loan/sale payments — a flattened, one-row-per-payment view of
+    // ProductLoanApplication.payments (a subdocument array), so it lines up
+    // with water/loan's one-row-per-OR shape.
+    let productDocs = [];
+    if (wantProduct) {
+      productDocs = await ProductLoanApplication.aggregate([
+        { $unwind: "$payments" },
+        ...(rangePaidAt ? [{ $match: { "payments.paidAt": rangePaidAt } }] : []),
+        ...(q ? [{ $match: { $or: [
+            { "payments.orNo": { $regex: q, $options: "i" } },
+            { pnNo: { $regex: q, $options: "i" } },
+            { productName: { $regex: q, $options: "i" } },
+            { customerName: { $regex: q, $options: "i" } },
+            ...(pnFromName.length ? [{ pnNo: { $in: pnFromName } }] : []),
+          ] } }] : []),
+        ...(orRangeStages("$payments.orNo", orFrom, orTo) || []),
+        { $project: {
+            _id: "$payments._id", orNo: "$payments.orNo", paidAt: "$payments.paidAt",
+            method: "$payments.method", receivedBy: "$payments.receivedBy",
+            amountReceived: "$payments.amount",
+            pnNo: 1, accountName: 1, customerName: 1, productName: 1, transactionType: 1, quantity: 1,
+        } },
+        { $sort: { paidAt: -1 } },
+        { $limit: 1000 },
+      ]);
+    }
+
+    // Savings deposits/withdrawals — every row already carries its own OR.
+    let savingsDocs = [];
+    if (wantSavings) {
+      const savMatch = { ...baseMatch };
+      if (orMatch) savMatch.$or = orMatch;
+      const savStages = orRangeStages("$orNo", orFrom, orTo);
+      savingsDocs = savStages
+        ? await SavingsTransaction.aggregate([{ $match: savMatch }, ...savStages, { $sort: { paidAt: -1 } }, { $limit: 1000 }])
+        : await SavingsTransaction.find(savMatch).sort({ paidAt: -1 }).limit(500).lean();
+    }
 
     // Attach account names (water docs already carry pnNo; loan docs use borrowerPnNo)
     const pnSet = new Set();
     waterDocs.forEach((d) => pnSet.add(d.pnNo));
     loanDocs.forEach((d) => pnSet.add(d.borrowerPnNo));
+    productDocs.forEach((d) => { if (d.pnNo) pnSet.add(d.pnNo); });
+    savingsDocs.forEach((d) => pnSet.add(d.pnNo));
     const members = await WaterMember.find({ pnNo: { $in: [...pnSet] } }).select("pnNo accountName").lean();
     const nameByPn = new Map(members.map((m) => [m.pnNo, m.accountName]));
 
@@ -120,6 +206,23 @@ router.get("/transactions", requireAuth, requireRole(["admin", "manager", "audit
       amountDue: d.amountPaid, amountReceived: d.amountReceived || d.amountPaid, cbuExcess: d.cbuExcess || 0,
       receivedBy: d.receivedBy || "",
     }));
+    const product = productDocs.map((d) => ({
+      _id: d._id, module: "product", orNo: d.orNo, paidAt: d.paidAt, method: d.method,
+      pnNo: d.pnNo || "", accountName: d.pnNo ? (nameByPn.get(d.pnNo) || "") : (d.customerName || "Walk-in"),
+      productName: d.productName, transactionType: d.transactionType, quantity: d.quantity,
+      amountDue: d.amountReceived, amountReceived: d.amountReceived, cbuExcess: 0,
+      receivedBy: d.receivedBy || "",
+    }));
+    const savings = savingsDocs.map((d) => ({
+      _id: d._id, module: "savings", orNo: d.orNo, paidAt: d.paidAt, method: d.method,
+      pnNo: d.pnNo, accountName: nameByPn.get(d.pnNo) || "",
+      type: d.type, // deposit | withdrawal
+      amountDue: d.type === "deposit" ? d.amount : 0,
+      amountReceived: d.type === "deposit" ? d.amount : 0,
+      amountOut: d.type === "withdrawal" ? d.amount : 0,
+      cbuExcess: 0,
+      receivedBy: d.receivedBy || "",
+    }));
 
     const totals = {
       water: {
@@ -134,15 +237,28 @@ router.get("/transactions", requireAuth, requireRole(["admin", "manager", "audit
         amountDue: round2(loan.reduce((s, x) => s + (x.amountDue || 0), 0)),
         cbuExcess: round2(loan.reduce((s, x) => s + (x.cbuExcess || 0), 0)),
       },
+      product: {
+        count: product.length,
+        amountReceived: round2(product.reduce((s, x) => s + (x.amountReceived || 0), 0)),
+        amountDue: round2(product.reduce((s, x) => s + (x.amountDue || 0), 0)),
+        cbuExcess: 0,
+      },
+      savings: {
+        count: savings.length,
+        amountReceived: round2(savings.reduce((s, x) => s + (x.amountReceived || 0), 0)),
+        amountOut: round2(savings.reduce((s, x) => s + (x.amountOut || 0), 0)),
+        amountDue: round2(savings.reduce((s, x) => s + (x.amountDue || 0), 0)),
+        cbuExcess: 0,
+      },
     };
     totals.grand = {
-      count: totals.water.count + totals.loan.count,
-      amountReceived: round2(totals.water.amountReceived + totals.loan.amountReceived),
-      amountDue: round2(totals.water.amountDue + totals.loan.amountDue),
+      count: totals.water.count + totals.loan.count + totals.product.count + totals.savings.count,
+      amountReceived: round2(totals.water.amountReceived + totals.loan.amountReceived + totals.product.amountReceived + totals.savings.amountReceived),
+      amountDue: round2(totals.water.amountDue + totals.loan.amountDue + totals.product.amountDue + totals.savings.amountDue),
       cbuExcess: round2(totals.water.cbuExcess + totals.loan.cbuExcess),
     };
 
-    res.json({ water, loan, totals });
+    res.json({ water, loan, product, savings, totals });
   } catch (e) {
     console.error("bookkeeper/transactions:", e);
     res.status(500).json({ message: "Failed to load transactions." });

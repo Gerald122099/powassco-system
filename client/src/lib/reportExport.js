@@ -93,6 +93,7 @@ export async function exportPdf({
   subtitle,     // optional small line under the title
   fromDate,
   toDate,
+  periodLabel: periodLabelOverride, // e.g. "OR # 40760 to 41200" — replaces the date-range line entirely
   preparedBy,
   columns,      // [{ header, key, align?, format?(v, row) }]
   rows,         // raw row objects
@@ -152,9 +153,9 @@ export async function exportPdf({
   doc.setTextColor(...SLATE);
   let hy = 37.5;
   if (subtitle) { doc.text(pdfSafe(subtitle), pageW / 2, hy, { align: "center" }); hy += 5; }
-  const periodLabel = (fromDate || toDate)
+  const periodLabel = periodLabelOverride || ((fromDate || toDate)
     ? `For the period: ${fmtDate(fromDate)} to ${fmtDate(toDate)}`
-    : "All records";
+    : "All records");
   doc.text(pdfSafe(periodLabel), pageW / 2, hy, { align: "center" }); hy += 4.5;
   doc.text(pdfSafe(`${rows.length} row(s) - Generated ${new Date().toLocaleString()}`), pageW / 2, hy, { align: "center" });
 
@@ -249,6 +250,7 @@ export async function exportExcel({
   subtitle,
   fromDate,
   toDate,
+  periodLabel: periodLabelOverride,
   preparedBy,
   columns,
   rows,
@@ -273,7 +275,7 @@ export async function exportExcel({
     { t: title, font: { bold: true, size: 12, color: { argb: "FF0F172A" } } },
   ];
   if (subtitle) titleLines.push({ t: subtitle, font: { size: 9, italic: true, color: { argb: "FF475569" } } });
-  titleLines.push({ t: (fromDate || toDate) ? `For the period: ${fmtDate(fromDate)} to ${fmtDate(toDate)}` : "All records", font: { size: 9, color: { argb: "FF475569" } } });
+  titleLines.push({ t: periodLabelOverride || ((fromDate || toDate) ? `For the period: ${fmtDate(fromDate)} to ${fmtDate(toDate)}` : "All records"), font: { size: 9, color: { argb: "FF475569" } } });
   titleLines.push({ t: `${rows.length} row(s) • Generated ${new Date().toLocaleString()}`, font: { size: 8, color: { argb: "FF94A3B8" } } });
 
   for (const line of titleLines) {
