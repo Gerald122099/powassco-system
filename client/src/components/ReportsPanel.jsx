@@ -116,6 +116,13 @@ export default function ReportsPanel({ defaultTitle = "Treasurer's Report — Ca
   // ascending/descending — reads the report in true booklet sequence.
   const [sortBy, setSortBy] = useState("date"); // date | or
   const [sortDir, setSortDir] = useState("desc"); // asc | desc
+  // Header period label — manual override for what prints as the report's
+  // period line ("For the period: ...") in the PDF/Excel AND the on-screen
+  // preview. Independent of the actual date/OR filter above: an OR is often
+  // keyed in late (typed in July for a June receipt), so the filter that
+  // correctly PULLS the data isn't always the label that correctly
+  // DESCRIBES it — this lets the bookkeeper just type/pick "June 2026".
+  const [periodOverride, setPeriodOverride] = useState("");
   const [data, setData] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -303,10 +310,19 @@ export default function ReportsPanel({ defaultTitle = "Treasurer's Report — Ca
     : orTo
     ? `OR # up to ${orTo}`
     : "OR # range not set";
+  // The manual override wins over everything when set — it's what actually
+  // prints as the period line, on screen and in the export.
+  const headerPeriodLabel = periodOverride.trim()
+    ? periodOverride.trim()
+    : useOrRange
+    ? orRangeLabel
+    : "";
   const reportTitle = isPetty
     ? "Petty Cash Report"
     : `${defaultTitle}${moduleFilter === "all" ? "" : ` — ${moduleFilter[0].toUpperCase()}${moduleFilter.slice(1)}`}`;
-  const filenameSuffix = useOrRange
+  const filenameSuffix = periodOverride.trim()
+    ? periodOverride.trim().replace(/[^0-9A-Za-z_-]+/g, "_")
+    : useOrRange
     ? `OR${orFrom || "start"}-${orTo || "end"}`
     : `${from || "all"}_${to || "all"}`.replace(/[^0-9A-Za-z_-]+/g, "_");
 
@@ -314,9 +330,9 @@ export default function ReportsPanel({ defaultTitle = "Treasurer's Report — Ca
   const baseName = isPetty ? "Petty_Cash_Report" : "Treasurers_Report";
   const exportPayload = () => ({
     title: reportTitle,
-    fromDate: useOrRange ? undefined : from,
-    toDate: useOrRange ? undefined : to,
-    periodLabel: useOrRange ? orRangeLabel : undefined,
+    fromDate: headerPeriodLabel ? undefined : from,
+    toDate: headerPeriodLabel ? undefined : to,
+    periodLabel: headerPeriodLabel || undefined,
     preparedBy: user?.fullName || user?.employeeId || "",
     columns: exportColumns,
     rows: allRows,
@@ -505,6 +521,39 @@ export default function ReportsPanel({ defaultTitle = "Treasurer's Report — Ca
         </div>
       )}
 
+      {/* Header period label — manual override for the PDF/Excel + on-screen
+          period line. An OR often gets keyed in late (a June receipt typed
+          in July), so the filter that correctly PULLS the data isn't always
+          the label that correctly DESCRIBES it — type or pick the real month. */}
+      {!isPetty && (
+        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50/60 px-3 py-2">
+          <CalendarClock size={14} className="text-amber-600" />
+          <span className="text-xs font-semibold text-amber-800">Header period</span>
+          <select
+            value=""
+            onChange={(e) => { if (e.target.value) setPeriodOverride(MONTHS.find((mo) => mo.key === e.target.value)?.label || ""); }}
+            className="rounded-lg border border-amber-200 bg-white px-2 py-1.5 text-xs font-semibold text-amber-800"
+          >
+            <option value="">Pick a month…</option>
+            {MONTHS.map((mo) => <option key={mo.key} value={mo.key}>{mo.label}</option>)}
+          </select>
+          <input
+            value={periodOverride}
+            onChange={(e) => setPeriodOverride(e.target.value)}
+            placeholder="or type it — e.g. June 2026"
+            className="min-w-[12rem] flex-1 rounded-lg border border-amber-200 bg-white px-2.5 py-1.5 text-xs"
+          />
+          {periodOverride && (
+            <button onClick={() => setPeriodOverride("")} className="text-xs font-semibold text-amber-700 hover:underline">
+              Clear
+            </button>
+          )}
+          <span className="basis-full text-[10px] text-amber-600">
+            Optional. Prints as the report's period line instead of the date/OR range above — use when the OR was keyed in late and doesn't match the actual month.
+          </span>
+        </div>
+      )}
+
       {err && <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{err}</div>}
 
       {/* Summary tiles */}
@@ -528,7 +577,8 @@ export default function ReportsPanel({ defaultTitle = "Treasurer's Report — Ca
       {/* Preview table — same format that will go into the PDF/CSV */}
       <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
         <div className="bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-700">
-          {useOrRange ? orRangeLabel : `${periodLabel} (${from || "—"} to ${to || "—"})`} — {allRows.length} row(s)
+          {headerPeriodLabel || `${periodLabel} (${from || "—"} to ${to || "—"})`} — {allRows.length} row(s)
+          {periodOverride.trim() && <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">manual period</span>}
         </div>
         <div className="max-h-[60vh] overflow-auto">
           <table className="w-full text-xs">
