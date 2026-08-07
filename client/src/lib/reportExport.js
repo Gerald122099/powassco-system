@@ -24,6 +24,27 @@ import reportFontUrl from "../assets/fonts/NotoSans-Report.ttf";
 // jsPDF + autotable + exceljs are heavy (~1 MB combined) and only needed
 // when the user actually exports, so they're lazy-loaded on demand —
 // keeping the dashboard bundles that import this module lean.
+//
+// That lazy dynamic import() fetches a specific hashed chunk URL (e.g.
+// jspdf.es.min-D8uLD4IL.js). If the tab has been open since BEFORE a new
+// deploy, that exact hash may no longer exist on the server (replaced by the
+// new build's chunk) — the browser throws a raw, cryptic "Failed to fetch
+// dynamically imported module" error. This isn't a bug in the export itself;
+// translate it into an actionable message instead of leaking the internal
+// error.
+function isStaleChunkError(e) {
+  return /dynamically imported module|Importing a module script failed|error loading dynamically imported module/i.test(e?.message || "");
+}
+async function loadExportDeps(loaders) {
+  try {
+    return await Promise.all(loaders.map((l) => l()));
+  } catch (e) {
+    if (isStaleChunkError(e)) {
+      throw new Error("This app was just updated. Please refresh the page (F5) and try exporting again.");
+    }
+    throw e;
+  }
+}
 
 const GREEN = [22, 101, 52];      // #166534
 const SLATE = [71, 85, 105];      // slate-600
@@ -114,9 +135,9 @@ export async function exportPdf({
   totals,       // [{ label, value }]
   filename,
 }) {
-  const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
-    import("jspdf"),
-    import("jspdf-autotable"),
+  const [{ default: jsPDF }, { default: autoTable }] = await loadExportDeps([
+    () => import("jspdf"),
+    () => import("jspdf-autotable"),
   ]);
   // Narrow reports look better in portrait; wide ones need landscape.
   const landscape = columns.length > 6;
@@ -288,7 +309,7 @@ export async function exportExcel({
   totals,
   filename,
 }) {
-  const { default: ExcelJS } = await import("exceljs");
+  const [{ default: ExcelJS }] = await loadExportDeps([() => import("exceljs")]);
   const wb = new ExcelJS.Workbook();
   wb.creator = "POWASSCO";
   wb.created = new Date();
