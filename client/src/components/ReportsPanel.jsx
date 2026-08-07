@@ -51,6 +51,49 @@ function orNumOf(orNo) {
   return m ? parseInt(m[0], 10) : null;
 }
 
+const sum = (arr) => arr.reduce((s, x) => s + (Number(x) || 0), 0);
+
+// A member paying multiple meters/periods on one OR (see `orCbuTotal`, the
+// TRUE CBU total for that OR from the ledger) needs a place to show that
+// number that isn't "buried on whichever sub-row happened to carry the extra
+// cash". Since this flat row list feeds BOTH the on-screen preview and the
+// exported PDF/Excel (same rows + columns, no separate print layout), the
+// grouping has to live in the DATA: each individual line's own "CBU excess"
+// cell is blanked, and a synthetic "↳ OR TOTAL" line is appended after the
+// group showing the combined due/received/CBU — reads like a normal ledger
+// subtotal in the printed report. Single-line ORs (the common case) are left
+// untouched, just with their cbuExcess corrected to the ledger total.
+function withOrGroupTotals(rows) {
+  const order = [];
+  const map = new Map();
+  for (const r of rows) {
+    const key = `${r.pnNo}|${r.orNo}`;
+    if (!map.has(key)) { map.set(key, []); order.push(key); }
+    map.get(key).push(r);
+  }
+  const out = [];
+  for (const key of order) {
+    const grp = map.get(key);
+    if (grp.length === 1) {
+      const r = grp[0];
+      out.push({ ...r, cbuExcess: r.orCbuTotal ?? r.cbuExcess ?? 0 });
+      continue;
+    }
+    for (const r of grp) out.push({ ...r, cbuExcess: 0 });
+    out.push({
+      _id: `${key}-total`, _type: grp[0]._type, _isGroupTotal: true,
+      orNo: `↳ OR ${grp[0].orNo} TOTAL (${grp.length} lines)`,
+      pnNo: grp[0].pnNo, accountName: grp[0].accountName,
+      amountDue: sum(grp.map((r) => r.amountDue)),
+      amountReceived: sum(grp.map((r) => r.amountReceived)),
+      cbuExcess: grp[0].orCbuTotal || 0,
+      receivedBy: grp[0].receivedBy,
+      paidAt: grp[grp.length - 1].paidAt,
+    });
+  }
+  return out;
+}
+
 function ymd(d) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -203,22 +246,24 @@ export default function ReportsPanel({ defaultTitle = "Treasurer's Report — Ca
     : isCbu
     ? (data?.cbu || []).map((r) => ({ ...r, _type: "CBU" }))
     : (data && !data._petty
-      ? [
-          ...data.water.map((r) => ({ ...r, _type: "Water" })),
-          ...data.loan.map((r) => ({ ...r, _type: "Loan" })),
-        ].sort((a, b) => {
-          // Water + loan are fetched separately then merged here, so the
-          // server's own per-collection sort doesn't carry over — re-sort
-          // the merged list the same way the user picked.
-          if (sortBy === "or") {
-            const an = orNumOf(a.orNo), bn = orNumOf(b.orNo);
-            if (an == null && bn == null) return 0;
-            if (an == null) return 1; // non-numeric ORs sort last either way
-            if (bn == null) return -1;
-            return sortDir === "asc" ? an - bn : bn - an;
-          }
-          return new Date(b.paidAt) - new Date(a.paidAt);
-        })
+      ? withOrGroupTotals(
+          [
+            ...data.water.map((r) => ({ ...r, _type: "Water" })),
+            ...data.loan.map((r) => ({ ...r, _type: "Loan" })),
+          ].sort((a, b) => {
+            // Water + loan are fetched separately then merged here, so the
+            // server's own per-collection sort doesn't carry over — re-sort
+            // the merged list the same way the user picked.
+            if (sortBy === "or") {
+              const an = orNumOf(a.orNo), bn = orNumOf(b.orNo);
+              if (an == null && bn == null) return 0;
+              if (an == null) return 1; // non-numeric ORs sort last either way
+              if (bn == null) return -1;
+              return sortDir === "asc" ? an - bn : bn - an;
+            }
+            return new Date(b.paidAt) - new Date(a.paidAt);
+          })
+        )
       : []);
 
   const pettyColumns = [
@@ -618,7 +663,7 @@ export default function ReportsPanel({ defaultTitle = "Treasurer's Report — Ca
               ) : allRows.length === 0 ? (
                 <tr><td colSpan={exportColumns.length} className="py-10 text-center text-slate-500">No transactions in this range.</td></tr>
               ) : allRows.map((r) => (
-                <tr key={`${r._type}-${r._id}`} className="border-t">
+                <tr key={`${r._type}-${r._id}`} className={`border-t ${r._isGroupTotal ? "bg-blue-50/60 font-bold text-blue-800" : ""}`}>
                   {exportColumns.map((c) => (
                     <td key={c.header} className={`px-3 py-1.5 ${c.align === "right" ? "text-right font-mono" : ""}`}>
                       {c.format ? c.format(r[c.key], r) : (r[c.key] ?? "—")}

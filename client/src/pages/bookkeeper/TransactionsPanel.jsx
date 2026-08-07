@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import Card from "../../components/Card";
 import { apiFetch } from "../../lib/api";
 import { useRealtime } from "../../lib/realtime";
@@ -7,6 +7,22 @@ import { Receipt, RefreshCw, Filter, Search, Hash, ArrowUpNarrowWide, ArrowDownW
 
 const peso = (n) => "₱" + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtDateTime = (d) => (d ? new Date(d).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "—");
+const sum = (arr) => arr.reduce((s, x) => s + (Number(x) || 0), 0);
+
+// Group rows sharing one OR (same account) — e.g. a member paying 3 meters
+// on one receipt. `orCbuTotal` (server-computed, from the CbuTransaction
+// ledger) is the same on every row in the group, so it's read once here.
+function groupByOr(rows) {
+  const map = new Map();
+  for (const r of rows) {
+    const key = `${r.pnNo}|${r.orNo}`;
+    if (!map.has(key)) map.set(key, { orNo: r.orNo, pnNo: r.pnNo, accountName: r.accountName, receivedBy: r.receivedBy, paidAt: r.paidAt, cbuTotal: r.orCbuTotal || 0, rows: [] });
+    const g = map.get(key);
+    g.rows.push(r);
+    if (new Date(r.paidAt) > new Date(g.paidAt)) g.paidAt = r.paidAt; // latest timestamp represents the group
+  }
+  return [...map.values()];
+}
 
 // Last `n` months (this month first) as { key: "YYYY-MM", label: "Month YYYY" }
 // — feeds the "auto-fill OR range from a month" picker.
@@ -188,41 +204,30 @@ export default function TransactionsPanel() {
         </div>
       )}
 
-      {/* Water table */}
+      {/* Water table — grouped by OR: multiple meters on one receipt nest as
+          sub-rows under one main row, which shows the TRUE CBU total for
+          that OR (from the ledger, not just this bill's own excess). */}
       {(moduleFilter === "all" || moduleFilter === "water") && (
-        <Table
+        <GroupedOrTable
           title="Water payments"
           rows={data?.water || []}
-          columns={[
-            ["When", (r) => fmtDateTime(r.paidAt)],
-            ["OR No", (r) => <span className="font-mono">{r.orNo}</span>],
-            ["Account", (r) => <><div className="font-semibold">{r.accountName}</div><div className="text-[11px] text-slate-500 font-mono">{r.pnNo}</div></>],
-            ["Meter / Period", (r) => <><div className="font-mono">{r.meterNumber}</div><div className="text-[11px] text-slate-500">{r.periodKey}</div></>],
-            ["Due", (r) => peso(r.amountDue), "right"],
-            ["Received", (r) => peso(r.amountReceived), "right"],
-            ["CBU excess", (r) => peso(r.cbuExcess), "right", "text-blue-700 font-bold"],
-            ["Cashier", (r) => r.receivedBy || "—"],
-          ]}
           loading={busy && !data}
+          accountLabel="Account"
+          subHeader="Meter / Period"
+          subLabel={(r) => <><div className="font-mono">{r.meterNumber}</div><div className="text-[11px] text-slate-500">{r.periodKey}</div></>}
         />
       )}
 
-      {/* Loan table */}
+      {/* Loan table — same OR-grouping (a member can pay multiple loans/
+          periods on one receipt). */}
       {(moduleFilter === "all" || moduleFilter === "loan") && (
-        <Table
+        <GroupedOrTable
           title="Loan payments"
           rows={data?.loan || []}
-          columns={[
-            ["When", (r) => fmtDateTime(r.paidAt)],
-            ["OR No", (r) => <span className="font-mono">{r.orNo}</span>],
-            ["Borrower", (r) => <><div className="font-semibold">{r.accountName}</div><div className="text-[11px] text-slate-500 font-mono">{r.pnNo}</div></>],
-            ["Loan / Periods", (r) => <><div className="font-mono">{r.loanId}</div><div className="text-[11px] text-slate-500">{r.periodsCovered} period(s)</div></>],
-            ["Due", (r) => peso(r.amountDue), "right"],
-            ["Received", (r) => peso(r.amountReceived), "right"],
-            ["CBU excess", (r) => peso(r.cbuExcess), "right", "text-blue-700 font-bold"],
-            ["Cashier", (r) => r.receivedBy || "—"],
-          ]}
           loading={busy && !data}
+          accountLabel="Borrower"
+          subHeader="Loan / Periods"
+          subLabel={(r) => <><div className="font-mono">{r.loanId}</div><div className="text-[11px] text-slate-500">{r.periodsCovered} period(s)</div></>}
         />
       )}
 
@@ -291,6 +296,91 @@ function Stat({ label, value, tone = "slate" }) {
     <div className={`rounded-2xl border p-3 text-center ${bg}`}>
       <div className="text-xs uppercase tracking-wide opacity-70">{label}</div>
       <div className="mt-1 text-xl font-extrabold">{value}</div>
+    </div>
+  );
+}
+
+// Water/loan table grouped by OR: a member paying multiple meters (or
+// periods) on one receipt shows ONE main row (combined due/received + the
+// TRUE OR-level CBU total from the ledger) with each meter/period nested as
+// a sub-row below it — so the CBU amount isn't hunted for on whichever
+// specific sub-row happened to carry the extra cash, and the per-meter due
+// vs received is still fully visible underneath.
+function GroupedOrTable({ title, rows, loading, accountLabel = "Account", subHeader = "Meter / Period", subLabel }) {
+  const groups = groupByOr(rows);
+  return (
+    <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
+      <div className="bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-600">{title} ({rows.length})</div>
+      <div className="overflow-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-white text-left text-xs text-slate-500">
+            <tr>
+              <th className="px-3 py-2">When</th>
+              <th className="px-3 py-2">OR No</th>
+              <th className="px-3 py-2">{accountLabel}</th>
+              <th className="px-3 py-2">{subHeader}</th>
+              <th className="px-3 py-2 text-right">Due</th>
+              <th className="px-3 py-2 text-right">Received</th>
+              <th className="px-3 py-2 text-right">CBU</th>
+              <th className="px-3 py-2">Cashier</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr><td colSpan={8} className="py-10 text-center text-slate-500">Loading…</td></tr>
+            ) : groups.length === 0 ? (
+              <tr><td colSpan={8} className="py-10 text-center text-slate-500">No transactions in range.</td></tr>
+            ) : groups.map((g) => {
+              if (g.rows.length === 1) {
+                const r = g.rows[0];
+                return (
+                  <tr key={r._id} className="border-t">
+                    <td className="px-3 py-2">{fmtDateTime(r.paidAt)}</td>
+                    <td className="px-3 py-2 font-mono">{r.orNo}</td>
+                    <td className="px-3 py-2"><div className="font-semibold">{r.accountName}</div><div className="text-[11px] text-slate-500 font-mono">{r.pnNo}</div></td>
+                    <td className="px-3 py-2">{subLabel(r)}</td>
+                    <td className="px-3 py-2 text-right">{peso(r.amountDue)}</td>
+                    <td className="px-3 py-2 text-right">{peso(r.amountReceived)}</td>
+                    <td className="px-3 py-2 text-right font-bold text-blue-700">{peso(g.cbuTotal)}</td>
+                    <td className="px-3 py-2">{r.receivedBy || "—"}</td>
+                  </tr>
+                );
+              }
+              const totalDue = sum(g.rows.map((r) => r.amountDue));
+              const totalReceived = sum(g.rows.map((r) => r.amountReceived));
+              return (
+                <Fragment key={`${g.pnNo}|${g.orNo}`}>
+                  <tr className="border-t-2 border-blue-100 bg-blue-50/50">
+                    <td className="px-3 py-2">{fmtDateTime(g.paidAt)}</td>
+                    <td className="px-3 py-2 font-mono font-bold">
+                      {g.orNo}
+                      <span className="ml-1.5 rounded-full bg-blue-600 px-1.5 py-0.5 text-[9px] font-bold text-white">{g.rows.length}×</span>
+                    </td>
+                    <td className="px-3 py-2"><div className="font-semibold">{g.accountName}</div><div className="text-[11px] text-slate-500 font-mono">{g.pnNo}</div></td>
+                    <td className="px-3 py-2 text-[11px] italic text-slate-400">{g.rows.length} sub-transactions ↓</td>
+                    <td className="px-3 py-2 text-right font-bold">{peso(totalDue)}</td>
+                    <td className="px-3 py-2 text-right font-bold">{peso(totalReceived)}</td>
+                    <td className="px-3 py-2 text-right font-bold text-blue-700">{peso(g.cbuTotal)}</td>
+                    <td className="px-3 py-2">{g.receivedBy || "—"}</td>
+                  </tr>
+                  {g.rows.map((r) => (
+                    <tr key={r._id} className="border-t border-dashed border-slate-100 bg-slate-50/60 text-slate-600">
+                      <td className="px-3 py-1.5 pl-7 text-[11px]">{fmtDateTime(r.paidAt)}</td>
+                      <td className="px-3 py-1.5 text-[11px] text-slate-400">↳</td>
+                      <td className="px-3 py-1.5"></td>
+                      <td className="px-3 py-1.5 text-xs">{subLabel(r)}</td>
+                      <td className="px-3 py-1.5 text-right text-xs">{peso(r.amountDue)}</td>
+                      <td className="px-3 py-1.5 text-right text-xs">{peso(r.amountReceived)}</td>
+                      <td className="px-3 py-1.5"></td>
+                      <td className="px-3 py-1.5"></td>
+                    </tr>
+                  ))}
+                </Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

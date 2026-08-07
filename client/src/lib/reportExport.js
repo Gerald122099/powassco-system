@@ -29,6 +29,8 @@ const GREEN = [22, 101, 52];      // #166534
 const SLATE = [71, 85, 105];      // slate-600
 const INK = [15, 23, 42];         // slate-900
 const ZEBRA = [248, 250, 252];    // slate-50
+const GROUP_TOTAL_BG = [219, 234, 254]; // blue-100 — a synthetic "↳ OR ... TOTAL" row
+const GROUP_TOTAL_INK = [30, 64, 175];  // blue-800
 
 const peso = (n) =>
   "₱" + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -178,6 +180,15 @@ export async function exportPdf({
     }, {}),
     margin: { left: 10, right: 10, bottom: 16 },
     rowPageBreak: "avoid",
+    // A synthetic "↳ OR ... TOTAL" row (multi-meter/multi-period receipt
+    // rolled up under one OR) prints bold + tinted so it reads as a subtotal.
+    didParseCell: (data) => {
+      if (data.section === "body" && rows[data.row.index]?._isGroupTotal) {
+        data.cell.styles.fontStyle = "bold";
+        data.cell.styles.fillColor = GROUP_TOTAL_BG;
+        data.cell.styles.textColor = GROUP_TOTAL_INK;
+      }
+    },
   });
 
   // Bordered totals box (bottom-right)
@@ -305,11 +316,18 @@ export async function exportExcel({
       return String(cellValue(c, r));
     });
     const row = ws.addRow(values);
+    // A synthetic "↳ OR ... TOTAL" row (multi-meter/multi-period receipt
+    // rolled up under one OR) fills bold + tinted so it reads as a subtotal.
+    const isGroupTotal = !!r._isGroupTotal;
     row.eachCell((cell, col) => {
       const c = columns[col - 1];
       cell.border = { top: { style: "hair", color: { argb: "FFE2E8F0" } } };
       if (c.align === "right") cell.alignment = { horizontal: "right" };
       if (typeof cell.value === "number") cell.numFmt = '"₱"#,##0.00';
+      if (isGroupTotal) {
+        cell.font = { bold: true, color: { argb: "FF1E40AF" } };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFDBEAFE" } };
+      }
     });
   }
 

@@ -312,6 +312,39 @@ router.get("/transactions", requireAuth, requireRole(["admin", "manager", "audit
       receivedBy: d.postedBy || "",
     }));
 
+    // TRUE CBU total per OR — a per-row `cbuExcess` field only ever reflects
+    // AUTOMATIC overpayment excess on THAT bill; it silently misses a direct
+    // "Add to CBU" contribution the cashier bundled into the SAME OR (posted
+    // to CbuTransaction independently, keyed to the base OR — see the
+    // "cbu" module comment above). A member paying 3 meters on one OR with a
+    // direct CBU add-on would otherwise show "CBU excess ₱0.00" on all 3
+    // rows even though the ledger has the real amount. Roll it up here by
+    // (pnNo, base OR) and expose it as `orCbuTotal` so the client can show
+    // one correct number for the whole OR instead of a per-row field that
+    // doesn't capture every source.
+    const orPnKeys = new Set();
+    for (const r of [...water, ...loan, ...product]) {
+      if (r.orNo && r.pnNo) orPnKeys.add(`${r.pnNo}|${r.orNo}`);
+    }
+    const orCbuTotal = new Map();
+    if (orPnKeys.size) {
+      const baseOrs = [...new Set([...orPnKeys].map((k) => k.split("|")[1]))];
+      const cbuForOrs = await CbuTransaction.find({ refOrNo: { $in: baseOrs } })
+        .select("refOrNo pnNo type amount").lean();
+      for (const d of cbuForOrs) {
+        const key = `${d.pnNo}|${d.refOrNo}`;
+        if (!orPnKeys.has(key)) continue; // pnNo must match too — avoid cross-account OR collisions
+        const delta = d.type === "credit" ? d.amount : -d.amount;
+        orCbuTotal.set(key, round2((orCbuTotal.get(key) || 0) + delta));
+      }
+    }
+    const attachOrCbuTotal = (rows) => rows.forEach((r) => {
+      if (r.orNo && r.pnNo) r.orCbuTotal = orCbuTotal.get(`${r.pnNo}|${r.orNo}`) || 0;
+    });
+    attachOrCbuTotal(water);
+    attachOrCbuTotal(loan);
+    attachOrCbuTotal(product);
+
     const totals = {
       water: {
         count: water.length,
