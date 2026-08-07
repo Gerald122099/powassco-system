@@ -190,15 +190,18 @@ export default function ReportsPanel({ defaultTitle = "Treasurer's Report — Ca
 
   const isProduct = moduleFilter === "product";
   const isSavings = moduleFilter === "savings";
+  const isCbu = moduleFilter === "cbu";
 
-  // Combined rows for export — petty cash, product, savings, or water + loan
-  // with a "type" marker.
+  // Combined rows for export — petty cash, product, savings, CBU, or water +
+  // loan with a "type" marker.
   const allRows = isPetty
     ? pettyRows
     : isProduct
     ? (data?.product || []).map((r) => ({ ...r, _type: "Product" }))
     : isSavings
     ? (data?.savings || []).map((r) => ({ ...r, _type: "Savings" }))
+    : isCbu
+    ? (data?.cbu || []).map((r) => ({ ...r, _type: "CBU" }))
     : (data && !data._petty
       ? [
           ...data.water.map((r) => ({ ...r, _type: "Water" })),
@@ -263,7 +266,18 @@ export default function ReportsPanel({ defaultTitle = "Treasurer's Report — Ca
     { header: "Withdrawal", key: "amountOut", align: "right", format: (v) => (v ? peso(v) : "") },
     { header: "Cashier", key: "receivedBy" },
   ];
-  const exportColumns = isPetty ? pettyColumns : isProduct ? productColumns : isSavings ? savingsColumns : txColumns;
+  const cbuColumns = [
+    { header: "Date / Time", key: "paidAt", format: (v) => dateTime(v) },
+    { header: "OR No.", key: "orNo" },
+    { header: "Account No.", key: "pnNo" },
+    { header: "Account name", key: "accountName" },
+    { header: "Source", key: "source", format: (v) => String(v || "").replace(/_/g, " ") },
+    { header: "Credit", key: "amountReceived", align: "right", format: (v) => (v ? peso(v) : "") },
+    { header: "Debit", key: "amountOut", align: "right", format: (v) => (v ? peso(v) : "") },
+    { header: "Balance after", key: "balanceAfter", align: "right", format: (v) => peso(v) },
+    { header: "By", key: "receivedBy" },
+  ];
+  const exportColumns = isPetty ? pettyColumns : isProduct ? productColumns : isSavings ? savingsColumns : isCbu ? cbuColumns : txColumns;
 
   const exportTotals = isPetty
     ? (data?._petty
@@ -287,6 +301,14 @@ export default function ReportsPanel({ defaultTitle = "Treasurer's Report — Ca
           { label: "Savings — deposits", value: peso(data.totals.savings.amountReceived) },
           { label: "Savings — withdrawals", value: peso(data.totals.savings.amountOut) },
           { label: "Savings — net", value: peso(data.totals.savings.amountReceived - data.totals.savings.amountOut) },
+        ]
+      : [])
+    : isCbu
+    ? (data
+      ? [
+          { label: "CBU — credits", value: peso(data.totals.cbu.amountReceived) },
+          { label: "CBU — debits", value: peso(data.totals.cbu.amountOut) },
+          { label: "CBU — net", value: peso(data.totals.cbu.amountReceived - data.totals.cbu.amountOut) },
         ]
       : [])
     : (data && !data._petty
@@ -474,6 +496,7 @@ export default function ReportsPanel({ defaultTitle = "Treasurer's Report — Ca
             { key: "loan", label: "LOAN" },
             { key: "product", label: "PRODUCT" },
             { key: "savings", label: "SAVINGS" },
+            { key: "cbu", label: "CBU" },
             { key: "pettycash", label: "PETTY CASH" },
           ].map((m) => (
             <button

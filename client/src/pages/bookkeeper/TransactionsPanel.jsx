@@ -89,11 +89,11 @@ export default function TransactionsPanel() {
           <div className="flex items-center gap-2 text-lg font-bold tracking-tight text-slate-900">
             <Receipt size={20} className="text-blue-600" /> Cashier Transactions
           </div>
-          <div className="mt-0.5 text-sm text-slate-500">Every payment the cashier posted — water and loan. The CBU column shows excess credited to the member's Capital Build-Up.</div>
+          <div className="mt-0.5 text-sm text-slate-500">Every payment the cashier posted — water, loan, product, savings, or CBU. The CBU column/tab shows excess credited to the member's Capital Build-Up.</div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="inline-flex rounded-xl border border-slate-200">
-            {["all", "water", "loan", "product", "savings"].map((m) => (
+            {["all", "water", "loan", "product", "savings", "cbu"].map((m) => (
               <button key={m} onClick={() => setModuleFilter(m)} className={`px-3 py-1.5 text-xs font-semibold ${moduleFilter === m ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-50"}`}>{m.toUpperCase()}</button>
             ))}
           </div>
@@ -256,6 +256,27 @@ export default function TransactionsPanel() {
             ["Deposit", (r) => (r.amountReceived ? peso(r.amountReceived) : "—"), "right"],
             ["Withdrawal", (r) => (r.amountOut ? peso(r.amountOut) : "—"), "right"],
             ["Cashier", (r) => r.receivedBy || "—"],
+          ]}
+          loading={busy && !data}
+        />
+      )}
+
+      {/* CBU credits / debits — the authoritative ledger, including a counter
+          product sale's overpayment (source: sale_overpay), which doesn't
+          show up as "CBU excess" on any water/loan/product row. */}
+      {moduleFilter === "cbu" && (
+        <Table
+          title="CBU credits / debits"
+          rows={data?.cbu || []}
+          columns={[
+            ["When", (r) => fmtDateTime(r.paidAt)],
+            ["OR No", (r) => <span className="font-mono">{r.orNo}</span>],
+            ["Account", (r) => <><div className="font-semibold">{r.accountName}</div><div className="text-[11px] text-slate-500 font-mono">{r.pnNo}</div></>],
+            ["Source", (r) => <span className="text-[11px] uppercase text-slate-500">{String(r.source || "").replace(/_/g, " ")}</span>],
+            ["Credit", (r) => (r.amountReceived ? peso(r.amountReceived) : "—"), "right", "text-blue-700 font-bold"],
+            ["Debit", (r) => (r.amountOut ? peso(r.amountOut) : "—"), "right"],
+            ["Balance after", (r) => peso(r.balanceAfter), "right"],
+            ["By", (r) => r.receivedBy || "—"],
           ]}
           loading={busy && !data}
         />

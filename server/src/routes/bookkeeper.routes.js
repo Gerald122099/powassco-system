@@ -111,7 +111,7 @@ function buildOrAwareTail(fieldPath, { orFrom, orTo, sortBy, sortDir }) {
 // counter ("did we already post this?", "show me yesterday's loan
 // payments by member X"). Read-only access.
 //
-//   ?module=all|water|loan|product|savings
+//   ?module=all|water|loan|product|savings|cbu
 //   ?from=&to=              — date range on paidAt (as before)
 //   ?orFrom=&orTo=           — OR NUMBER range (see buildOrAwareTail above);
 //                              combines with from/to if both are given
@@ -120,8 +120,14 @@ function buildOrAwareTail(fieldPath, { orFrom, orTo, sortBy, sortDir }) {
 //   ?q=                      — free-text OR/PN/meter/loan/name search
 //
 // "all" stays water+loan only (unchanged, so existing Treasurer's Report
-// totals never shift under anyone) — product/savings are opt-in module
-// values, each returned in their own array + totals.
+// totals never shift under anyone) — product/savings/cbu are opt-in module
+// values, each returned in their own array + totals. "cbu" queries the
+// CbuTransaction ledger directly (source: water_overpay, loan_overpay,
+// sale_overpay, cashier_contribution, product_loan_charge, manual_adjust,
+// withdrawal, interest) — the authoritative record of every CBU movement,
+// including a counter product sale's overpayment, which never shows up as
+// `cbuExcess` on a "product" row (that ledger entry lives independently,
+// referenced by refOrNo, not embedded in the sale's payment record).
 router.get("/transactions", requireAuth, requireRole(["admin", "manager", "audit_committee", "bookkeeper", "cashier"]), async (req, res) => {
   try {
     const moduleParam = String(req.query.module || "all").toLowerCase();
@@ -164,6 +170,7 @@ router.get("/transactions", requireAuth, requireRole(["admin", "manager", "audit
     const wantLoan = moduleParam === "all" || moduleParam === "loan";
     const wantProduct = moduleParam === "product";
     const wantSavings = moduleParam === "savings";
+    const wantCbu = moduleParam === "cbu";
 
     const wlMatch = orMatch ? { ...baseMatch, $or: orMatch } : baseMatch;
     const wlTail = buildOrAwareTail("$orNo", sortOpts);
@@ -218,12 +225,42 @@ router.get("/transactions", requireAuth, requireRole(["admin", "manager", "audit
         : await SavingsTransaction.find(savMatch).sort({ paidAt: sortOpts.sortDir === "asc" ? 1 : -1 }).limit(500).lean();
     }
 
+    // CBU credits/debits — the AUTHORITATIVE ledger for every CBU movement,
+    // including ones the per-payment `cbuExcess` field can't show: a counter
+    // product SALE's overpayment ("sale_overpay") posts here on its own,
+    // separate from the sale's payment row, so it never shows up as
+    // `cbuExcess` on a "product" transaction. Query this ledger directly by
+    // its OR (refOrNo) instead of trying to re-attribute it onto another
+    // module's rows.
+    let cbuDocs = [];
+    if (wantCbu) {
+      const cbuMatch = {};
+      if (rangePaidAt) cbuMatch.createdAt = rangePaidAt;
+      if (q) {
+        cbuMatch.$or = [
+          { refOrNo: { $regex: q, $options: "i" } },
+          { pnNo: { $regex: q, $options: "i" } },
+          { accountName: { $regex: q, $options: "i" } },
+          { note: { $regex: q, $options: "i" } },
+          { source: { $regex: q, $options: "i" } },
+          ...(pnFromName.length ? [{ pnNo: { $in: pnFromName } }] : []),
+        ];
+      }
+      const cbuTail = buildOrAwareTail("$refOrNo", sortOpts);
+      cbuDocs = await CbuTransaction.aggregate([
+        { $match: cbuMatch },
+        { $addFields: { paidAt: "$createdAt" } }, // alias so the shared date-sort stage lines up
+        ...cbuTail.stages,
+      ]);
+    }
+
     // Attach account names (water docs already carry pnNo; loan docs use borrowerPnNo)
     const pnSet = new Set();
     waterDocs.forEach((d) => pnSet.add(d.pnNo));
     loanDocs.forEach((d) => pnSet.add(d.borrowerPnNo));
     productDocs.forEach((d) => { if (d.pnNo) pnSet.add(d.pnNo); });
     savingsDocs.forEach((d) => pnSet.add(d.pnNo));
+    cbuDocs.forEach((d) => { if (d.pnNo) pnSet.add(d.pnNo); });
     const members = await WaterMember.find({ pnNo: { $in: [...pnSet] } }).select("pnNo accountName").lean();
     const nameByPn = new Map(members.map((m) => [m.pnNo, m.accountName]));
 
@@ -259,6 +296,21 @@ router.get("/transactions", requireAuth, requireRole(["admin", "manager", "audit
       cbuExcess: 0,
       receivedBy: d.receivedBy || "",
     }));
+    const cbu = cbuDocs.map((d) => ({
+      // Strip the "#n" suffix (a multi-line cart sale's overpayment refers to
+      // the SHARED base OR, not any one line's suffixed OR).
+      _id: d._id, module: "cbu", orNo: String(d.refOrNo || "").replace(/#\d+$/, ""), paidAt: d.createdAt, method: "",
+      pnNo: d.pnNo, accountName: d.accountName || nameByPn.get(d.pnNo) || "",
+      type: d.type, // credit | debit
+      source: d.source, // water_overpay | loan_overpay | sale_overpay | cashier_contribution | product_loan_charge | manual_adjust | withdrawal | interest
+      amountDue: d.type === "credit" ? d.amount : 0,
+      amountReceived: d.type === "credit" ? d.amount : 0,
+      amountOut: d.type === "debit" ? d.amount : 0,
+      cbuExcess: d.type === "credit" ? d.amount : 0,
+      balanceAfter: d.balanceAfter || 0,
+      note: d.note || "",
+      receivedBy: d.postedBy || "",
+    }));
 
     const totals = {
       water: {
@@ -286,15 +338,22 @@ router.get("/transactions", requireAuth, requireRole(["admin", "manager", "audit
         amountDue: round2(savings.reduce((s, x) => s + (x.amountDue || 0), 0)),
         cbuExcess: 0,
       },
+      cbu: {
+        count: cbu.length,
+        amountReceived: round2(cbu.reduce((s, x) => s + (x.amountReceived || 0), 0)), // credits
+        amountOut: round2(cbu.reduce((s, x) => s + (x.amountOut || 0), 0)),           // debits
+        amountDue: round2(cbu.reduce((s, x) => s + (x.amountDue || 0), 0)),
+        cbuExcess: round2(cbu.reduce((s, x) => s + (x.cbuExcess || 0), 0)),
+      },
     };
     totals.grand = {
-      count: totals.water.count + totals.loan.count + totals.product.count + totals.savings.count,
-      amountReceived: round2(totals.water.amountReceived + totals.loan.amountReceived + totals.product.amountReceived + totals.savings.amountReceived),
-      amountDue: round2(totals.water.amountDue + totals.loan.amountDue + totals.product.amountDue + totals.savings.amountDue),
+      count: totals.water.count + totals.loan.count + totals.product.count + totals.savings.count + totals.cbu.count,
+      amountReceived: round2(totals.water.amountReceived + totals.loan.amountReceived + totals.product.amountReceived + totals.savings.amountReceived + totals.cbu.amountReceived),
+      amountDue: round2(totals.water.amountDue + totals.loan.amountDue + totals.product.amountDue + totals.savings.amountDue + totals.cbu.amountDue),
       cbuExcess: round2(totals.water.cbuExcess + totals.loan.cbuExcess),
     };
 
-    res.json({ water, loan, product, savings, totals });
+    res.json({ water, loan, product, savings, cbu, totals });
   } catch (e) {
     console.error("bookkeeper/transactions:", e);
     res.status(500).json({ message: "Failed to load transactions." });
@@ -359,11 +418,13 @@ router.get("/or-range-for-period", requireAuth, requireRole(["admin", "manager",
     const wantLoan = moduleParam === "all" || moduleParam === "loan";
     const wantProduct = moduleParam === "product";
     const wantSavings = moduleParam === "savings";
+    const wantCbu = moduleParam === "cbu";
 
     const vals = [];
     if (wantWater) vals.push(...await orNumsFor(WaterPayment, "$orNo", paidAtMatch));
     if (wantLoan) vals.push(...await orNumsFor(LoanPayment, "$orNo", paidAtMatch));
     if (wantSavings) vals.push(...await orNumsFor(SavingsTransaction, "$orNo", paidAtMatch));
+    if (wantCbu) vals.push(...await orNumsFor(CbuTransaction, "$refOrNo", { createdAt: { $gte: start, $lte: end } }));
     if (wantProduct) {
       vals.push(...await orNumsFor(
         ProductLoanApplication, "$payments.orNo",
