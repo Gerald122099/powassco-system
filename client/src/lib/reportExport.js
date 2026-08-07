@@ -29,8 +29,9 @@ const GREEN = [22, 101, 52];      // #166534
 const SLATE = [71, 85, 105];      // slate-600
 const INK = [15, 23, 42];         // slate-900
 const ZEBRA = [248, 250, 252];    // slate-50
-const GROUP_TOTAL_BG = [219, 234, 254]; // blue-100 — a synthetic "↳ OR ... TOTAL" row
+const GROUP_TOTAL_BG = [219, 234, 254]; // blue-100 — the bold "main" row of a grouped OR
 const GROUP_TOTAL_INK = [30, 64, 175];  // blue-800
+const SUBROW_BG = [248, 250, 252];      // slate-50 — that OR's individual meter/period lines
 
 const peso = (n) =>
   "₱" + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -41,6 +42,17 @@ const fmtDateTime = (d) => (d ? new Date(d).toLocaleString(undefined, { dateStyl
 // Latin-1 font can't draw ₱ (renders as a box), so swap it for "PHP ". When
 // the font loads (normal case) the real ₱ is used.
 const pdfSafe = (s) => String(s ?? "").replace(/₱/g, "PHP ");
+
+// The embedded report font (NotoSans-Report.ttf) is a small ~20KB SUBSET —
+// Latin + peso only, no arrows/dingbats/symbols. A character outside that
+// subset doesn't just render as a blank box: it can corrupt the position of
+// EVERY character after it in the same jsPDF text run (a custom-TTF glyph-
+// lookup quirk), which is what produced garbled, letter-spaced, truncated
+// cells the one time an arrow ("↳") slipped into a generated label. Strip
+// just the arrow/misc-symbol Unicode blocks defensively — accented Latin
+// (member names like "Peña") is untouched, only genuinely exotic glyphs are
+// removed — so this class of bug can't silently recur from a future label.
+const stripUnsafePdfGlyphs = (s) => String(s ?? "").replace(/[←-⇿⌀-➿]/g, "");
 
 // Load the report font once, as base64, for jsPDF embedding. Cached across
 // exports; resolves to null if it can't be fetched (→ Helvetica fallback).
@@ -125,8 +137,9 @@ export async function exportPdf({
   } catch { /* keep Helvetica fallback */ }
   const bodyFont = uniFont || "helvetica";
   // Text helper: pass through the real ₱ when the font is embedded, else
-  // swap ₱→"PHP " so Helvetica doesn't print a blank box.
-  const tx = (s) => (uniFont ? String(s ?? "") : pdfSafe(s));
+  // swap ₱→"PHP " so Helvetica doesn't print a blank box. Either way, strip
+  // glyphs the subset font can't shape (see stripUnsafePdfGlyphs above).
+  const tx = (s) => stripUnsafePdfGlyphs(uniFont ? String(s ?? "") : pdfSafe(s));
 
   // Letterhead (page 1)
   const logo = await getLogoDataUrl();
@@ -154,11 +167,11 @@ export async function exportPdf({
   doc.setFontSize(9);
   doc.setTextColor(...SLATE);
   let hy = 37.5;
-  if (subtitle) { doc.text(pdfSafe(subtitle), pageW / 2, hy, { align: "center" }); hy += 5; }
+  if (subtitle) { doc.text(stripUnsafePdfGlyphs(pdfSafe(subtitle)), pageW / 2, hy, { align: "center" }); hy += 5; }
   const periodLabel = periodLabelOverride || ((fromDate || toDate)
     ? `For the period: ${fmtDate(fromDate)} to ${fmtDate(toDate)}`
     : "All records");
-  doc.text(pdfSafe(periodLabel), pageW / 2, hy, { align: "center" }); hy += 4.5;
+  doc.text(stripUnsafePdfGlyphs(pdfSafe(periodLabel)), pageW / 2, hy, { align: "center" }); hy += 4.5;
   doc.text(pdfSafe(`${rows.length} row(s) - Generated ${new Date().toLocaleString()}`), pageW / 2, hy, { align: "center" });
 
   // Table — body uses the embedded Unicode font (real ₱); the header row
@@ -180,13 +193,20 @@ export async function exportPdf({
     }, {}),
     margin: { left: 10, right: 10, bottom: 16 },
     rowPageBreak: "avoid",
-    // A synthetic "↳ OR ... TOTAL" row (multi-meter/multi-period receipt
-    // rolled up under one OR) prints bold + tinted so it reads as a subtotal.
+    // A multi-meter/multi-period receipt (one OR, several lines) prints as a
+    // bold "main" row (combined due/received + the true OR-level CBU total)
+    // followed by its own lightly-tinted sub-rows underneath — same grouping
+    // as the on-screen Transactions view, just flattened for a printed table.
     didParseCell: (data) => {
-      if (data.section === "body" && rows[data.row.index]?._isGroupTotal) {
+      if (data.section !== "body") return;
+      const r = rows[data.row.index];
+      if (r?._isGroupMain) {
         data.cell.styles.fontStyle = "bold";
         data.cell.styles.fillColor = GROUP_TOTAL_BG;
         data.cell.styles.textColor = GROUP_TOTAL_INK;
+      } else if (r?._isSubRow) {
+        data.cell.styles.fillColor = SUBROW_BG;
+        data.cell.styles.textColor = SLATE;
       }
     },
   });
@@ -215,7 +235,7 @@ export async function exportPdf({
       // Label: Helvetica (bold for the emphasized last line). Value: the
       // embedded Unicode font so the ₱ amount renders correctly.
       doc.setFont("helvetica", emphasize ? "bold" : "normal");
-      doc.text(pdfSafe(t.label), boxX + 3, ty);
+      doc.text(stripUnsafePdfGlyphs(pdfSafe(t.label)), boxX + 3, ty);
       doc.setFont(bodyFont, "normal");
       doc.text(tx(t.value), boxX + boxW - 3, ty, { align: "right" });
       ty += lineH;
@@ -316,17 +336,22 @@ export async function exportExcel({
       return String(cellValue(c, r));
     });
     const row = ws.addRow(values);
-    // A synthetic "↳ OR ... TOTAL" row (multi-meter/multi-period receipt
-    // rolled up under one OR) fills bold + tinted so it reads as a subtotal.
-    const isGroupTotal = !!r._isGroupTotal;
+    // A multi-meter/multi-period receipt (one OR, several lines) fills its
+    // bold "main" row blue and its own sub-rows a light gray underneath —
+    // same grouping as the on-screen Transactions view.
+    const isGroupMain = !!r._isGroupMain;
+    const isSubRow = !!r._isSubRow;
     row.eachCell((cell, col) => {
       const c = columns[col - 1];
       cell.border = { top: { style: "hair", color: { argb: "FFE2E8F0" } } };
       if (c.align === "right") cell.alignment = { horizontal: "right" };
       if (typeof cell.value === "number") cell.numFmt = '"₱"#,##0.00';
-      if (isGroupTotal) {
+      if (isGroupMain) {
         cell.font = { bold: true, color: { argb: "FF1E40AF" } };
         cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFDBEAFE" } };
+      } else if (isSubRow) {
+        cell.font = { color: { argb: "FF64748B" } };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF8FAFC" } };
       }
     });
   }

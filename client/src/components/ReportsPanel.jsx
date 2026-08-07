@@ -58,11 +58,14 @@ const sum = (arr) => arr.reduce((s, x) => s + (Number(x) || 0), 0);
 // number that isn't "buried on whichever sub-row happened to carry the extra
 // cash". Since this flat row list feeds BOTH the on-screen preview and the
 // exported PDF/Excel (same rows + columns, no separate print layout), the
-// grouping has to live in the DATA: each individual line's own "CBU excess"
-// cell is blanked, and a synthetic "↳ OR TOTAL" line is appended after the
-// group showing the combined due/received/CBU — reads like a normal ledger
-// subtotal in the printed report. Single-line ORs (the common case) are left
-// untouched, just with their cbuExcess corrected to the ledger total.
+// grouping has to live in the DATA: a bold "main" row goes FIRST (combined
+// due/received + the OR-level CBU total), then each meter/period's own line
+// follows underneath as a sub-row — same order as the on-screen Transactions
+// view. Sub-row text is kept plain ASCII: the embedded PDF font is a small
+// Latin-only subset, and an arrow/symbol glyph outside it can corrupt the
+// position of every character after it in that PDF text run. Single-line ORs
+// (the common case) are left untouched, just with cbuExcess corrected to the
+// ledger total.
 function withOrGroupTotals(rows) {
   const order = [];
   const map = new Map();
@@ -79,17 +82,18 @@ function withOrGroupTotals(rows) {
       out.push({ ...r, cbuExcess: r.orCbuTotal ?? r.cbuExcess ?? 0 });
       continue;
     }
-    for (const r of grp) out.push({ ...r, cbuExcess: 0 });
+    const subLabel = `${grp.length} sub-transactions`;
     out.push({
-      _id: `${key}-total`, _type: grp[0]._type, _isGroupTotal: true,
-      orNo: `↳ OR ${grp[0].orNo} TOTAL (${grp.length} lines)`,
-      pnNo: grp[0].pnNo, accountName: grp[0].accountName,
+      _id: `${key}-main`, _type: grp[0]._type, _isGroupMain: true,
+      orNo: grp[0].orNo, pnNo: grp[0].pnNo, accountName: grp[0].accountName,
+      meterNumber: subLabel, loanId: subLabel, periodsCovered: "",
       amountDue: sum(grp.map((r) => r.amountDue)),
       amountReceived: sum(grp.map((r) => r.amountReceived)),
       cbuExcess: grp[0].orCbuTotal || 0,
       receivedBy: grp[0].receivedBy,
       paidAt: grp[grp.length - 1].paidAt,
     });
+    for (const r of grp) out.push({ ...r, _isSubRow: true, orNo: "", pnNo: "", accountName: "", cbuExcess: 0 });
   }
   return out;
 }
@@ -663,9 +667,9 @@ export default function ReportsPanel({ defaultTitle = "Treasurer's Report — Ca
               ) : allRows.length === 0 ? (
                 <tr><td colSpan={exportColumns.length} className="py-10 text-center text-slate-500">No transactions in this range.</td></tr>
               ) : allRows.map((r) => (
-                <tr key={`${r._type}-${r._id}`} className={`border-t ${r._isGroupTotal ? "bg-blue-50/60 font-bold text-blue-800" : ""}`}>
-                  {exportColumns.map((c) => (
-                    <td key={c.header} className={`px-3 py-1.5 ${c.align === "right" ? "text-right font-mono" : ""}`}>
+                <tr key={`${r._type}-${r._id}`} className={`border-t ${r._isGroupMain ? "bg-blue-50/60 font-bold text-blue-800" : r._isSubRow ? "bg-slate-50/70 text-slate-500" : ""}`}>
+                  {exportColumns.map((c, i) => (
+                    <td key={c.header} className={`px-3 py-1.5 ${c.align === "right" ? "text-right font-mono" : ""} ${r._isSubRow && i === 0 ? "pl-6" : ""}`}>
                       {c.format ? c.format(r[c.key], r) : (r[c.key] ?? "—")}
                     </td>
                   ))}
