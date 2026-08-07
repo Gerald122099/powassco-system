@@ -153,6 +153,14 @@ export async function exportPdf({
     if (b64) {
       doc.addFileToVFS("NotoSans-Report.ttf", b64);
       doc.addFont("NotoSans-Report.ttf", "NotoSans", "normal");
+      // Register the SAME (only) weight under "bold" too. Without this, any
+      // cell styled bold (e.g. a grouped-OR main row) asks jsPDF for a
+      // "NotoSans bold" that was never registered — jsPDF silently falls
+      // back to a Latin-1 font for that cell, which can't encode ₱ (U+20B1)
+      // and truncates it to its low byte, printing "±" (U+00B1) instead —
+      // and mangles the numbers next to it. This isn't true bold (same
+      // outlines), but it keeps the font — and the peso sign — correct.
+      doc.addFont("NotoSans-Report.ttf", "NotoSans", "bold");
       uniFont = "NotoSans";
     }
   } catch { /* keep Helvetica fallback */ }
