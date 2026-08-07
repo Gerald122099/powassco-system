@@ -16,6 +16,7 @@ import express from "express";
 import mongoose from "mongoose";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import User from "../models/User.js";
+import { getOnlineUserIds } from "../realtime.js";
 
 const ChatMessageSchema = new mongoose.Schema(
   {
@@ -70,7 +71,11 @@ router.get("/members", ...guard, async (req, res) => {
   try {
     const users = await User.find({ role: { $in: CHAT_ROLES } })
       .select("fullName employeeId role").sort({ fullName: 1 }).lean();
-    res.json(users.map((u) => ({ id: String(u._id), name: u.fullName || u.employeeId || "Staff", role: u.role })));
+    // `online` is a snapshot at request time — the client's live socket
+    // connection (presence:changed / presence:snapshot) keeps it current
+    // after that without re-polling this endpoint.
+    const online = new Set(getOnlineUserIds());
+    res.json(users.map((u) => ({ id: String(u._id), name: u.fullName || u.employeeId || "Staff", role: u.role, online: online.has(String(u._id)) })));
   } catch (e) {
     res.status(500).json({ message: "Failed to load members." });
   }

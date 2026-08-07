@@ -11,7 +11,8 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { apiFetch } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
-import { MessageCircle, X, Send, Pencil, Trash2, Check, Camera, SmilePlus, Monitor, AtSign, BellRing } from "lucide-react";
+import { useOnlinePresence } from "../lib/realtime";
+import { MessageCircle, X, Send, Pencil, Trash2, Check, Camera, SmilePlus, Monitor, AtSign, BellRing, Users } from "lucide-react";
 
 const CHAT_ROLES = new Set(["admin", "manager", "cashier", "loan_officer", "water_bill_officer", "bookkeeper"]);
 const LAST_SEEN_KEY = "pow_chat_last_seen";
@@ -39,6 +40,18 @@ const fmtTime = (d) =>
   new Date(d).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 
 const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+// Green = online, red = offline. Used as a corner badge on avatars and as a
+// standalone dot in the roster list.
+function PresenceDot({ online, size = 10, className = "" }) {
+  return (
+    <span
+      className={`rounded-full ring-2 ring-white ${online ? "bg-emerald-500" : "bg-red-500"} ${className}`}
+      style={{ width: size, height: size }}
+      title={online ? "Online" : "Offline"}
+    />
+  );
+}
 
 // Short two-tone chime for an incoming @mention (WebAudio, no asset).
 function playPing() {
@@ -104,6 +117,8 @@ export default function StaffChat() {
   // Special @mention alert (amber popup + chime), separate from preview.
   const [mentionPopup, setMentionPopup] = useState(null); // { name, text }
   const [members, setMembers] = useState([]); // roster for the @ picker
+  const [showRoster, setShowRoster] = useState(false); // team members popover
+  const online = useOnlinePresence(); // Set<userId> — live green/red presence
   const previewTimer = useRef(null);
   const mentionTimer = useRef(null);
   const lastNotifiedId = useRef("");
@@ -404,6 +419,18 @@ export default function StaffChat() {
               <MessageCircle size={16} /> Team Chat
             </div>
             <div className="flex items-center gap-1">
+              <button
+                onClick={() => setShowRoster((v) => !v)}
+                className={`relative rounded-lg p-1 hover:bg-emerald-700 ${showRoster ? "bg-emerald-700" : ""}`}
+                title="Who's online"
+              >
+                <Users size={15} />
+                {members.some((mb) => online.has(mb.id)) && (
+                  <span className="absolute -top-1 -right-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-white px-0.5 text-[8px] font-extrabold text-emerald-700 ring-1 ring-emerald-700">
+                    {members.filter((mb) => online.has(mb.id)).length}
+                  </span>
+                )}
+              </button>
               <label className="cursor-pointer rounded-lg p-1 hover:bg-emerald-700" title="Set my profile photo">
                 <Camera size={15} />
                 <input type="file" accept="image/*" onChange={setPhoto} className="hidden" />
@@ -413,6 +440,40 @@ export default function StaffChat() {
               </button>
             </div>
           </div>
+
+          {/* Team roster popover — green/red presence dot per member. */}
+          {showRoster && (
+            <div className="absolute right-3 top-14 z-10 max-h-72 w-64 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-2xl">
+              <div className="px-1.5 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                {members.filter((mb) => online.has(mb.id)).length} of {members.length} online
+              </div>
+              {[...members]
+                .sort((a, b) => {
+                  const ao = online.has(a.id) ? 1 : 0, bo = online.has(b.id) ? 1 : 0;
+                  return ao !== bo ? bo - ao : (a.name || "").localeCompare(b.name || "");
+                })
+                .map((mb) => {
+                  const isOn = online.has(mb.id);
+                  return (
+                    <div key={mb.id} className="flex items-center gap-2 rounded-lg px-1.5 py-1.5 hover:bg-slate-50">
+                      <span className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-200 text-[10px] font-bold text-slate-600">
+                        {(mb.name || "?").slice(0, 2).toUpperCase()}
+                        <PresenceDot online={isOn} size={9} className="absolute -bottom-0.5 -right-0.5" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-xs font-semibold text-slate-800">
+                          {mb.name}{mb.id === myId ? " (you)" : ""}
+                        </div>
+                        <div className="text-[10px] text-slate-400">{ROLE_LABEL[mb.role] || mb.role}</div>
+                      </div>
+                      <span className={`shrink-0 text-[9px] font-bold ${isOn ? "text-emerald-600" : "text-red-500"}`}>
+                        {isOn ? "Online" : "Offline"}
+                      </span>
+                    </div>
+                  );
+                })}
+            </div>
+          )}
 
           <div ref={listRef} className="flex-1 space-y-2 overflow-y-auto bg-slate-50 px-3 py-3">
             {messages.length === 0 ? (
@@ -466,9 +527,12 @@ export default function StaffChat() {
               return (
                 <div key={m._id} className={`group flex items-end gap-1.5 ${mine ? "justify-end" : "justify-start"}`}>
                   {!mine && (
-                    m.fromAvatar
-                      ? <img src={m.fromAvatar} alt="" className="h-7 w-7 shrink-0 rounded-full object-cover border border-slate-200" />
-                      : <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-300 text-[10px] font-bold text-white">{(m.fromName || "?").slice(0, 2).toUpperCase()}</div>
+                    <span className="relative shrink-0">
+                      {m.fromAvatar
+                        ? <img src={m.fromAvatar} alt="" className="h-7 w-7 rounded-full object-cover border border-slate-200" />
+                        : <div className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-300 text-[10px] font-bold text-white">{(m.fromName || "?").slice(0, 2).toUpperCase()}</div>}
+                      <PresenceDot online={online.has(m.fromId)} size={9} className="absolute -bottom-0.5 -right-0.5" />
+                    </span>
                   )}
                   <div className={`relative max-w-[80%] rounded-2xl px-3 py-2 shadow-sm ${mine ? "bg-emerald-600 text-white" : "bg-white border border-slate-200"} ${mentionsMe ? "ring-2 ring-amber-400" : ""}`}>
                     <div className="mb-0.5 flex items-center gap-1.5">
@@ -574,8 +638,9 @@ export default function StaffChat() {
                   onClick={() => pickMention(mb)}
                   className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-emerald-50"
                 >
-                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-200 text-[10px] font-bold text-slate-600">
+                  <span className="relative flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-200 text-[10px] font-bold text-slate-600">
                     {(mb.name || "?").slice(0, 2).toUpperCase()}
+                    <PresenceDot online={online.has(mb.id)} size={8} className="absolute -bottom-0.5 -right-0.5" />
                   </span>
                   <span className="font-semibold text-slate-800">{mb.name}</span>
                   <span className="ml-auto text-[10px] text-slate-400">{ROLE_LABEL[mb.role] || mb.role}</span>

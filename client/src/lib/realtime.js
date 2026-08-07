@@ -6,7 +6,7 @@
 // Usage:
 //   useRealtime("payments", load);              // single topic
 //   useRealtime(["payments", "water-bills"], load);
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
 
 function apiOrigin() {
@@ -62,4 +62,39 @@ export function useRealtime(topics, onChange) {
       try { s.emit("unsubscribe", list); } catch { /* ignore */ }
     };
   }, [key]);
+}
+
+// Which staff userIds currently hold a live socket connection (green/red
+// presence dots — e.g. team chat). Request/response, not a one-time push:
+// the underlying socket is a shared singleton reused across the whole app,
+// so a component mounting this hook has usually missed the original
+// connect event — it asks "presence:subscribe" and gets a fresh snapshot
+// back, then follows incremental "presence:changed" events after that.
+export function useOnlinePresence() {
+  const [online, setOnline] = useState(() => new Set());
+  useEffect(() => {
+    const s = getSocket();
+    if (!s) return undefined;
+    const onSnapshot = (msg) => setOnline(new Set(msg?.online || []));
+    const onChanged = (msg) => {
+      if (!msg?.userId) return;
+      setOnline((prev) => {
+        const next = new Set(prev);
+        if (msg.online) next.add(msg.userId);
+        else next.delete(msg.userId);
+        return next;
+      });
+    };
+    const requestSnapshot = () => s.emit("presence:subscribe");
+    s.on("presence:snapshot", onSnapshot);
+    s.on("presence:changed", onChanged);
+    s.on("connect", requestSnapshot);
+    if (s.connected) requestSnapshot();
+    return () => {
+      s.off("presence:snapshot", onSnapshot);
+      s.off("presence:changed", onChanged);
+      s.off("connect", requestSnapshot);
+    };
+  }, []);
+  return online;
 }

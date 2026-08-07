@@ -52,6 +52,27 @@ const COLLECTION_TOPIC = {
 
 const ALLOWED_TOPICS = new Set(Object.values(COLLECTION_TOPIC));
 
+// ── Presence (team chat online/offline dots) ───────────────────────────────
+// userId -> Set<socketId>. A user counts "online" as long as at least one of
+// their tabs/devices holds a live socket. Multiple connections collapse to
+// one green dot.
+const presence = new Map();
+// A socket.io client reconnect (brief network blip, tab backgrounded) drops
+// and reopens the socket a moment later — a naive disconnect->offline would
+// flicker red/green. Delay the "offline" broadcast briefly so a fast
+// reconnect cancels it before anyone sees it.
+const offlineTimers = new Map(); // userId -> Timeout
+const OFFLINE_GRACE_MS = 8000;
+
+export function getOnlineUserIds() {
+  return [...presence.keys()];
+}
+
+function broadcastPresence(userId, online) {
+  if (!io) return;
+  io.emit("presence:changed", { userId, online, at: Date.now() });
+}
+
 export function initRealtime(httpServer, { allowedOrigins, isPreview }) {
   io = new Server(httpServer, {
     cors: {
@@ -93,6 +114,38 @@ export function initRealtime(httpServer, { allowedOrigins, isPreview }) {
     // client joins a per-run room and receives "job:progress" events.
     socket.on("joinJob", (jobId) => { if (typeof jobId === "string" && jobId) socket.join(`job:${jobId}`); });
     socket.on("leaveJob", (jobId) => { if (typeof jobId === "string" && jobId) socket.leave(`job:${jobId}`); });
+
+    // Presence: mark this user online (first connection). Snapshots are
+    // request/response (not just fired once on connect) so a component that
+    // mounts its presence listener AFTER the shared socket already connected
+    // — the normal case, since one socket is reused app-wide — still gets
+    // the current online list instead of missing a one-time event.
+    const uid = String(socket.user?.id || "");
+    if (uid) {
+      const wasOffline = !presence.has(uid);
+      if (wasOffline) presence.set(uid, new Set());
+      presence.get(uid).add(socket.id);
+      const pendingOffline = offlineTimers.get(uid);
+      if (pendingOffline) { clearTimeout(pendingOffline); offlineTimers.delete(uid); }
+      else if (wasOffline) broadcastPresence(uid, true);
+    }
+    socket.on("presence:subscribe", () => {
+      socket.emit("presence:snapshot", { online: getOnlineUserIds() });
+    });
+
+    socket.on("disconnect", () => {
+      if (!uid) return;
+      const set = presence.get(uid);
+      if (!set) return;
+      set.delete(socket.id);
+      if (set.size > 0) return;
+      presence.delete(uid);
+      const t = setTimeout(() => {
+        offlineTimers.delete(uid);
+        broadcastPresence(uid, false);
+      }, OFFLINE_GRACE_MS);
+      offlineTimers.set(uid, t);
+    });
   });
 
   return io;
