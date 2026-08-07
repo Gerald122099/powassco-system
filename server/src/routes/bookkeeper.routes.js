@@ -51,29 +51,59 @@ function dateRange(fromStr, toStr) {
   return Object.keys(range).length ? range : null;
 }
 
-// OR-number RANGE (bookkeeper reports). The physical OR booklet doesn't line
-// up with calendar dates — an OR from May's booklet sometimes gets keyed in
-// during June, so a date-range report silently misfiles it into the wrong
-// month. Filtering by the OR NUMBER itself reproduces "everything on OR
-// 40760-41200" regardless of what date each row landed on. The number is the
-// LEADING DIGIT RUN of orNo — a "#2" suffix (shared multi-meter OR) is
-// ignored, and a non-numeric OR (e.g. "INT-...", "LEG-...") never matches, by
-// design: those aren't physical booklet entries.
-// Returns null (no-op) when neither bound is given, else the aggregation
-// stages that compute `_orNum` from `fieldPath` and match it into range.
-function orRangeStages(fieldPath, orFrom, orTo) {
+// OR-number RANGE + SEQUENCE SORT (bookkeeper reports). The physical OR
+// booklet doesn't line up with calendar dates — an OR from May's booklet
+// sometimes gets keyed in during June, so a date-range report silently
+// misfiles it into the wrong month, and a date-sorted list doesn't read in
+// booklet order either. Both filtering AND sorting by the OR NUMBER itself
+// work off the same computed value: the LEADING DIGIT RUN of orNo — a "#2"
+// suffix (shared multi-meter OR) is ignored, and a non-numeric OR (e.g.
+// "INT-...", "LEG-...") never matches a range and sorts last, by design:
+// those aren't physical booklet entries.
+//
+// withOrNumStages: compute `_orNum` (nullable) from `fieldPath`.
+// orRangeMatchStage: a $match narrowing to [orFrom, orTo] — requires
+//   `_orNum` already computed via withOrNumStages; returns null (no-op) when
+//   neither bound is given.
+function withOrNumStages(fieldPath) {
+  return [
+    { $addFields: { _orDigits: { $regexFind: { input: { $ifNull: [fieldPath, ""] }, regex: /^\d+/ } } } },
+    { $addFields: { _orNum: { $convert: { input: "$_orDigits.match", to: "long", onError: null, onNull: null } } } },
+  ];
+}
+function orRangeMatchStage(orFrom, orTo) {
   const fromNum = orFrom !== "" && orFrom != null ? parseInt(String(orFrom).replace(/\D/g, ""), 10) : null;
   const toNum = orTo !== "" && orTo != null ? parseInt(String(orTo).replace(/\D/g, ""), 10) : null;
   if (!Number.isFinite(fromNum) && !Number.isFinite(toNum)) return null;
   const numMatch = { _orNum: { $ne: null } };
   if (Number.isFinite(fromNum)) numMatch._orNum.$gte = fromNum;
   if (Number.isFinite(toNum)) numMatch._orNum.$lte = toNum;
-  return [
-    { $addFields: { _orDigits: { $regexFind: { input: { $ifNull: [fieldPath, ""] }, regex: /^\d+/ } } } },
-    { $addFields: { _orNum: { $convert: { input: "$_orDigits.match", to: "long", onError: null, onNull: null } } } },
-    { $match: numMatch },
-    { $project: { _orDigits: 0, _orNum: 0 } },
-  ];
+  return { $match: numMatch };
+}
+const DROP_OR_TEMP_FIELDS = { $project: { _orDigits: 0, _orNum: 0 } };
+
+// Builds the full filter+sort tail of a collection's pipeline: OR-range
+// filter (if given) and either date sort (default) or OR-number ascending/
+// descending sort, sharing one `_orNum` computation for both concerns.
+// `matchStage` is any $match to run FIRST (e.g. after an $unwind); pass null
+// for none. Returns { stages, usesAgg } — usesAgg tells the caller whether
+// this collection needs the aggregation path at all (false = the plain
+// `.find()` fast path is still safe, keeping the common case cheap).
+function buildOrAwareTail(fieldPath, { orFrom, orTo, sortBy, sortDir }) {
+  const rangeStage = orRangeMatchStage(orFrom, orTo);
+  const sortByOr = sortBy === "or";
+  const usesAgg = !!rangeStage || sortByOr;
+  const dir = sortDir === "asc" ? 1 : -1;
+  const stages = usesAgg
+    ? [
+        ...withOrNumStages(fieldPath),
+        ...(rangeStage ? [rangeStage] : []),
+        { $sort: sortByOr ? { _orNum: dir } : { paidAt: dir } },
+        { $limit: 1000 },
+        DROP_OR_TEMP_FIELDS,
+      ]
+    : [{ $sort: { paidAt: dir } }, { $limit: 1000 }];
+  return { stages, usesAgg };
 }
 
 // ----- Transactions feed (cashier postings) -----
@@ -83,8 +113,10 @@ function orRangeStages(fieldPath, orFrom, orTo) {
 //
 //   ?module=all|water|loan|product|savings
 //   ?from=&to=              — date range on paidAt (as before)
-//   ?orFrom=&orTo=           — OR NUMBER range (see orRangeStages above);
+//   ?orFrom=&orTo=           — OR NUMBER range (see buildOrAwareTail above);
 //                              combines with from/to if both are given
+//   ?sortBy=date|or          — date (default, newest first) or OR-number sequence
+//   ?sortDir=asc|desc        — default desc (newest-first / highest-OR-first)
 //   ?q=                      — free-text OR/PN/meter/loan/name search
 //
 // "all" stays water+loan only (unchanged, so existing Treasurer's Report
@@ -97,6 +129,11 @@ router.get("/transactions", requireAuth, requireRole(["admin", "manager", "audit
     const rangePaidAt = dateRange(req.query.from, req.query.to);
     const orFrom = String(req.query.orFrom ?? "").trim();
     const orTo = String(req.query.orTo ?? "").trim();
+    const sortOpts = {
+      orFrom, orTo,
+      sortBy: String(req.query.sortBy || "date").toLowerCase() === "or" ? "or" : "date",
+      sortDir: String(req.query.sortDir || "desc").toLowerCase() === "asc" ? "asc" : "desc",
+    };
 
     const baseMatch = {};
     if (rangePaidAt) baseMatch.paidAt = rangePaidAt;
@@ -129,18 +166,18 @@ router.get("/transactions", requireAuth, requireRole(["admin", "manager", "audit
     const wantSavings = moduleParam === "savings";
 
     const wlMatch = orMatch ? { ...baseMatch, $or: orMatch } : baseMatch;
-    const wlOrStages = orRangeStages("$orNo", orFrom, orTo);
+    const wlTail = buildOrAwareTail("$orNo", sortOpts);
 
     const [waterDocs, loanDocs] = await Promise.all([
       wantWater
-        ? (wlOrStages
-            ? WaterPayment.aggregate([{ $match: wlMatch }, ...wlOrStages, { $sort: { paidAt: -1 } }, { $limit: 1000 }])
-            : WaterPayment.find(wlMatch).sort({ paidAt: -1 }).limit(500).lean())
+        ? (wlTail.usesAgg
+            ? WaterPayment.aggregate([{ $match: wlMatch }, ...wlTail.stages])
+            : WaterPayment.find(wlMatch).sort({ paidAt: sortOpts.sortDir === "asc" ? 1 : -1 }).limit(500).lean())
         : Promise.resolve([]),
       wantLoan
-        ? (wlOrStages
-            ? LoanPayment.aggregate([{ $match: wlMatch }, ...wlOrStages, { $sort: { paidAt: -1 } }, { $limit: 1000 }])
-            : LoanPayment.find(wlMatch).sort({ paidAt: -1 }).limit(500).lean())
+        ? (wlTail.usesAgg
+            ? LoanPayment.aggregate([{ $match: wlMatch }, ...wlTail.stages])
+            : LoanPayment.find(wlMatch).sort({ paidAt: sortOpts.sortDir === "asc" ? 1 : -1 }).limit(500).lean())
         : Promise.resolve([]),
     ]);
 
@@ -149,6 +186,7 @@ router.get("/transactions", requireAuth, requireRole(["admin", "manager", "audit
     // with water/loan's one-row-per-OR shape.
     let productDocs = [];
     if (wantProduct) {
+      const productTail = buildOrAwareTail("$payments.orNo", sortOpts);
       productDocs = await ProductLoanApplication.aggregate([
         { $unwind: "$payments" },
         ...(rangePaidAt ? [{ $match: { "payments.paidAt": rangePaidAt } }] : []),
@@ -159,15 +197,13 @@ router.get("/transactions", requireAuth, requireRole(["admin", "manager", "audit
             { customerName: { $regex: q, $options: "i" } },
             ...(pnFromName.length ? [{ pnNo: { $in: pnFromName } }] : []),
           ] } }] : []),
-        ...(orRangeStages("$payments.orNo", orFrom, orTo) || []),
+        ...productTail.stages,
         { $project: {
             _id: "$payments._id", orNo: "$payments.orNo", paidAt: "$payments.paidAt",
             method: "$payments.method", receivedBy: "$payments.receivedBy",
             amountReceived: "$payments.amount",
             pnNo: 1, accountName: 1, customerName: 1, productName: 1, transactionType: 1, quantity: 1,
         } },
-        { $sort: { paidAt: -1 } },
-        { $limit: 1000 },
       ]);
     }
 
@@ -176,10 +212,10 @@ router.get("/transactions", requireAuth, requireRole(["admin", "manager", "audit
     if (wantSavings) {
       const savMatch = { ...baseMatch };
       if (orMatch) savMatch.$or = orMatch;
-      const savStages = orRangeStages("$orNo", orFrom, orTo);
-      savingsDocs = savStages
-        ? await SavingsTransaction.aggregate([{ $match: savMatch }, ...savStages, { $sort: { paidAt: -1 } }, { $limit: 1000 }])
-        : await SavingsTransaction.find(savMatch).sort({ paidAt: -1 }).limit(500).lean();
+      const savTail = buildOrAwareTail("$orNo", sortOpts);
+      savingsDocs = savTail.usesAgg
+        ? await SavingsTransaction.aggregate([{ $match: savMatch }, ...savTail.stages])
+        : await SavingsTransaction.find(savMatch).sort({ paidAt: sortOpts.sortDir === "asc" ? 1 : -1 }).limit(500).lean();
     }
 
     // Attach account names (water docs already carry pnNo; loan docs use borrowerPnNo)
@@ -262,6 +298,89 @@ router.get("/transactions", requireAuth, requireRole(["admin", "manager", "audit
   } catch (e) {
     console.error("bookkeeper/transactions:", e);
     res.status(500).json({ message: "Failed to load transactions." });
+  }
+});
+
+// Trims the extreme ~2% off each end of a SORTED numeric array before taking
+// its min/max. Raw min/max is unusable here: a combined-OR string like
+// "28530&40899-88038#1" (only its first token is a real, current-era OR — the
+// rest are historical/multi-meter references) or a single fat-fingered typo
+// can drag the boundary by tens of thousands. Verified against production
+// Feb 2026 data: raw min/max was 28530-407822 (useless — a 379k-wide span);
+// the 2%-trimmed bounds landed on 40778-42450, matching the real booklet
+// range for that month. Skips trimming under 20 points (too few to trim
+// safely — just use the true min/max).
+function trimmedBounds(sortedVals) {
+  const n = sortedVals.length;
+  if (n === 0) return { min: null, max: null };
+  if (n < 20) return { min: sortedVals[0], max: sortedVals[n - 1] };
+  const trim = Math.max(1, Math.round(n * 0.02));
+  return { min: sortedVals[trim], max: sortedVals[n - 1 - trim] };
+}
+
+// Sorted array of `_orNum` values (numeric ORs only) for one collection,
+// scoped to `matchStage` (+ any extraStages needed before the OR is
+// computable, e.g. an $unwind for product payments).
+async function orNumsFor(Model, fieldPath, matchStage, extraStages = []) {
+  const rows = await Model.aggregate([
+    { $match: matchStage },
+    ...extraStages,
+    ...withOrNumStages(fieldPath),
+    { $match: { _orNum: { $ne: null } } },
+    { $project: { _orNum: 1 } },
+    { $sort: { _orNum: 1 } },
+    { $limit: 5000 },
+  ]);
+  return rows.map((r) => r._orNum);
+}
+
+// ----- OR range auto-fill for a Month/Period (bookkeeper reports) -----
+// GET /bookkeeper/or-range-for-period?period=YYYY-MM&module=all|water|loan|product|savings
+//
+// Lets the bookkeeper pick a MONTH from a dropdown instead of typing OR
+// numbers from memory: this looks up the OR NUMBERS actually used by rows
+// dated within that calendar month and suggests a (trimmed) range from them.
+// The client pre-fills the OR range inputs with it — still editable before
+// generating, since this is a starting SUGGESTION, not a guarantee: a stray
+// OR from an adjoining month's booklet, keyed in a few days early/late,
+// can still shift the true boundary by a little.
+router.get("/or-range-for-period", requireAuth, requireRole(["admin", "manager", "audit_committee", "bookkeeper", "cashier"]), async (req, res) => {
+  try {
+    const period = String(req.query.period || "").trim(); // "YYYY-MM"
+    const m = period.match(/^(\d{4})-(\d{2})$/);
+    if (!m) return res.status(400).json({ message: "period must be YYYY-MM." });
+    const year = Number(m[1]), month = Number(m[2]);
+    const start = new Date(year, month - 1, 1, 0, 0, 0, 0);
+    const end = new Date(year, month, 0, 23, 59, 59, 999); // last day of that month
+    const moduleParam = String(req.query.module || "all").toLowerCase();
+    const paidAtMatch = { paidAt: { $gte: start, $lte: end } };
+
+    const wantWater = moduleParam === "all" || moduleParam === "water";
+    const wantLoan = moduleParam === "all" || moduleParam === "loan";
+    const wantProduct = moduleParam === "product";
+    const wantSavings = moduleParam === "savings";
+
+    const vals = [];
+    if (wantWater) vals.push(...await orNumsFor(WaterPayment, "$orNo", paidAtMatch));
+    if (wantLoan) vals.push(...await orNumsFor(LoanPayment, "$orNo", paidAtMatch));
+    if (wantSavings) vals.push(...await orNumsFor(SavingsTransaction, "$orNo", paidAtMatch));
+    if (wantProduct) {
+      vals.push(...await orNumsFor(
+        ProductLoanApplication, "$payments.orNo",
+        { "payments.paidAt": { $gte: start, $lte: end } },
+        [{ $unwind: "$payments" }]
+      ));
+    }
+
+    if (!vals.length) {
+      return res.json({ period, module: moduleParam, orFrom: "", orTo: "", count: 0 });
+    }
+    vals.sort((a, b) => a - b);
+    const { min, max } = trimmedBounds(vals);
+    res.json({ period, module: moduleParam, orFrom: String(min), orTo: String(max), count: vals.length });
+  } catch (e) {
+    console.error("bookkeeper/or-range-for-period:", e);
+    res.status(500).json({ message: "Failed to determine the OR range for that period." });
   }
 });
 

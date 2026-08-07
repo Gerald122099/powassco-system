@@ -3,10 +3,26 @@ import Card from "../../components/Card";
 import { apiFetch } from "../../lib/api";
 import { useRealtime } from "../../lib/realtime";
 import { useAuth } from "../../context/AuthContext";
-import { Receipt, RefreshCw, Filter, Search, Hash } from "lucide-react";
+import { Receipt, RefreshCw, Filter, Search, Hash, ArrowUpNarrowWide, ArrowDownWideNarrow, CalendarClock } from "lucide-react";
 
 const peso = (n) => "₱" + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtDateTime = (d) => (d ? new Date(d).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "—");
+
+// Last `n` months (this month first) as { key: "YYYY-MM", label: "Month YYYY" }
+// — feeds the "auto-fill OR range from a month" picker.
+function recentMonths(n = 18) {
+  const out = [];
+  const now = new Date();
+  for (let i = 0; i < n; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    out.push({
+      key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
+      label: d.toLocaleDateString(undefined, { month: "long", year: "numeric" }),
+    });
+  }
+  return out;
+}
+const MONTHS = recentMonths();
 
 export default function TransactionsPanel() {
   const { token } = useAuth();
@@ -18,6 +34,14 @@ export default function TransactionsPanel() {
   // this filters by the OR NUMBER itself instead of the date it was typed.
   const [orFrom, setOrFrom] = useState("");
   const [orTo, setOrTo] = useState("");
+  const [orMonth, setOrMonth] = useState(""); // selected month for the auto-fill picker
+  const [orMonthBusy, setOrMonthBusy] = useState(false);
+  const [orMonthInfo, setOrMonthInfo] = useState(""); // small note after auto-fill
+  // Sort: "Newest first" (date desc, default/unchanged) or OR-number
+  // ascending/descending — lets the bookkeeper read the report in true
+  // booklet sequence to spot gaps or out-of-order entries.
+  const [sortBy, setSortBy] = useState("date"); // date | or
+  const [sortDir, setSortDir] = useState("desc"); // asc | desc
   const [q, setQ] = useState("");
   const [data, setData] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -26,7 +50,7 @@ export default function TransactionsPanel() {
   const load = useCallback(async () => {
     setBusy(true); setErr("");
     try {
-      const params = new URLSearchParams({ module: moduleFilter });
+      const params = new URLSearchParams({ module: moduleFilter, sortBy, sortDir });
       if (from) params.set("from", from);
       if (to) params.set("to", to);
       if (orFrom.trim()) params.set("orFrom", orFrom.trim());
@@ -35,11 +59,28 @@ export default function TransactionsPanel() {
       setData(await apiFetch(`/bookkeeper/transactions?${params.toString()}`, { token }));
     } catch (e) { setErr(e.message); } finally { setBusy(false); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [moduleFilter, from, to, orFrom, orTo, token]);
+  }, [moduleFilter, from, to, orFrom, orTo, sortBy, sortDir, token]);
 
   useEffect(() => { load(); }, [load]);
   // Live: a new payment anywhere refreshes the transaction feed.
   useRealtime(["payments"], load);
+
+  // Pick a month -> ask the server what OR numbers were actually used that
+  // month, and pre-fill the range inputs (still editable — it's a suggestion).
+  async function pickOrMonth(key) {
+    setOrMonth(key);
+    if (!key) return;
+    setOrMonthBusy(true); setOrMonthInfo("");
+    try {
+      const r = await apiFetch(`/bookkeeper/or-range-for-period?period=${key}&module=${moduleFilter}`, { token });
+      if (r.orFrom || r.orTo) {
+        setOrFrom(r.orFrom); setOrTo(r.orTo);
+        setOrMonthInfo(`Suggested from ${r.count} OR${r.count === 1 ? "" : "s"} found that month — adjust if needed.`);
+      } else {
+        setOrMonthInfo("No OR numbers found for that month/module.");
+      }
+    } catch (e) { setOrMonthInfo(e.message); } finally { setOrMonthBusy(false); }
+  }
 
   return (
     <Card>
@@ -71,7 +112,7 @@ export default function TransactionsPanel() {
         <span className="text-xs font-semibold text-blue-800">OR range</span>
         <input
           value={orFrom}
-          onChange={(e) => setOrFrom(e.target.value.replace(/[^0-9]/g, ""))}
+          onChange={(e) => { setOrFrom(e.target.value.replace(/[^0-9]/g, "")); setOrMonthInfo(""); }}
           placeholder="from (e.g. 40760)"
           inputMode="numeric"
           className="w-32 rounded-lg border border-blue-200 bg-white px-2.5 py-1.5 text-xs font-mono"
@@ -79,17 +120,54 @@ export default function TransactionsPanel() {
         <span className="text-xs text-blue-400">to</span>
         <input
           value={orTo}
-          onChange={(e) => setOrTo(e.target.value.replace(/[^0-9]/g, ""))}
+          onChange={(e) => { setOrTo(e.target.value.replace(/[^0-9]/g, "")); setOrMonthInfo(""); }}
           placeholder="to (e.g. 41200)"
           inputMode="numeric"
           className="w-32 rounded-lg border border-blue-200 bg-white px-2.5 py-1.5 text-xs font-mono"
         />
         {(orFrom || orTo) && (
-          <button onClick={() => { setOrFrom(""); setOrTo(""); }} className="text-xs font-semibold text-blue-600 hover:underline">
+          <button onClick={() => { setOrFrom(""); setOrTo(""); setOrMonth(""); setOrMonthInfo(""); }} className="text-xs font-semibold text-blue-600 hover:underline">
             Clear
           </button>
         )}
+        <span className="mx-1 h-4 w-px bg-blue-200" />
+        <CalendarClock size={13} className="text-blue-600" />
+        <select
+          value={orMonth}
+          onChange={(e) => pickOrMonth(e.target.value)}
+          disabled={orMonthBusy}
+          className="rounded-lg border border-blue-200 bg-white px-2 py-1.5 text-xs font-semibold text-blue-800 disabled:opacity-50"
+        >
+          <option value="">Auto-fill from month…</option>
+          {MONTHS.map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
+        </select>
+        {orMonthInfo && <span className="text-[10px] text-blue-600">{orMonthInfo}</span>}
         <span className="ml-auto text-[10px] text-blue-500">Combines with the date range and search above, if set.</span>
+      </div>
+
+      {/* Sort — read the report in true OR-booklet sequence to spot gaps. */}
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <span className="text-xs font-semibold text-slate-500">Sort:</span>
+        <div className="inline-flex rounded-xl border border-slate-200">
+          <button
+            onClick={() => { setSortBy("date"); setSortDir("desc"); }}
+            className={`px-3 py-1.5 text-xs font-semibold ${sortBy === "date" ? "bg-slate-700 text-white" : "text-slate-600 hover:bg-slate-50"}`}
+          >
+            Newest first
+          </button>
+          <button
+            onClick={() => { setSortBy("or"); setSortDir("asc"); }}
+            className={`inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold ${sortBy === "or" && sortDir === "asc" ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-50"}`}
+          >
+            <ArrowUpNarrowWide size={12} /> OR ascending
+          </button>
+          <button
+            onClick={() => { setSortBy("or"); setSortDir("desc"); }}
+            className={`inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold ${sortBy === "or" && sortDir === "desc" ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-50"}`}
+          >
+            <ArrowDownWideNarrow size={12} /> OR descending
+          </button>
+        </div>
       </div>
 
       <form onSubmit={(e) => { e.preventDefault(); load(); }} className="mt-3">

@@ -13,7 +13,7 @@ import Card from "../components/Card";
 import { apiFetch } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { exportPdf, exportExcel, reportFormatters } from "../lib/reportExport";
-import { FileDown, FileSpreadsheet, RefreshCw, Calendar, Hash } from "lucide-react";
+import { FileDown, FileSpreadsheet, RefreshCw, Calendar, Hash, ArrowUpNarrowWide, ArrowDownWideNarrow, CalendarClock } from "lucide-react";
 
 const { peso, dateTime } = reportFormatters;
 
@@ -26,6 +26,30 @@ const PRESETS = [
   { key: "lastMonth", label: "Last month" },
   { key: "custom", label: "Custom" },
 ];
+
+// Last `n` months (this month first) as { key: "YYYY-MM", label: "Month YYYY" }
+// — feeds the "auto-fill OR range from a month" picker.
+function recentMonths(n = 18) {
+  const out = [];
+  const now = new Date();
+  for (let i = 0; i < n; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    out.push({
+      key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
+      label: d.toLocaleDateString(undefined, { month: "long", year: "numeric" }),
+    });
+  }
+  return out;
+}
+const MONTHS = recentMonths();
+
+// Numeric OR value from the leading digit run (mirrors the server's
+// extraction) — used to re-sort the client-merged water+loan list by OR
+// sequence. Non-numeric ORs sort last regardless of direction.
+function orNumOf(orNo) {
+  const m = String(orNo || "").match(/^\d+/);
+  return m ? parseInt(m[0], 10) : null;
+}
 
 function ymd(d) {
   const y = d.getFullYear();
@@ -85,6 +109,13 @@ export default function ReportsPanel({ defaultTitle = "Treasurer's Report — Ca
   const [periodMode, setPeriodMode] = useState("date");
   const [orFrom, setOrFrom] = useState("");
   const [orTo, setOrTo] = useState("");
+  const [orMonth, setOrMonth] = useState(""); // selected month for the auto-fill picker
+  const [orMonthBusy, setOrMonthBusy] = useState(false);
+  const [orMonthInfo, setOrMonthInfo] = useState("");
+  // Sort: "Newest first" (date desc, default/unchanged) or OR-number
+  // ascending/descending — reads the report in true booklet sequence.
+  const [sortBy, setSortBy] = useState("date"); // date | or
+  const [sortDir, setSortDir] = useState("desc"); // asc | desc
   const [data, setData] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -99,7 +130,7 @@ export default function ReportsPanel({ defaultTitle = "Treasurer's Report — Ca
         // Petty cash is a separate ledger; fetch it whole and filter client-side.
         setData({ _petty: await apiFetch("/petty-cash?limit=1000", { token }) });
       } else {
-        const params = new URLSearchParams({ module: moduleFilter });
+        const params = new URLSearchParams({ module: moduleFilter, sortBy, sortDir });
         if (useOrRange) {
           if (orFrom.trim()) params.set("orFrom", orFrom.trim());
           if (orTo.trim()) params.set("orTo", orTo.trim());
@@ -110,9 +141,26 @@ export default function ReportsPanel({ defaultTitle = "Treasurer's Report — Ca
         setData(await apiFetch(`/bookkeeper/transactions?${params.toString()}`, { token }));
       }
     } catch (e) { setErr(e.message); } finally { setBusy(false); }
-  }, [moduleFilter, from, to, useOrRange, orFrom, orTo, token]);
+  }, [moduleFilter, from, to, useOrRange, orFrom, orTo, sortBy, sortDir, token]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Pick a month -> ask the server what OR numbers were actually used that
+  // month, and pre-fill the range inputs (still editable — it's a suggestion).
+  async function pickOrMonth(key) {
+    setOrMonth(key);
+    if (!key) return;
+    setOrMonthBusy(true); setOrMonthInfo("");
+    try {
+      const r = await apiFetch(`/bookkeeper/or-range-for-period?period=${key}&module=${moduleFilter}`, { token });
+      if (r.orFrom || r.orTo) {
+        setOrFrom(r.orFrom); setOrTo(r.orTo);
+        setOrMonthInfo(`Suggested from ${r.count} OR${r.count === 1 ? "" : "s"} found that month — adjust if needed.`);
+      } else {
+        setOrMonthInfo("No OR numbers found for that month/module.");
+      }
+    } catch (e) { setOrMonthInfo(e.message); } finally { setOrMonthBusy(false); }
+  }
 
   function pickPreset(k) {
     setPreset(k);
@@ -148,7 +196,19 @@ export default function ReportsPanel({ defaultTitle = "Treasurer's Report — Ca
       ? [
           ...data.water.map((r) => ({ ...r, _type: "Water" })),
           ...data.loan.map((r) => ({ ...r, _type: "Loan" })),
-        ].sort((a, b) => new Date(b.paidAt) - new Date(a.paidAt))
+        ].sort((a, b) => {
+          // Water + loan are fetched separately then merged here, so the
+          // server's own per-collection sort doesn't carry over — re-sort
+          // the merged list the same way the user picked.
+          if (sortBy === "or") {
+            const an = orNumOf(a.orNo), bn = orNumOf(b.orNo);
+            if (an == null && bn == null) return 0;
+            if (an == null) return 1; // non-numeric ORs sort last either way
+            if (bn == null) return -1;
+            return sortDir === "asc" ? an - bn : bn - an;
+          }
+          return new Date(b.paidAt) - new Date(a.paidAt);
+        })
       : []);
 
   const pettyColumns = [
@@ -336,7 +396,7 @@ export default function ReportsPanel({ defaultTitle = "Treasurer's Report — Ca
             <span className="text-xs font-semibold text-blue-800">OR</span>
             <input
               value={orFrom}
-              onChange={(e) => setOrFrom(e.target.value.replace(/[^0-9]/g, ""))}
+              onChange={(e) => { setOrFrom(e.target.value.replace(/[^0-9]/g, "")); setOrMonthInfo(""); }}
               placeholder="from (e.g. 40760)"
               inputMode="numeric"
               className="w-32 rounded-xl border border-blue-200 px-3 py-1.5 text-xs font-mono"
@@ -344,11 +404,23 @@ export default function ReportsPanel({ defaultTitle = "Treasurer's Report — Ca
             <span className="text-slate-400 text-xs">to</span>
             <input
               value={orTo}
-              onChange={(e) => setOrTo(e.target.value.replace(/[^0-9]/g, ""))}
+              onChange={(e) => { setOrTo(e.target.value.replace(/[^0-9]/g, "")); setOrMonthInfo(""); }}
               placeholder="to (e.g. 41200)"
               inputMode="numeric"
               className="w-32 rounded-xl border border-blue-200 px-3 py-1.5 text-xs font-mono"
             />
+            <span className="mx-1 h-4 w-px bg-slate-200" />
+            <CalendarClock size={13} className="text-blue-600" />
+            <select
+              value={orMonth}
+              onChange={(e) => pickOrMonth(e.target.value)}
+              disabled={orMonthBusy}
+              className="rounded-xl border border-blue-200 px-2 py-1.5 text-xs font-semibold text-blue-800 disabled:opacity-50"
+            >
+              <option value="">Auto-fill from month…</option>
+              {MONTHS.map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
+            </select>
+            {orMonthInfo && <span className="text-[10px] text-blue-600">{orMonthInfo}</span>}
           </>
         ) : (
           <>
@@ -402,6 +474,36 @@ export default function ReportsPanel({ defaultTitle = "Treasurer's Report — Ca
           <RefreshCw size={12} className={busy ? "animate-spin" : ""} />
         </button>
       </div>
+
+      {/* Sort — read the report in true OR-booklet sequence to spot gaps. */}
+      {!isPetty && (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <span className="text-xs font-semibold text-slate-500">Sort:</span>
+          <div className="inline-flex rounded-xl border border-slate-200">
+            <button
+              type="button"
+              onClick={() => { setSortBy("date"); setSortDir("desc"); }}
+              className={`px-3 py-1.5 text-xs font-semibold ${sortBy === "date" ? "bg-slate-700 text-white" : "text-slate-600 hover:bg-slate-50"}`}
+            >
+              Newest first
+            </button>
+            <button
+              type="button"
+              onClick={() => { setSortBy("or"); setSortDir("asc"); }}
+              className={`inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold ${sortBy === "or" && sortDir === "asc" ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-50"}`}
+            >
+              <ArrowUpNarrowWide size={12} /> OR ascending
+            </button>
+            <button
+              type="button"
+              onClick={() => { setSortBy("or"); setSortDir("desc"); }}
+              className={`inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold ${sortBy === "or" && sortDir === "desc" ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-50"}`}
+            >
+              <ArrowDownWideNarrow size={12} /> OR descending
+            </button>
+          </div>
+        </div>
+      )}
 
       {err && <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{err}</div>}
 
